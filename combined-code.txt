@@ -432,6 +432,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Beaker, Home, Trophy, User, LogOut, History, ChevronDown, Settings } from 'lucide-react';
+import { quizStorage } from '../utils/quizStorage';
 
 export default function Header() {
   const { currentUser, logout } = useAuth();
@@ -444,7 +445,18 @@ export default function Header() {
     return null;
   }
 
+  // Check if user is currently in a quiz
+  const isInQuiz = location.pathname === '/quiz';
+
   async function handleLogout() {
+    // Warn if in quiz
+    if (isInQuiz) {
+      const confirmed = window.confirm(
+        "Are you sure you want to logout?\n\n⚠️ You are in the middle of a quiz. Your progress will be lost!"
+      );
+      if (!confirmed) return;
+    }
+
     try {
       await logout();
       navigate('/login');
@@ -453,6 +465,22 @@ export default function Header() {
     }
   }
 
+  const handleNavigation = (path) => {
+    // If currently in quiz and trying to navigate away, show warning
+    if (isInQuiz && path !== '/quiz') {
+      const confirmed = window.confirm(
+        "Are you sure you want to leave the quiz?\n\n⚠️ Your current progress will be lost!"
+      );
+      if (!confirmed) {
+        return;
+      }
+      // Clear quiz data if user confirms
+      quizStorage.clearQuizData();
+    }
+    navigate(path);
+    setShowUserMenu(false);
+  };
+
   const isActive = (path) => location.pathname === path;
 
   return (
@@ -460,7 +488,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo and Brand */}
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/dashboard')}>
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavigation('/dashboard')}>
             <div className="bg-lab-blue p-2 rounded-lg">
               <Beaker className="text-white" size={24} />
             </div>
@@ -478,7 +506,7 @@ export default function Header() {
           {currentUser && (
             <nav className="hidden md:flex items-center gap-2">
               <button
-                onClick={() => navigate('/dashboard')}
+                onClick={() => handleNavigation('/dashboard')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
                   isActive('/dashboard')
                     ? 'bg-lab-blue text-white'
@@ -490,7 +518,7 @@ export default function Header() {
               </button>
 
               <button
-                onClick={() => navigate('/')}
+                onClick={() => handleNavigation('/')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
                   isActive('/') || isActive('/quiz')
                     ? 'bg-chemistry-green text-white'
@@ -502,7 +530,7 @@ export default function Header() {
               </button>
 
               <button
-                onClick={() => navigate('/leaderboard')}
+                onClick={() => handleNavigation('/leaderboard')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
                   isActive('/leaderboard')
                     ? 'bg-amber-500 text-white'
@@ -514,7 +542,7 @@ export default function Header() {
               </button>
 
               <button
-                onClick={() => navigate('/history')}
+                onClick={() => handleNavigation('/history')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
                   isActive('/history')
                     ? 'bg-purple-500 text-white'
@@ -559,10 +587,7 @@ export default function Header() {
                   />
                   <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border-2 border-slate-200 z-50 overflow-hidden">
                     <button
-                      onClick={() => {
-                        navigate('/profile');
-                        setShowUserMenu(false);
-                      }}
+                      onClick={() => handleNavigation('/profile')}
                       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left"
                     >
                       <User size={18} className="text-slate-600" />
@@ -570,10 +595,7 @@ export default function Header() {
                     </button>
 
                     <button
-                      onClick={() => {
-                        navigate('/history');
-                        setShowUserMenu(false);
-                      }}
+                      onClick={() => handleNavigation('/history')}
                       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left border-t border-slate-100"
                     >
                       <History size={18} className="text-slate-600" />
@@ -3416,8 +3438,8 @@ export default function QuizPage() {
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       e.preventDefault();
-      e.returnValue = ''; // Chrome requires returnValue to be set
-      return ''; // For older browsers
+      e.returnValue = '';
+      return '';
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -3426,6 +3448,38 @@ export default function QuizPage() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
+
+  // NEW: Handle Enter key press for navigation
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      // Only respond to Enter key
+      if (e.key === 'Enter') {
+        // Don't trigger if user is typing in an input field
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+          return;
+        }
+
+        // Don't trigger if modal is open
+        if (showPeriodicTable || showQuestionPanel) {
+          return;
+        }
+
+        // Navigate to next question or submit
+        if (currentIndex < questions.length - 1) {
+          nextQuestion();
+        } else if (allAnswered) {
+          handleComplete();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [currentIndex, answers, showPeriodicTable, showQuestionPanel]);
 
   // Save state to localStorage whenever it changes
   useEffect(() => {
@@ -3457,7 +3511,7 @@ export default function QuizPage() {
   }, [sessionStartTime]);
 
   if (!questions || questions.length === 0) {
-    return null; // Will redirect in useEffect
+    return null;
   }
 
   const currentQuestion = questions[currentIndex];
@@ -3627,18 +3681,18 @@ export default function QuizPage() {
   const sessionTime = getSessionTime();
 
   return (
-    <div className="relative h-screen overflow-hidden">
-      {/* Back to Topics Button - Top Left */}
+    <div className="relative min-h-screen overflow-hidden pb-6">
+      {/* Back to Topics Button - Top Left - FIXED z-index to be above header */}
       <button
         onClick={handleBackToTopics}
-        className="fixed left-8 top-8 z-30 flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all shadow-lg hover:scale-105 active:scale-95"
+        className="fixed left-8 top-24 z-30 flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all shadow-lg hover:scale-105 active:scale-95"
       >
         <Home size={18} />
         <span>Back to Topics</span>
       </button>
 
-      {/* Fixed Left Sidebar */}
-      <div className="fixed left-8 top-32 flex flex-col gap-4 z-30 h-[calc(100vh-10rem)]">
+      {/* Fixed Left Sidebar - ADJUSTED top position to avoid overlap */}
+      <div className="fixed left-8 top-40 flex flex-col gap-4 z-30 h-[calc(100vh-12rem)]">
         {/* Timer Display */}
         {timerEnabled && (
           <div className="bg-white rounded-2xl shadow-xl border-2 border-lab-blue p-6 w-48">
@@ -3692,7 +3746,7 @@ export default function QuizPage() {
       </div>
 
       {/* Fixed Right Sidebar */}
-      <div className="fixed right-8 top-32 flex flex-col gap-4 z-30 h-[calc(100vh-10rem)]">
+      <div className="fixed right-8 top-40 flex flex-col gap-4 z-30 h-[calc(100vh-12rem)]">
         {/* Flag Button */}
         <button
           onClick={toggleFlag}
@@ -3736,14 +3790,12 @@ export default function QuizPage() {
       {/* Question Overview Panel - Floating Left Sidebar */}
       {showQuestionPanel && (
         <>
-          {/* Backdrop - semi-transparent to see content behind */}
           <div 
             className="fixed inset-0 z-40"
             style={{ backgroundColor: 'rgba(0, 0, 0, 0.15)' }}
             onClick={() => setShowQuestionPanel(false)}
           />
           
-          {/* Panel - narrower sidebar on the left */}
           <div className="fixed left-0 top-0 h-full w-80 bg-white shadow-2xl z-50 overflow-y-auto animate-in slide-in-from-left duration-300">
             <div className="sticky top-0 bg-white border-b p-6 flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-800">Question Overview</h3>
@@ -3831,7 +3883,7 @@ export default function QuizPage() {
       )}
 
       {/* Main Content Area - Centered and compact */}
-      <div className="max-w-5xl mx-auto px-4 py-6 h-full flex flex-col">
+      <div className="max-w-5xl mx-auto px-4 pt-6 pb-6">
         {/* Progress Header - More Compact */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4">
           <div className="flex justify-between items-center mb-2">
@@ -3855,8 +3907,8 @@ export default function QuizPage() {
           </div>
         </div>
 
-        {/* Question Card Component - Takes remaining space */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Question Card Component */}
+        <div className="mb-4">
           <QuestionCard 
             question={currentQuestion}
             selectedOption={answers[currentQuestion.ID]}
@@ -3865,7 +3917,7 @@ export default function QuizPage() {
         </div>
 
         {/* Mini Progress Dots */}
-        <div className="flex justify-center gap-1 mt-4 py-2">
+        <div className="flex justify-center gap-1 py-2">
           {questions.slice(0, Math.min(30, totalQuestions)).map((_, idx) => (
             <div 
               key={idx}
@@ -3879,11 +3931,17 @@ export default function QuizPage() {
           {totalQuestions > 30 && <span className="text-slate-400 text-xs">...</span>}
         </div>
 
-        {!allAnswered && isLastQuestion && (
-          <p className="text-center text-sm text-amber-600 font-medium mt-2">
-            Please answer all questions before submitting.
+        {/* Instructions */}
+        <div className="text-center text-sm mt-2 space-y-1">
+          <p className="text-slate-500">
+            💡 <span className="font-semibold">Tip:</span> Press <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">Enter</kbd> to go to the next question
           </p>
-        )}
+          {!allAnswered && isLastQuestion && (
+            <p className="text-amber-600 font-medium">
+              Please answer all questions before submitting.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
