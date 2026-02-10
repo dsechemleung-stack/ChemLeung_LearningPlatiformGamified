@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Beaker, Mail, Lock, User, UserPlus, AlertCircle } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
+import { Beaker, Mail, Lock, User, UserPlus, AlertCircle, Sparkles, Languages } from 'lucide-react';
 
 export default function RegisterPage() {
   const [displayName, setDisplayName] = useState('');
@@ -11,6 +12,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signup } = useAuth();
+  const { t, toggleLanguage } = useLanguage();
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
@@ -18,15 +20,15 @@ export default function RegisterPage() {
 
     // Validation
     if (password !== confirmPassword) {
-      return setError('Passwords do not match');
+      return setError(t('auth.passwordsNoMatch'));
     }
 
     if (password.length < 6) {
-      return setError('Password must be at least 6 characters');
+      return setError(t('auth.passwordMinLength'));
     }
 
     if (displayName.trim().length < 2) {
-      return setError('Please enter your full name');
+      return setError(t('auth.enterFullName'));
     }
 
     try {
@@ -37,119 +39,158 @@ export default function RegisterPage() {
     } catch (err) {
       console.error(err);
       if (err.code === 'auth/email-already-in-use') {
-        setError('An account with this email already exists.');
+        setError(t('auth.emailAlreadyInUse'));
       } else if (err.code === 'auth/invalid-email') {
-        setError('Invalid email address.');
+        setError(t('auth.invalidEmail'));
       } else if (err.code === 'auth/weak-password') {
-        setError('Password is too weak. Use at least 6 characters.');
+        setError(t('auth.weakPassword'));
       } else {
-        setError('Failed to create account. Please try again.');
+        setError(t('auth.failedCreateAccount'));
       }
     }
     setLoading(false);
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
-      <div className="max-w-md w-full">
+    <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900 p-4">
+      {/* Language Toggle - Top Right */}
+      <button
+        onClick={toggleLanguage}
+        className="fixed top-6 right-6 z-50 flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-md border-2 border-white/20 rounded-xl font-bold text-white hover:bg-white/20 transition-all shadow-lg"
+        title={t('auth.switchToChinese')}
+      >
+        <Languages size={20} strokeWidth={3} />
+        <span className="text-sm">{t('auth.switchToEnglish')}</span>
+      </button>
+
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-20 left-10 w-72 h-72 bg-green-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
+        <div className="absolute top-40 right-10 w-72 h-72 bg-emerald-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-teal-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
+      </div>
+
+      {/* Floating Chemistry Icons */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 text-6xl opacity-10 animate-float">⚛️</div>
+        <div className="absolute top-1/3 right-1/4 text-5xl opacity-10 animate-float animation-delay-1000">🧪</div>
+        <div className="absolute bottom-1/4 left-1/3 text-7xl opacity-10 animate-float animation-delay-2000">🔬</div>
+        <div className="absolute top-1/2 right-1/3 text-4xl opacity-10 animate-float animation-delay-3000">⚗️</div>
+      </div>
+
+      <div className="max-w-md w-full relative z-10">
         {/* Logo Header */}
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <div className="bg-chemistry-green p-4 rounded-2xl shadow-lg">
-              <Beaker className="text-white" size={48} />
+        <div className="text-center mb-8 animate-in fade-in slide-in-from-top duration-700">
+          <div className="flex justify-center mb-6">
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl blur-xl opacity-75 animate-pulse"></div>
+              <div className="relative bg-gradient-to-r from-green-500 to-emerald-600 p-5 rounded-2xl shadow-2xl transform hover:scale-110 transition-transform duration-300">
+                <Beaker className="text-white" size={56} strokeWidth={2.5} />
+              </div>
             </div>
           </div>
-          <h1 className="text-3xl font-black text-lab-blue mb-2">
-            Chemistry HKDSE MCQ
+          <h1 className="text-4xl font-black text-white mb-2 tracking-tight">
+            ChemLeung
           </h1>
-          <p className="text-slate-600">Create your account to get started</p>
+          <p className="text-emerald-200 text-lg font-medium">
+            {t('tagline')}
+          </p>
+          <div className="flex items-center justify-center gap-2 mt-3 text-emerald-300 text-sm">
+            <Sparkles size={16} />
+            <span>{t('auth.joinCommunity')}</span>
+          </div>
         </div>
 
         {/* Register Form */}
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-          <div className="bg-chemistry-green p-6 text-center">
+        <div className="bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden animate-in fade-in slide-in-from-bottom duration-700">
+          <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-6 text-center">
             <h2 className="text-2xl font-bold text-white flex items-center justify-center gap-2">
               <UserPlus size={24} />
-              Register
+              {t('auth.register')}
             </h2>
+            <p className="text-green-100 text-sm mt-1">
+              {t('auth.joinCommunity')}
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="p-8 space-y-6">
             {error && (
-              <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 flex items-start gap-3">
-                <AlertCircle className="text-red-500 flex-shrink-0 mt-0.5" size={20} />
-                <p className="text-red-700 text-sm font-medium">{error}</p>
+              <div className="bg-red-500/20 backdrop-blur border-2 border-red-400/50 rounded-xl p-4 flex items-start gap-3 animate-in shake">
+                <AlertCircle className="text-red-300 flex-shrink-0 mt-0.5" size={20} />
+                <p className="text-red-100 text-sm font-medium">{error}</p>
               </div>
             )}
 
             {/* Display Name Field */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                Full Name
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-white/90 ml-1">
+                {t('auth.fullName')}
               </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+              <div className="relative group">
+                <User className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-300 group-focus-within:text-green-400 transition-colors" size={20} />
                 <input
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
-                  className="w-full pl-11 pr-4 py-3 border-2 border-slate-200 rounded-lg focus:border-chemistry-green focus:ring-2 focus:ring-green-100 outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
                   placeholder="John Doe"
                 />
               </div>
             </div>
 
             {/* Email Field */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                Email Address
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-white/90 ml-1">
+                {t('auth.email')}
               </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+              <div className="relative group">
+                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-300 group-focus-within:text-green-400 transition-colors" size={20} />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full pl-11 pr-4 py-3 border-2 border-slate-200 rounded-lg focus:border-chemistry-green focus:ring-2 focus:ring-green-100 outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
                   placeholder="your.email@example.com"
                 />
               </div>
             </div>
 
             {/* Password Field */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                Password
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-white/90 ml-1">
+                {t('auth.password')}
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+              <div className="relative group">
+                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-300 group-focus-within:text-green-400 transition-colors" size={20} />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full pl-11 pr-4 py-3 border-2 border-slate-200 rounded-lg focus:border-chemistry-green focus:ring-2 focus:ring-green-100 outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
                   placeholder="••••••••"
                 />
               </div>
-              <p className="text-xs text-slate-500 mt-1">Minimum 6 characters</p>
+              <p className="text-xs text-green-200 ml-1">
+                {t('auth.minimumCharacters')}
+              </p>
             </div>
 
             {/* Confirm Password Field */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                Confirm Password
+            <div className="space-y-2">
+              <label className="block text-sm font-bold text-white/90 ml-1">
+                {t('auth.confirmPassword')}
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+              <div className="relative group">
+                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-300 group-focus-within:text-green-400 transition-colors" size={20} />
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  className="w-full pl-11 pr-4 py-3 border-2 border-slate-200 rounded-lg focus:border-chemistry-green focus:ring-2 focus:ring-green-100 outline-none transition-all"
+                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
                   placeholder="••••••••"
                 />
               </div>
@@ -159,36 +200,89 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 bg-chemistry-green text-white rounded-xl font-bold text-lg shadow-lg hover:opacity-90 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 active:scale-95"
+              className="relative w-full py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg shadow-2xl hover:shadow-green-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all overflow-hidden group"
             >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  Creating account...
-                </>
-              ) : (
-                <>
-                  <UserPlus size={20} />
-                  Create Account
-                </>
-              )}
+              <div className="relative flex items-center justify-center gap-2">
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>{t('auth.creatingAccount')}</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus size={20} />
+                    <span>{t('auth.createAccount')}</span>
+                  </>
+                )}
+              </div>
             </button>
           </form>
 
           {/* Login Link */}
-          <div className="bg-slate-50 px-8 py-6 border-t border-slate-200 text-center">
-            <p className="text-slate-600">
-              Already have an account?{' '}
+          <div className="bg-white/5 px-8 py-6 border-t border-white/10 text-center">
+            <p className="text-white/70 text-sm">
+              {t('auth.alreadyHaveAccount')}{' '}
               <Link 
                 to="/login" 
-                className="text-lab-blue font-bold hover:underline"
+                className="text-green-300 font-bold hover:text-green-200 transition-colors hover:underline"
               >
-                Login here
+                {t('auth.loginHere')}
               </Link>
             </p>
           </div>
         </div>
+
+        {/* Footer Note */}
+        <p className="text-center text-white/50 text-xs mt-6 animate-in fade-in duration-1000">
+          {t('auth.secureRegistration')}
+        </p>
       </div>
+
+      {/* Custom CSS for animations */}
+      <style jsx>{`
+        @keyframes blob {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33% { transform: translate(30px, -50px) scale(1.1); }
+          66% { transform: translate(-20px, 20px) scale(0.9); }
+        }
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-20px); }
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+          20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .animate-blob {
+          animation: blob 7s infinite;
+        }
+        .animate-float {
+          animation: float 3s ease-in-out infinite;
+        }
+        .animation-delay-1000 {
+          animation-delay: 1s;
+        }
+        .animation-delay-2000 {
+          animation-delay: 2s;
+        }
+        .animation-delay-3000 {
+          animation-delay: 3s;
+        }
+        .animation-delay-4000 {
+          animation-delay: 4s;
+        }
+        .animate-in {
+          animation: fadeIn 0.5s ease-out;
+        }
+        .shake {
+          animation: shake 0.5s;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

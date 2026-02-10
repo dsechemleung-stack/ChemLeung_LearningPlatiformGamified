@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import ResultsSummary from '../components/ResultsSummary';
 import { quizStorage } from '../utils/quizStorage';
 import { quizService } from '../services/quizService';
@@ -8,9 +9,9 @@ import { quizService } from '../services/quizService';
 export default function ResultsPage() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  // FIX 1: Use a ref to prevent double-save across renders/StrictMode
   const hasSavedRef = useRef(false);
 
   // Load data from storage
@@ -25,15 +26,13 @@ export default function ResultsPage() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Save attempt to Firebase - only once, guarded by ref
+  // Save attempt to Firebase - only once
   useEffect(() => {
     async function saveAttemptToFirebase() {
-      // Guard: skip if already saved, saving, no user, no data, or ref already fired
       if (hasSavedRef.current) return;
       if (!currentUser || !questions || questions.length === 0) return;
       if (Object.keys(userAnswers).length === 0) return;
 
-      // Set ref immediately to block any concurrent calls
       hasSavedRef.current = true;
       setSaving(true);
 
@@ -65,7 +64,6 @@ export default function ResultsPage() {
         console.log('✅ Attempt saved (once).');
       } catch (error) {
         console.error('❌ Error saving attempt:', error);
-        // Reset ref so user can potentially retry, but don't loop
         hasSavedRef.current = false;
       } finally {
         setSaving(false);
@@ -73,7 +71,7 @@ export default function ResultsPage() {
     }
 
     saveAttemptToFirebase();
-  }, [currentUser]); // Only depends on currentUser; questions/answers come from storage
+  }, [currentUser]);
 
   if (!questions || questions.length === 0) return null;
 
@@ -85,17 +83,21 @@ export default function ResultsPage() {
   return (
     <div className="relative">
       {saving && (
-        <div className="fixed top-20 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2">
+        <div className="fixed top-20 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2 animate-in fade-in">
           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-          <span className="font-semibold">Saving to your profile...</span>
+          <span className="font-semibold">
+            {t('results.savingToProfile')}
+          </span>
         </div>
       )}
       {saved && (
-        <div className="fixed top-20 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2">
+        <div className="fixed top-20 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2 animate-in fade-in">
           <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
           </svg>
-          <span className="font-semibold">Saved to your profile!</span>
+          <span className="font-semibold">
+            {t('results.savedToProfile')}
+          </span>
         </div>
       )}
       <ResultsSummary

@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
 import QuestionCard from '../components/QuestionCard';
 import { ChevronLeft, ChevronRight, Send, Timer, FlaskConical, Flag, Clock, X, Home, Menu } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 
 export default function QuizPage() {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   
   const questions = quizStorage.getSelectedQuestions();
+  const practiceMode = localStorage.getItem('quiz_mode') || 'timed'; // timed, marathon, custom, mistakes
   
   useEffect(() => {
     if (!questions || questions.length === 0) {
@@ -21,14 +24,23 @@ export default function QuizPage() {
   const [showPeriodicTable, setShowPeriodicTable] = useState(false);
   const [showQuestionPanel, setShowQuestionPanel] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [timerEnabled, setTimerEnabled] = useState(() => quizStorage.getTimerEnabled());
+  const [timerEnabled, setTimerEnabled] = useState(() => {
+    const saved = localStorage.getItem('quiz_timer_enabled');
+    return saved === 'true';
+  });
+  const [isTimedMode, setIsTimedMode] = useState(() => {
+    const saved = localStorage.getItem('quiz_is_timed_mode');
+    return saved === 'true';
+  });
   const [questionTimes, setQuestionTimes] = useState(() => quizStorage.getQuestionTimes());
   const [currentQuestionStartTime, setCurrentQuestionStartTime] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [sessionStartTime, setSessionStartTime] = useState(() => quizStorage.getSessionStart());
-  const timerInitialized = useRef(false);
 
-  // ── Prevent accidental navigation away ───────────────────────────────────
+  // Calculate time limit for timed mode (questions × 1.25 minutes in milliseconds)
+  const timeLimit = isTimedMode ? questions.length * 1.25 * 60 * 1000 : 0;
+
+  // Prevent accidental navigation away
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       e.preventDefault();
@@ -39,27 +51,24 @@ export default function QuizPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
-  // ── Keyboard shortcuts: A/B/C/D to select answer, Enter to advance ───────
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ignore when typing in inputs/textareas or when modals are open
       const activeElement = document.activeElement;
       if (
         activeElement &&
         (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')
       ) return;
-      if (showPeriodicTable || showQuestionPanel || showMobileMenu) return;
+      if (showPeriodicTable || showMobileMenu) return;
       if (!questions || questions.length === 0) return;
 
       const currentQuestion = questions[currentIndex];
       const key = e.key.toUpperCase();
 
-      // A / B / C / D → select / deselect answer
       if (['A', 'B', 'C', 'D'].includes(key)) {
         e.preventDefault();
         const currentAnswer = answers[currentQuestion.ID];
         if (currentAnswer === key) {
-          // Clicking same key deselects
           setAnswers(prev => ({ ...prev, [currentQuestion.ID]: null }));
         } else {
           setAnswers(prev => ({ ...prev, [currentQuestion.ID]: key }));
@@ -67,7 +76,6 @@ export default function QuizPage() {
         return;
       }
 
-      // Enter → advance (or submit on last question)
       if (e.key === 'Enter') {
         e.preventDefault();
         if (currentIndex < questions.length - 1) {
@@ -78,7 +86,6 @@ export default function QuizPage() {
         return;
       }
 
-      // Arrow keys → navigate
       if (e.key === 'ArrowRight' && currentIndex < questions.length - 1) {
         e.preventDefault();
         nextQuestion();
@@ -90,10 +97,15 @@ export default function QuizPage() {
         return;
       }
 
-      // F → flag/unflag
       if (key === 'F') {
         e.preventDefault();
         toggleFlag();
+        return;
+      }
+
+      if (key === 'O') {
+        e.preventDefault();
+        setShowQuestionPanel(prev => !prev);
         return;
       }
     };
@@ -102,12 +114,11 @@ export default function QuizPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentIndex, answers, showPeriodicTable, showQuestionPanel, showMobileMenu, questions]);
 
-  // ── Persist state to localStorage ────────────────────────────────────────
+  // Persist state to localStorage
   useEffect(() => { quizStorage.saveCurrentIndex(currentIndex); }, [currentIndex]);
   useEffect(() => { quizStorage.saveUserAnswers(answers); }, [answers]);
   useEffect(() => { quizStorage.saveFlagged(flagged); }, [flagged]);
   useEffect(() => { quizStorage.saveQuestionTimes(questionTimes); }, [questionTimes]);
-  useEffect(() => { if (timerEnabled !== null) quizStorage.saveTimerEnabled(timerEnabled); }, [timerEnabled]);
   useEffect(() => { if (sessionStartTime !== null) quizStorage.saveSessionStart(sessionStartTime); }, [sessionStartTime]);
 
   if (!questions || questions.length === 0) return null;
@@ -117,21 +128,14 @@ export default function QuizPage() {
   const progress = ((currentIndex + 1) / totalQuestions) * 100;
   const allAnswered = questions.every(q => answers[q.ID]);
 
-  // ── Timer init ────────────────────────────────────────────────────────────
+  // Initialize timer on mount
   useEffect(() => {
-    if (timerEnabled === null && !timerInitialized.current) {
-      timerInitialized.current = true;
-      const enableTimer = window.confirm(
-        "Do you want to enable the timer?\n\nThe timer will track how long you spend on each question.\n\nClick OK to enable, Cancel to skip."
-      );
-      setTimerEnabled(enableTimer);
-      if (enableTimer) {
-        const now = Date.now();
-        setCurrentQuestionStartTime(now);
-        setSessionStartTime(now);
-      }
+    if (timerEnabled && !sessionStartTime) {
+      const now = Date.now();
+      setCurrentQuestionStartTime(now);
+      setSessionStartTime(now);
     }
-  }, [timerEnabled]);
+  }, []);
 
   useEffect(() => {
     if (!timerEnabled) return;
@@ -184,11 +188,12 @@ export default function QuizPage() {
   };
 
   const handleBackToTopics = () => {
-    const confirmed = window.confirm(
-      "Are you sure you want to go back to topic selection?\n\n⚠️ ALL YOUR PROGRESS WILL BE LOST!"
-    );
+    const confirmed = window.confirm(t('quiz.confirmBackToTopics'));
     if (confirmed) {
       quizStorage.clearQuizData();
+      localStorage.removeItem('quiz_mode');
+      localStorage.removeItem('quiz_timer_enabled');
+      localStorage.removeItem('quiz_is_timed_mode');
       navigate('/');
     }
   };
@@ -210,9 +215,24 @@ export default function QuizPage() {
     return accumulated;
   };
 
+  const getCurrentQuestionTime = () => {
+    const accumulated = questionTimes[currentQuestion.ID] || 0;
+    if (timerEnabled && currentQuestionStartTime) {
+      return accumulated + (currentTime - currentQuestionStartTime);
+    }
+    return accumulated;
+  };
+
   const getSessionTime = () => {
     if (timerEnabled && sessionStartTime) return currentTime - sessionStartTime;
     return 0;
+  };
+
+  const getTimeRemaining = () => {
+    if (!isTimedMode || !sessionStartTime) return 0;
+    const elapsed = currentTime - sessionStartTime;
+    const remaining = timeLimit - elapsed;
+    return Math.max(0, remaining);
   };
 
   const formatTime = (ms) => {
@@ -229,37 +249,38 @@ export default function QuizPage() {
     return 'skipped';
   };
 
-  if (timerEnabled === null) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <Clock className="animate-pulse text-lab-blue w-12 h-12 mx-auto mb-4" />
-          <p className="text-slate-600">Initializing quiz...</p>
-        </div>
-      </div>
-    );
-  }
-
   const totalTimeSpent = getTotalTimeSpent();
+  const currentQuestionTime = getCurrentQuestionTime();
   const sessionTime = getSessionTime();
+  const timeRemaining = getTimeRemaining();
+
+  // Check if time's up in timed mode
+  useEffect(() => {
+    if (isTimedMode && timeRemaining === 0 && sessionStartTime) {
+      alert(t('quiz.timeUp'));
+      handleComplete();
+    }
+  }, [timeRemaining, isTimedMode]);
 
   return (
     <div className="relative min-h-screen pb-32 md:pb-6">
-      {/* ── Keyboard shortcut hint (desktop only) ── */}
+      {/* Keyboard shortcut hint (desktop only) */}
       <div className="hidden md:flex fixed top-20 left-1/2 -translate-x-1/2 z-20 items-center gap-3 bg-white/90 backdrop-blur border border-slate-200 rounded-full px-4 py-1.5 shadow-sm text-xs text-slate-500">
-        <span>Type <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">A</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">B</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">C</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">D</kbd> to select</span>
+        <span>{t('quiz.type')} <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">A</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">B</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">C</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">D</kbd> {t('quiz.toSelect')}</span>
         <span className="text-slate-300">|</span>
-        <span><kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">Enter</kbd> / <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">→</kbd> next</span>
+        <span><kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">Enter</kbd> / <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">→</kbd> {t('quiz.next')}</span>
         <span className="text-slate-300">|</span>
-        <span><kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">F</kbd> flag</span>
+        <span><kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">F</kbd> {t('quiz.flag')}</span>
+        <span className="text-slate-300">|</span>
+        <span><kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">O</kbd> {t('quiz.overview')}</span>
       </div>
 
-      {/* ── Mobile Tools ── */}
+      {/* Mobile Tools */}
       <button
         onClick={() => setShowMobileMenu(!showMobileMenu)}
         className="md:hidden fixed top-20 right-4 z-40 flex items-center gap-2 px-4 py-2 bg-lab-blue text-white rounded-lg font-bold shadow-lg"
       >
-        <Menu size={18} />Tools
+        <Menu size={18} />{t('quiz.tools')}
       </button>
 
       {showMobileMenu && (
@@ -269,47 +290,57 @@ export default function QuizPage() {
             <button onClick={() => { handleBackToTopics(); setShowMobileMenu(false); }}
               className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50 transition-all text-left border-b">
               <Home size={18} className="text-red-500" />
-              <span className="font-semibold text-red-600">Back to Topics</span>
+              <span className="font-semibold text-red-600">{t('quiz.backToTopics')}</span>
             </button>
             <button onClick={() => { setShowPeriodicTable(true); setShowMobileMenu(false); }}
               className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50 transition-all text-left border-b">
               <FlaskConical size={18} className="text-purple-600" />
-              <span className="font-semibold text-slate-700">Periodic Table</span>
+              <span className="font-semibold text-slate-700">{t('quiz.periodicTable')}</span>
             </button>
             <button onClick={() => { setShowQuestionPanel(true); setShowMobileMenu(false); }}
               className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50 transition-all text-left border-b">
               <Flag size={18} className="text-slate-700" />
-              <span className="font-semibold text-slate-700">Overview</span>
+              <span className="font-semibold text-slate-700">{t('quiz.overview')}</span>
             </button>
             <button onClick={() => { toggleFlag(); setShowMobileMenu(false); }}
               className={`w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50 transition-all text-left ${flagged.has(currentQuestion?.ID) ? 'bg-amber-50' : ''}`}>
               <Flag size={18} className="text-amber-500" fill={flagged.has(currentQuestion?.ID) ? 'currentColor' : 'none'} />
-              <span className="font-semibold text-slate-700">{flagged.has(currentQuestion?.ID) ? 'Unflag' : 'Flag'} Question</span>
+              <span className="font-semibold text-slate-700">{flagged.has(currentQuestion?.ID) ? t('quiz.unflagQuestion') : t('quiz.flagQuestion')}</span>
             </button>
           </div>
         </>
       )}
 
-      {/* ── Desktop Back Button ── */}
+      {/* Desktop Back Button */}
       <button onClick={handleBackToTopics}
         className="hidden md:flex fixed left-8 top-24 z-30 items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all shadow-lg hover:scale-105 active:scale-95">
-        <Home size={18} /><span>Back to Topics</span>
+        <Home size={18} /><span>{t('quiz.backToTopics')}</span>
       </button>
 
-      {/* ── Desktop Left Sidebar ── */}
+      {/* Desktop Left Sidebar */}
       <div className="hidden md:flex fixed left-8 top-40 flex-col gap-4 z-30 h-[calc(100vh-12rem)]">
         {timerEnabled && (
           <div className="bg-white rounded-2xl shadow-xl border-2 border-lab-blue p-6 w-48">
             <div className="text-center">
               <div className="flex items-center justify-center gap-2 mb-2">
                 <Timer className="text-lab-blue" size={24} />
-                <span className="text-sm font-bold text-slate-600">SESSION TIME</span>
+                <span className="text-sm font-bold text-slate-600">{t('quiz.totalTime')}</span>
               </div>
               <div className="text-4xl font-black text-lab-blue mb-4 font-mono">{formatTime(sessionTime)}</div>
-              <div className="text-xs text-slate-500 border-t pt-2">
-                <div className="flex justify-between mb-1">
-                  <span>Active Time:</span>
-                  <span className="font-bold">{formatTime(totalTimeSpent)}</span>
+              
+              {isTimedMode && (
+                <div className="mb-4 pb-4 border-b border-slate-200">
+                  <div className="text-xs text-slate-500 mb-1">{t('quiz.timeRemaining')}</div>
+                  <div className={`text-2xl font-black font-mono ${timeRemaining < 60000 ? 'text-red-600' : 'text-amber-600'}`}>
+                    {formatTime(timeRemaining)}
+                  </div>
+                </div>
+              )}
+              
+              <div className="text-xs text-slate-500 space-y-2">
+                <div className="flex justify-between pt-2 border-t">
+                  <span>{t('quiz.thisQuestion')}</span>
+                  <span className="font-bold text-lab-blue">{formatTime(currentQuestionTime)}</span>
                 </div>
               </div>
             </div>
@@ -317,11 +348,11 @@ export default function QuizPage() {
         )}
         <button onClick={() => setShowPeriodicTable(true)}
           className="flex items-center gap-2 px-6 py-4 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-all shadow-lg hover:scale-105 active:scale-95">
-          <FlaskConical size={20} /><span>Periodic Table</span>
+          <FlaskConical size={20} /><span>{t('quiz.periodicTable')}</span>
         </button>
         <button onClick={() => setShowQuestionPanel(!showQuestionPanel)}
           className="flex items-center gap-2 px-6 py-4 bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg hover:scale-105 active:scale-95">
-          <Flag size={20} /><span>Overview</span>
+          <Flag size={20} /><span>{t('quiz.overview')}</span>
         </button>
         <div className="flex-1" />
         <button onClick={prevQuestion} disabled={currentIndex === 0}
@@ -330,11 +361,11 @@ export default function QuizPage() {
         </button>
       </div>
 
-      {/* ── Desktop Right Sidebar ── */}
+      {/* Desktop Right Sidebar */}
       <div className="hidden md:flex fixed right-8 top-40 flex-col gap-4 z-30 h-[calc(100vh-12rem)]">
         <button onClick={toggleFlag}
           className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg hover:scale-110 active:scale-95 ${flagged.has(currentQuestion?.ID) ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-white text-amber-500 border-2 border-amber-500 hover:bg-amber-50'}`}
-          title={flagged.has(currentQuestion?.ID) ? 'Unflag Question' : 'Flag Question'}>
+          title={flagged.has(currentQuestion?.ID) ? t('quiz.unflagQuestion') : t('quiz.flagQuestion')}>
           <Flag size={28} fill={flagged.has(currentQuestion?.ID) ? 'currentColor' : 'none'} />
         </button>
         <div className="flex-1" />
@@ -346,36 +377,41 @@ export default function QuizPage() {
         ) : (
           <button onClick={handleComplete} disabled={!allAnswered}
             className={`flex items-center justify-center w-16 h-16 rounded-full font-bold transition-all shadow-lg hover:scale-110 active:scale-95 ${allAnswered ? 'bg-chemistry-green text-white hover:opacity-90' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}
-            title="Finish & Submit">
+            title={t('quiz.finishSubmit')}>
             <Send size={28} />
           </button>
         )}
       </div>
 
-      {/* ── Question Overview Panel ── */}
+      {/* Question Overview Panel - No blur, just transparent */}
       {showQuestionPanel && (
         <>
-          <div className="fixed inset-0 z-40 bg-black bg-opacity-15" onClick={() => setShowQuestionPanel(false)} />
-          <div className="fixed left-0 top-0 h-full w-80 max-w-[90vw] bg-white shadow-2xl z-50 overflow-y-auto animate-in slide-in-from-left duration-300">
-            <div className="sticky top-0 bg-white border-b p-6 flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800">Question Overview</h3>
+          <div className="fixed inset-0 z-40" onClick={() => setShowQuestionPanel(false)} />
+          <div className="fixed left-0 top-0 h-full w-80 max-w-[90vw] bg-white/95 shadow-2xl z-50 overflow-y-auto animate-in slide-in-from-left duration-300 border-r-2 border-slate-200">
+            <div className="sticky top-0 bg-white/95 border-b p-6 flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-800">{t('quiz.questionOverview')}</h3>
               <button onClick={() => setShowQuestionPanel(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100">
                 <X size={20} />
               </button>
             </div>
             <div className="p-6">
               <div className="flex flex-col gap-3 mb-6 text-sm">
-                <div className="flex items-center gap-2"><div className="w-6 h-6 rounded bg-chemistry-green" /><span>Answered ({Object.keys(answers).filter(k => answers[k]).length})</span></div>
-                <div className="flex items-center gap-2"><div className="w-6 h-6 rounded bg-amber-500" /><span>Flagged ({flagged.size})</span></div>
-                <div className="flex items-center gap-2"><div className="w-6 h-6 rounded bg-slate-200" /><span>Skipped ({totalQuestions - Object.keys(answers).filter(k => answers[k]).length})</span></div>
+                <div className="flex items-center gap-2"><div className="w-6 h-6 rounded bg-chemistry-green" /><span>{t('quiz.answered')} ({Object.keys(answers).filter(k => answers[k]).length})</span></div>
+                <div className="flex items-center gap-2"><div className="w-6 h-6 rounded bg-amber-500" /><span>{t('quiz.flagged')} ({flagged.size})</span></div>
+                <div className="flex items-center gap-2"><div className="w-6 h-6 rounded bg-slate-200" /><span>{t('quiz.skipped')} ({totalQuestions - Object.keys(answers).filter(k => answers[k]).length})</span></div>
               </div>
               <div className="grid grid-cols-4 gap-3">
                 {questions.map((q, idx) => {
                   const status = getQuestionStatus(q);
+                  const qTime = questionTimes[q.ID] || 0;
                   return (
                     <button key={q.ID} onClick={() => jumpToQuestion(idx)}
-                      className={`aspect-square rounded-xl font-bold text-base transition-all border-2 ${idx === currentIndex ? 'border-lab-blue ring-2 ring-lab-blue ring-offset-2' : 'border-transparent'} ${status === 'answered' ? 'bg-chemistry-green text-white hover:opacity-80' : status === 'flagged' ? 'bg-amber-500 text-white hover:opacity-80' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
-                      {idx + 1}
+                      className={`aspect-square rounded-xl font-bold text-base transition-all border-2 flex flex-col items-center justify-center ${idx === currentIndex ? 'border-lab-blue ring-2 ring-lab-blue ring-offset-2' : 'border-transparent'} ${status === 'answered' ? 'bg-chemistry-green text-white hover:opacity-80' : status === 'flagged' ? 'bg-amber-500 text-white hover:opacity-80' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
+                      title={timerEnabled && qTime > 0 ? formatTime(qTime) : ''}>
+                      <span>{idx + 1}</span>
+                      {timerEnabled && qTime > 0 && (
+                        <span className="text-[8px] opacity-75 mt-0.5">{formatTime(qTime)}</span>
+                      )}
                     </button>
                   );
                 })}
@@ -385,12 +421,12 @@ export default function QuizPage() {
         </>
       )}
 
-      {/* ── Periodic Table Modal ── */}
+      {/* Periodic Table Modal */}
       {showPeriodicTable && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowPeriodicTable(false)}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
-              <h3 className="text-xl font-bold text-slate-800">Periodic Table of Elements</h3>
+              <h3 className="text-xl font-bold text-slate-800">{t('quiz.periodicTableOfElements')}</h3>
               <button onClick={() => setShowPeriodicTable(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100"><X size={24} /></button>
             </div>
             <div className="p-4">
@@ -400,13 +436,13 @@ export default function QuizPage() {
         </div>
       )}
 
-      {/* ── Main Content ── */}
+      {/* Main Content */}
       <div className="max-w-5xl mx-auto px-4 pt-6 pb-6">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-baseline gap-3">
               <span className="text-3xl font-black text-lab-blue">Q{currentIndex + 1}</span>
-              <span className="text-sm font-medium text-slate-500">of {totalQuestions}</span>
+              <span className="text-sm font-medium text-slate-500">{t('quiz.of')} {totalQuestions}</span>
             </div>
             <span className="text-xl font-bold text-lab-blue">{Math.round(progress)}%</span>
           </div>
@@ -417,9 +453,19 @@ export default function QuizPage() {
 
         {timerEnabled && (
           <div className="md:hidden bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2"><Timer className="text-lab-blue" size={18} /><span className="text-sm font-bold text-slate-600">Time</span></div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2"><Timer className="text-lab-blue" size={18} /><span className="text-sm font-bold text-slate-600">{t('quiz.totalTime')}</span></div>
               <div className="text-xl font-black text-lab-blue font-mono">{formatTime(sessionTime)}</div>
+            </div>
+            {isTimedMode && (
+              <div className="flex justify-between text-xs text-slate-500 pb-2 border-b mb-2">
+                <span>{t('quiz.timeRemaining')}</span>
+                <span className={`font-bold ${timeRemaining < 60000 ? 'text-red-600' : 'text-amber-600'}`}>{formatTime(timeRemaining)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>{t('quiz.thisQuestion')}</span>
+              <span className="font-bold text-lab-blue">{formatTime(currentQuestionTime)}</span>
             </div>
           </div>
         )}
@@ -441,37 +487,39 @@ export default function QuizPage() {
 
         <div className="text-center text-sm mt-2 space-y-1">
           <p className="text-slate-500 hidden md:block">
-            💡 <span className="font-semibold">Tip:</span> Press <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">A</kbd>–<kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">D</kbd> to select · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">Enter</kbd> / <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">→</kbd> next · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">F</kbd> flag
+            💡 <span className="font-semibold">{t('quiz.tip')}</span> {t('quiz.press')} <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">A</kbd>–<kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">D</kbd> {t('quiz.toSelect')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">Enter</kbd> / <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">→</kbd> {t('quiz.next')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">F</kbd> {t('quiz.flag')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">O</kbd> {t('quiz.overview')}
           </p>
           {!allAnswered && isLastQuestion && (
-            <p className="text-amber-600 font-medium">Please answer all questions before submitting.</p>
+            <p className="text-amber-600 font-medium">
+              {t('quiz.pleaseAnswerAll')}
+            </p>
           )}
         </div>
       </div>
 
-      {/* ── Mobile Nav Bar ── */}
+      {/* Mobile Nav Bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-200 shadow-2xl z-30">
         <div className="grid grid-cols-3 gap-2 p-3">
           <button onClick={prevQuestion} disabled={currentIndex === 0}
             className="flex flex-col items-center justify-center py-3 px-2 bg-slate-100 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95">
             <ChevronLeft size={24} className={currentIndex === 0 ? 'text-slate-400' : 'text-lab-blue'} />
-            <span className={`text-xs mt-1 ${currentIndex === 0 ? 'text-slate-400' : 'text-lab-blue'}`}>Previous</span>
+            <span className={`text-xs mt-1 ${currentIndex === 0 ? 'text-slate-400' : 'text-lab-blue'}`}>{t('quiz.previous')}</span>
           </button>
           <div className="flex flex-col items-center justify-center py-3 px-2 bg-slate-100 rounded-lg">
             <div className="text-2xl font-black text-lab-blue">{currentIndex + 1}/{totalQuestions}</div>
-            <div className="text-xs text-slate-500 mt-1">Question</div>
+            <div className="text-xs text-slate-500 mt-1">{t('quiz.question')}</div>
           </div>
           {!isLastQuestion ? (
             <button onClick={nextQuestion}
               className="flex flex-col items-center justify-center py-3 px-2 bg-lab-blue rounded-lg font-bold transition-all active:scale-95">
               <ChevronRight size={24} className="text-white" />
-              <span className="text-xs text-white mt-1">Next</span>
+              <span className="text-xs text-white mt-1">{t('quiz.next')}</span>
             </button>
           ) : (
             <button onClick={handleComplete} disabled={!allAnswered}
               className={`flex flex-col items-center justify-center py-3 px-2 rounded-lg font-bold transition-all active:scale-95 ${allAnswered ? 'bg-chemistry-green' : 'bg-slate-300 cursor-not-allowed'}`}>
               <Send size={24} className="text-white" />
-              <span className="text-xs text-white mt-1">Submit</span>
+              <span className="text-xs text-white mt-1">{t('quiz.submit')}</span>
             </button>
           )}
         </div>

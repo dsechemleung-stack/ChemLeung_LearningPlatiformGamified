@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, Infinity, Settings, Play, Zap, BookOpen, Lock, Check, AlertCircle } from 'lucide-react';
+import { Clock, Infinity, Settings, Play, Zap, BookOpen, Lock, Check, AlertCircle, Heart } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -10,16 +10,24 @@ import { db } from '../firebase/config';
 export default function PracticeModeSelection({ questions }) {
   const navigate = useNavigate();
   const { currentUser, userProfile, loadUserProfile } = useAuth();
-  const { isEnglish } = useLanguage();
+  const { t, tf } = useLanguage();
   const [selectedMode, setSelectedMode] = useState(null);
   const [questionCount, setQuestionCount] = useState(10);
   const [showCustom, setShowCustom] = useState(false);
   const [showUpdateTopics, setShowUpdateTopics] = useState(false);
 
+  // Timer settings for each mode
+  const [timedModeTimer, setTimedModeTimer] = useState(true);
+  const [timedModeIsTimed, setTimedModeIsTimed] = useState(true);
+  const [marathonModeTimer, setMarathonModeTimer] = useState(true);
+  const [marathonModeIsTimed, setMarathonModeIsTimed] = useState(false);
+
   // Custom mode state
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedSubtopics, setSelectedSubtopics] = useState([]);
   const [customCount, setCustomCount] = useState(10);
+  const [customTimerEnabled, setCustomTimerEnabled] = useState(false);
+  const [customIsTimed, setCustomIsTimed] = useState(false);
 
   // Quick update topics state
   const [tempLearnedUpTo, setTempLearnedUpTo] = useState(userProfile?.learnedUpTo || '');
@@ -92,20 +100,22 @@ export default function PracticeModeSelection({ questions }) {
       });
       await loadUserProfile(currentUser.uid);
       setShowUpdateTopics(false);
-      alert(isEnglish ? 'Topics updated successfully!' : '主題已成功更新！');
+      alert(t('practiceMode.topicsUpdated'));
     } catch (error) {
       console.error('Error updating topics:', error);
-      alert(isEnglish ? 'Failed to update topics' : '更新主題失敗');
+      alert(t('practiceMode.failedUpdate'));
     }
     setUpdating(false);
   };
 
-  const handleModeSelect = (mode, count) => {
+  const handleModeSelect = (mode, count, timerEnabled = false, isTimed = false) => {
+    if (mode === 'mistakes') {
+      navigate('/notebook');
+      return;
+    }
+
     if (availableTopics.length === 0) {
-      alert(isEnglish 
-        ? "Please set your learned topics in Profile first!" 
-        : "請先在個人資料中設定您已學習的主題！"
-      );
+      alert(t('practice.pleaseSetTopics'));
       navigate('/profile');
       return;
     }
@@ -116,12 +126,11 @@ export default function PracticeModeSelection({ questions }) {
     if (mode === 'custom') {
       setShowCustom(true);
     } else {
-      // For Timed and Marathon: filter by available topics
       const filtered = questions.filter(q => availableTopics.includes(q.Topic));
       const shuffled = [...filtered].sort(() => 0.5 - Math.random());
       const finalSelection = shuffled.slice(0, Math.min(count, MAX_QUESTIONS, shuffled.length));
       
-      startQuiz(finalSelection, mode);
+      startQuiz(finalSelection, mode, timerEnabled, isTimed);
     }
   };
 
@@ -138,32 +147,24 @@ export default function PracticeModeSelection({ questions }) {
     const finalSelection = shuffled.slice(0, finalCount);
     
     if (finalSelection.length === 0) {
-      alert(isEnglish 
-        ? "No questions found for this selection. Try broader filters!" 
-        : "找不到符合條件的題目。請嘗試更廣泛的篩選！"
-      );
+      alert(t('notebook.noQuestionsFound'));
       return;
     }
 
     if (requestedCount > MAX_QUESTIONS) {
-      alert(isEnglish 
-        ? `Session limited to ${MAX_QUESTIONS} questions maximum.` 
-        : `每次練習最多 ${MAX_QUESTIONS} 題。`
-      );
+      alert(tf('notebook.sessionLimited', { max: MAX_QUESTIONS }));
     }
 
-    startQuiz(finalSelection, 'custom');
+    startQuiz(finalSelection, 'custom', customTimerEnabled, customIsTimed);
   };
 
-  const startQuiz = (selectedQuestions, mode) => {
+  const startQuiz = (selectedQuestions, mode, timerEnabled, isTimed) => {
     quizStorage.clearQuizData();
     quizStorage.saveSelectedQuestions(selectedQuestions);
     
     localStorage.setItem('quiz_mode', mode);
-    if (mode === 'timed') {
-      const timeLimit = selectedQuestions.length * 1.25 * 60 * 1000;
-      localStorage.setItem('quiz_time_limit', timeLimit.toString());
-    }
+    localStorage.setItem('quiz_timer_enabled', timerEnabled.toString());
+    localStorage.setItem('quiz_is_timed_mode', isTimed.toString());
     
     navigate('/quiz');
   };
@@ -180,7 +181,7 @@ export default function PracticeModeSelection({ questions }) {
         <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
           <div className="bg-lab-blue p-6 text-white flex justify-between items-center">
             <h2 className="text-2xl font-bold">
-              {isEnglish ? 'Update Your Topics' : '更新您的主題'}
+              {t('practiceMode.updateYourTopics')}
             </h2>
             <button
               onClick={() => setShowUpdateTopics(false)}
@@ -193,7 +194,7 @@ export default function PracticeModeSelection({ questions }) {
           <div className="p-6 space-y-6">
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-3">
-                {isEnglish ? 'Learned Up To:' : '已學習至：'}
+                {t('practiceMode.learnedUpTo')}
               </label>
               <div className="grid grid-cols-6 md:grid-cols-8 gap-2">
                 {allTopics.map((topic) => {
@@ -218,7 +219,7 @@ export default function PracticeModeSelection({ questions }) {
             {tempLearnedUpTo && learnedRangeTopics.length > 0 && (
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-3">
-                  {isEnglish ? 'Exceptions (Not Learned):' : '例外（未學習）：'}
+                  {t('practiceMode.exceptions')}
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {learnedRangeTopics.map((topic) => {
@@ -250,13 +251,13 @@ export default function PracticeModeSelection({ questions }) {
                 disabled={updating}
                 className="flex-1 py-3 bg-chemistry-green text-white rounded-xl font-bold hover:opacity-90 disabled:bg-slate-300 transition-all"
               >
-                {updating ? (isEnglish ? 'Updating...' : '更新中...') : (isEnglish ? 'Save Changes' : '儲存變更')}
+                {updating ? t('practiceMode.updating') : t('practiceMode.saveChanges')}
               </button>
               <button
                 onClick={() => setShowUpdateTopics(false)}
                 className="px-6 py-3 bg-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-300 transition-all"
               >
-                {isEnglish ? 'Cancel' : '取消'}
+                {t('common.cancel')}
               </button>
             </div>
           </div>
@@ -273,20 +274,20 @@ export default function PracticeModeSelection({ questions }) {
           <div className="bg-slate-50 p-6 border-b flex justify-between items-center">
             <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800">
               <Settings size={20} className="text-lab-blue" />
-              {isEnglish ? 'Configure Custom Session' : '自訂練習設定'}
+              {t('practiceMode.configureCustomSession')}
             </h2>
             <button
               onClick={() => setShowCustom(false)}
               className="text-sm text-slate-600 hover:text-slate-800 hover:underline font-semibold"
             >
-              ← {isEnglish ? 'Back' : '返回'}
+              ← {t('practiceMode.back')}
             </button>
           </div>
 
           <div className="p-8 space-y-8">
             <div>
               <label className="block text-sm font-black text-slate-500 uppercase tracking-widest mb-4">
-                1. {isEnglish ? 'Select Topics (Multi-choice)' : '選擇主題（可多選）'}
+                {t('practiceMode.selectTopics')}
               </label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {customTopics.map(({ name, available }) => (
@@ -313,9 +314,7 @@ export default function PracticeModeSelection({ questions }) {
               {customTopics.some(t => !t.available) && (
                 <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
                   <Lock size={12} />
-                  {isEnglish 
-                    ? 'Locked topics not yet learned. Update in Profile or click button above.' 
-                    : '鎖定的主題尚未學習。請在個人資料中更新或點擊上方按鈕。'}
+                  {t('practiceMode.lockedTopicsNotLearned')}
                 </p>
               )}
             </div>
@@ -323,7 +322,7 @@ export default function PracticeModeSelection({ questions }) {
             {selectedTopics.length > 0 && availableSubtopics.length > 0 && (
               <div className="animate-in slide-in-from-top-4">
                 <label className="block text-sm font-black text-slate-500 mb-4 uppercase tracking-widest">
-                  2. {isEnglish ? 'Focus on Subtopics (Optional)' : '選擇子主題（可選）'}
+                  {t('practiceMode.focusSubtopics')}
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {availableSubtopics.map(sub => (
@@ -345,10 +344,10 @@ export default function PracticeModeSelection({ questions }) {
 
             <div>
               <label className="block text-sm font-black text-slate-500 mb-4 uppercase tracking-widest">
-                3. {isEnglish ? 'Session Length' : '練習題數'}
+                {t('practiceMode.sessionLength')}
               </label>
               <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-                {['5', '10', '15', '20', '30', '40'].map(num => (
+                {['5', '10', '20', '36'].map(num => (
                   <button
                     key={num}
                     onClick={() => setCustomCount(num)}
@@ -362,13 +361,62 @@ export default function PracticeModeSelection({ questions }) {
               </div>
             </div>
 
+            {/* Timer Settings for Custom Mode */}
+            <div className="space-y-4">
+              <div className="bg-slate-50 rounded-xl p-4 border-2 border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Clock size={20} className="text-lab-blue" />
+                    <div>
+                      <h3 className="font-bold text-slate-800">{t('quiz.enableTimer')}</h3>
+                      <p className="text-xs text-slate-500">{t('quiz.trackTimeSpent')}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setCustomTimerEnabled(!customTimerEnabled)}
+                    className={`relative w-14 h-8 rounded-full transition-all ${
+                      customTimerEnabled ? 'bg-chemistry-green' : 'bg-slate-300'
+                    }`}
+                  >
+                    <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform ${
+                      customTimerEnabled ? 'translate-x-6' : 'translate-x-0'
+                    }`} />
+                  </button>
+                </div>
+              </div>
+
+              {customTimerEnabled && (
+                <div className="bg-amber-50 rounded-xl p-4 border-2 border-amber-200 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Zap size={20} className="text-amber-600" />
+                      <div>
+                        <h3 className="font-bold text-amber-900">{t('quiz.timedMode')}</h3>
+                        <p className="text-xs text-amber-700">{t('quiz.countdownTimer')}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setCustomIsTimed(!customIsTimed)}
+                      className={`relative w-14 h-8 rounded-full transition-all ${
+                        customIsTimed ? 'bg-amber-600' : 'bg-slate-300'
+                      }`}
+                    >
+                      <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform ${
+                        customIsTimed ? 'translate-x-6' : 'translate-x-0'
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button 
               disabled={selectedTopics.length === 0}
               onClick={handleCustomStart}
               className="w-full py-5 bg-lab-blue text-white rounded-2xl font-black text-lg shadow-lg hover:bg-blue-800 disabled:bg-slate-200 transition-all flex items-center justify-center gap-2 active:scale-95"
             >
               <Play fill="currentColor" size={18} />
-              {isEnglish ? 'GENERATE EXAM' : '開始練習'}
+              {t('practiceMode.startPractice')}
             </button>
           </div>
         </div>
@@ -381,10 +429,10 @@ export default function PracticeModeSelection({ questions }) {
     <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500">
       <div className="text-center mb-8">
         <h1 className="text-4xl font-black text-academic-charcoal mb-2">
-          {isEnglish ? 'Select Practice Mode' : '選擇練習模式'}
+          {t('practice.selectMode')}
         </h1>
         <p className="text-academic-light-slate text-lg">
-          {isEnglish ? 'Choose how you want to practice today' : '選擇您的練習方式'}
+          {t('practice.chooseHowPractice')}
         </p>
       </div>
 
@@ -395,7 +443,7 @@ export default function PracticeModeSelection({ questions }) {
             <div>
               <h3 className="font-bold text-blue-900 flex items-center gap-2">
                 <BookOpen size={16} />
-                {isEnglish ? 'Your Available Topics' : '您可用的主題'} ({availableTopics.length})
+                {t('practice.yourAvailableTopics')} ({availableTopics.length})
               </h3>
               <div className="flex flex-wrap gap-2 mt-2">
                 {availableTopics.slice(0, 8).map((topic) => (
@@ -405,7 +453,7 @@ export default function PracticeModeSelection({ questions }) {
                 ))}
                 {availableTopics.length > 8 && (
                   <span className="px-2 py-1 text-blue-700 text-xs font-bold">
-                    +{availableTopics.length - 8} more
+                    +{availableTopics.length - 8} {t('practice.more')}
                   </span>
                 )}
               </div>
@@ -414,7 +462,7 @@ export default function PracticeModeSelection({ questions }) {
               onClick={() => setShowUpdateTopics(true)}
               className="px-4 py-2 bg-lab-blue text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all whitespace-nowrap"
             >
-              {isEnglish ? 'Update Topics' : '更新主題'}
+              {t('practice.updateTopics')}
             </button>
           </div>
         </div>
@@ -424,18 +472,16 @@ export default function PracticeModeSelection({ questions }) {
             <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
             <div className="flex-1">
               <p className="text-amber-900 font-bold mb-2">
-                {isEnglish ? 'No topics configured!' : '尚未設定主題！'}
+                {t('practice.noTopicsConfigured')}
               </p>
               <p className="text-amber-800 text-sm mb-3">
-                {isEnglish 
-                  ? 'Please set which topics you\'ve learned in your Profile settings.' 
-                  : '請在個人資料設定中設定您已學習的主題。'}
+                {t('practice.pleaseSetTopics')}
               </p>
               <button
                 onClick={() => navigate('/profile')}
                 className="px-4 py-2 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 transition-all"
               >
-                {isEnglish ? 'Go to Profile' : '前往個人資料'}
+                {t('practice.goToProfile')}
               </button>
             </div>
           </div>
@@ -443,37 +489,57 @@ export default function PracticeModeSelection({ questions }) {
       )}
 
       {/* Mode Selection Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* TIMED MODE */}
         <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
           <div className="bg-red-500 p-6 text-white">
             <div className="flex items-center gap-3 mb-2">
               <Clock size={32} strokeWidth={3} />
               <h3 className="text-2xl font-black">
-                {isEnglish ? 'Timed' : '限時模式'}
+                {t('practice.timed')}
               </h3>
             </div>
             <p className="text-red-100 text-sm">
-              {isEnglish ? '1.25 min per question' : '每題 1.25 分鐘'}
+              1.25 {t('practice.perQuestion')}
             </p>
           </div>
           
           <div className="p-6 space-y-4">
             <p className="text-sm text-slate-600">
-              {isEnglish 
-                ? 'Perfect for exam simulation with a countdown timer.' 
-                : '最適合考試模擬，帶有倒數計時器。'}
+              {t('practice.perfectForExam')}
             </p>
+
+            {/* Timer Settings */}
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between p-2 bg-slate-50 rounded">
+                <span className="text-slate-700">{t('quiz.showTimer')}</span>
+                <button
+                  onClick={() => setTimedModeTimer(!timedModeTimer)}
+                  className={`w-10 h-5 rounded-full transition-all ${timedModeTimer ? 'bg-green-500' : 'bg-slate-300'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${timedModeTimer ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between p-2 bg-slate-50 rounded">
+                <span className="text-slate-700">{t('quiz.countdown')}</span>
+                <button
+                  onClick={() => setTimedModeIsTimed(!timedModeIsTimed)}
+                  className={`w-10 h-5 rounded-full transition-all ${timedModeIsTimed ? 'bg-red-500' : 'bg-slate-300'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${timedModeIsTimed ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            </div>
             
             <div>
               <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">
-                {isEnglish ? 'Questions:' : '題數：'}
+                {t('practice.questions')}
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[5, 10, 20, 40].map(num => (
+              <div className="grid grid-cols-2 gap-2">
+                {[5, 10, 20, 36].map(num => (
                   <button
                     key={num}
-                    onClick={() => handleModeSelect('timed', num)}
+                    onClick={() => handleModeSelect('timed', num, timedModeTimer, timedModeIsTimed)}
                     disabled={availableTopics.length === 0}
                     className="py-2 bg-red-50 border-2 border-red-200 text-red-700 rounded-lg font-bold hover:bg-red-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 transition-all"
                   >
@@ -491,30 +557,50 @@ export default function PracticeModeSelection({ questions }) {
             <div className="flex items-center gap-3 mb-2">
               <Infinity size={32} strokeWidth={3} />
               <h3 className="text-2xl font-black">
-                {isEnglish ? 'Marathon' : '馬拉松模式'}
+                {t('practice.marathon')}
               </h3>
             </div>
             <p className="text-purple-100 text-sm">
-              {isEnglish ? 'Unlimited time' : '無限時間'}
+              {t('practice.marathonDesc').split(' - ')[0]}
             </p>
           </div>
           
           <div className="p-6 space-y-4">
             <p className="text-sm text-slate-600">
-              {isEnglish 
-                ? 'Take your time. We\'ll track duration but no pressure!' 
-                : '慢慢來。我們會記錄時間但沒有壓力！'}
+              {t('practice.takeYourTime')}
             </p>
+
+            {/* Timer Settings */}
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between p-2 bg-slate-50 rounded">
+                <span className="text-slate-700">{t('quiz.showTimer')}</span>
+                <button
+                  onClick={() => setMarathonModeTimer(!marathonModeTimer)}
+                  className={`w-10 h-5 rounded-full transition-all ${marathonModeTimer ? 'bg-green-500' : 'bg-slate-300'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${marathonModeTimer ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between p-2 bg-slate-50 rounded">
+                <span className="text-slate-700">{t('quiz.countdown')}</span>
+                <button
+                  onClick={() => setMarathonModeIsTimed(!marathonModeIsTimed)}
+                  className={`w-10 h-5 rounded-full transition-all ${marathonModeIsTimed ? 'bg-purple-500' : 'bg-slate-300'}`}
+                >
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${marathonModeIsTimed ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            </div>
             
             <div>
               <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">
-                {isEnglish ? 'Questions:' : '題數：'}
+                {t('practice.questions')}
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[5, 10, 20, 40].map(num => (
+              <div className="grid grid-cols-2 gap-2">
+                {[5, 10, 20, 36].map(num => (
                   <button
                     key={num}
-                    onClick={() => handleModeSelect('marathon', num)}
+                    onClick={() => handleModeSelect('marathon', num, marathonModeTimer, marathonModeIsTimed)}
                     disabled={availableTopics.length === 0}
                     className="py-2 bg-purple-50 border-2 border-purple-200 text-purple-700 rounded-lg font-bold hover:bg-purple-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 transition-all"
                   >
@@ -532,19 +618,17 @@ export default function PracticeModeSelection({ questions }) {
             <div className="flex items-center gap-3 mb-2">
               <Settings size={32} strokeWidth={3} />
               <h3 className="text-2xl font-black">
-                {isEnglish ? 'Custom' : '自訂模式'}
+                {t('practice.custom')}
               </h3>
             </div>
             <p className="text-blue-100 text-sm">
-              {isEnglish ? 'Full control' : '完全控制'}
+              {t('practice.customDesc').split(' - ')[0]}
             </p>
           </div>
           
           <div className="p-6 space-y-4">
             <p className="text-sm text-slate-600">
-              {isEnglish 
-                ? 'Choose specific topics, subtopics, and question count.' 
-                : '選擇特定主題、子主題和題數。'}
+              {t('practice.chooseSpecificTopics')}
             </p>
             
             <button
@@ -552,7 +636,35 @@ export default function PracticeModeSelection({ questions }) {
               disabled={availableTopics.length === 0}
               className="w-full py-3 bg-lab-blue text-white rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 transition-all"
             >
-              {isEnglish ? 'Configure' : '設定'}
+              {t('practice.configure')}
+            </button>
+          </div>
+        </div>
+
+        {/* MISTAKE NOTEBOOK MODE */}
+        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
+          <div className="bg-rose-500 p-6 text-white">
+            <div className="flex items-center gap-3 mb-2">
+              <Heart size={32} strokeWidth={3} />
+              <h3 className="text-2xl font-black">
+                {t('notebook.title')}
+              </h3>
+            </div>
+            <p className="text-rose-100 text-sm">
+              {t('notebook.reviewMaster')}
+            </p>
+          </div>
+          
+          <div className="p-6 space-y-4">
+            <p className="text-sm text-slate-600">
+              {t('notebook.practiceUntilMaster')}
+            </p>
+            
+            <button
+              onClick={() => handleModeSelect('mistakes', 0)}
+              className="w-full py-3 bg-rose-500 text-white rounded-xl font-bold hover:bg-rose-600 transition-all"
+            >
+              {t('notebook.review')}
             </button>
           </div>
         </div>

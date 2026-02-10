@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { purchaseItem, equipItem } from '../services/tokenService';
 import { STORE_ITEMS, RARITY_COLORS, RARITY_BORDER, RARITY_LABELS } from '../utils/storeItems';
 import { ArrowLeft, ShoppingBag, Sparkles, Check, Lock, Zap } from 'lucide-react';
@@ -12,6 +13,7 @@ import { ArrowLeft, ShoppingBag, Sparkles, Check, Lock, Zap } from 'lucide-react
 export default function ChemStore() {
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
+  const { t } = useLanguage();
   const [selectedCategory, setSelectedCategory] = useState('profilePics');
   const [purchasing, setPurchasing] = useState(null);
   const [notification, setNotification] = useState(null);
@@ -31,7 +33,7 @@ export default function ChemStore() {
     if (purchasing) return;
     
     if (tokens < item.price) {
-      showNotification('Not enough tokens! 💸', 'error');
+      showNotification(t('store.notEnoughTokens'), 'error');
       return;
     }
 
@@ -41,12 +43,12 @@ export default function ChemStore() {
       const result = await purchaseItem(currentUser.uid, item.id, item.price);
       
       if (result.success) {
-        showNotification(`Purchased ${item.name}! 🎉`, 'success');
+        showNotification(t('store.purchased').replace('{name}', item.name), 'success');
       } else {
-        showNotification(result.error || 'Purchase failed', 'error');
+        showNotification(result.error || t('store.purchaseFailed'), 'error');
       }
     } catch (error) {
-      showNotification('Purchase failed. Please try again.', 'error');
+      showNotification(t('store.pleaseTryAgain'), 'error');
     }
 
     setPurchasing(null);
@@ -59,19 +61,19 @@ export default function ChemStore() {
       const result = await equipItem(currentUser.uid, item.id, slot);
       
       if (result.success) {
-        showNotification(`Equipped ${item.name}! ✨`, 'success');
+        showNotification(t('store.equipped').replace('{name}', item.name), 'success');
       } else {
-        showNotification(result.error || 'Failed to equip', 'error');
+        showNotification(result.error || t('store.failedToEquip'), 'error');
       }
     } catch (error) {
-      showNotification('Failed to equip item', 'error');
+      showNotification(t('store.failedToEquipItem'), 'error');
     }
   };
 
   const categories = [
-    { key: 'profilePics', label: 'Profile Pics', icon: '🎭' },
-    { key: 'badges', label: 'Badges', icon: '🏅' },
-    { key: 'themes', label: 'Themes', icon: '🎨' }
+    { key: 'profilePics', label: t('store.profilePics'), icon: '🎭' },
+    { key: 'badges', label: t('store.badges'), icon: '🏅' },
+    { key: 'themes', label: t('store.themes'), icon: '🎨' }
   ];
 
   const currentItems = STORE_ITEMS[selectedCategory] || [];
@@ -110,16 +112,16 @@ export default function ChemStore() {
               <div>
                 <h1 className="text-3xl font-black flex items-center gap-3 mb-2">
                   <ShoppingBag size={32} strokeWidth={3} />
-                  ChemStore
+                  {t('store.title')}
                 </h1>
                 <p className="text-white/90 font-semibold">
-                  Unlock exclusive items with your tokens
+                  {t('store.subtitle')}
                 </p>
               </div>
               
               {/* Token Balance */}
               <div className="bg-white/20 backdrop-blur-sm rounded-2xl px-6 py-4 border-2 border-white/40">
-                <div className="text-sm font-bold text-white/80 mb-1">Your Balance</div>
+                <div className="text-sm font-bold text-white/80 mb-1">{t('store.yourBalance')}</div>
                 <div className="text-4xl font-black flex items-center gap-2">
                   <Zap size={32} className="text-yellow-300" fill="currentColor" />
                   {tokens}
@@ -206,7 +208,7 @@ export default function ChemStore() {
                             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-bold cursor-default"
                           >
                             <Check size={16} />
-                            Equipped
+                            {t('store.equipped')}
                           </button>
                         ) : (
                           <button
@@ -214,7 +216,7 @@ export default function ChemStore() {
                             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg font-bold hover:opacity-90 transition-all"
                           >
                             <Sparkles size={16} />
-                            Equip
+                            {t('store.equip')}
                           </button>
                         )
                       ) : (
@@ -230,17 +232,17 @@ export default function ChemStore() {
                           {purchasing === item.id ? (
                             <>
                               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                              Buying...
+                              {t('store.buying')}
                             </>
                           ) : !canAfford && !isFree ? (
                             <>
                               <Lock size={16} />
-                              Locked
+                              {t('store.locked')}
                             </>
                           ) : (
                             <>
                               <ShoppingBag size={16} />
-                              {isFree ? 'Claim' : 'Buy'}
+                              {isFree ? t('store.claim') : t('store.buy')}
                             </>
                           )}
                         </button>
@@ -254,7 +256,7 @@ export default function ChemStore() {
 
           {currentItems.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-slate-400 text-lg">Coming soon! 🚀</p>
+              <p className="text-slate-400 text-lg">{t('store.comingSoon')}</p>
             </div>
           )}
         </div>
@@ -264,32 +266,32 @@ export default function ChemStore() {
       <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-xl p-6">
         <h3 className="font-bold text-blue-900 mb-3 flex items-center gap-2">
           <Sparkles size={18} />
-          How to Earn Tokens
+          {t('store.howToEarnTokens')}
         </h3>
         <ul className="space-y-2 text-sm text-blue-800">
           <li className="flex items-start gap-2">
             <span className="text-lg">⭐</span>
-            <span><strong>Perfect MCQ Score (100%):</strong> 10 tokens</span>
+            <span><strong>{t('store.perfectScore')}</strong> {t('store.perfectScoreTokens')}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-lg">🎯</span>
-            <span><strong>Excellent Score (80%+):</strong> 5 tokens</span>
+            <span><strong>{t('store.excellentScore')}</strong> {t('store.excellentScoreTokens')}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-lg">👍</span>
-            <span><strong>Good Score (60%+):</strong> 2 tokens</span>
+            <span><strong>{t('store.goodScore')}</strong> {t('store.goodScoreTokens')}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-lg">📚</span>
-            <span><strong>Clear Mistake:</strong> 1 token (once per question per day)</span>
+            <span><strong>{t('store.clearMistake')}</strong> {t('store.clearMistakeTokens')}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-lg">🏆</span>
-            <span><strong>Leaderboard Gold:</strong> 60 tokens (weekly) / 10 tokens (daily)</span>
+            <span><strong>{t('store.leaderboardGold')}</strong> {t('store.leaderboardTokens')}</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-lg">🔥</span>
-            <span><strong>Study Streaks:</strong> 15 tokens (7 days) / 50 tokens (30 days)</span>
+            <span><strong>{t('store.studyStreaks')}</strong> {t('store.studyStreaksTokens')}</span>
           </li>
         </ul>
       </div>

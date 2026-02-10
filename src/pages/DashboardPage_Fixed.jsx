@@ -7,17 +7,18 @@ import AttemptDetailModal from '../components/AttemptDetailModal';
 import {
   Trophy, Clock, Target, TrendingUp, Calendar, LogOut,
   Play, AlertCircle, RefreshCw, Flame, BookOpen, MessageSquare,
-  ChevronRight,
+  ChevronRight, X,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const { currentUser, userProfile, logout } = useAuth();
-  const { t, isEnglish } = useLanguage();
+  const { t } = useLanguage();
   const [attempts, setAttempts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [studyStreak, setStudyStreak] = useState(0);
   const [selectedAttempt, setSelectedAttempt] = useState(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -61,7 +62,12 @@ export default function DashboardPage() {
   }
 
   async function handleLogout() {
-    try { await logout(); navigate('/login'); } catch (e) { console.error(e); }
+    try { 
+      await logout(); 
+      navigate('/login'); 
+    } catch (e) { 
+      console.error(e); 
+    }
   }
 
   const formatDate = (iso) =>
@@ -83,7 +89,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-center h-screen bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto mb-4"></div>
-          <p className="text-slate-700 font-semibold">Loading dashboard...</p>
+          <p className="text-slate-700 font-semibold">{t('dashboard.loadingDashboard')}</p>
         </div>
       </div>
     );
@@ -100,16 +106,16 @@ export default function DashboardPage() {
         <div className="flex justify-between items-start mb-6">
           <div>
             <h1 className="text-4xl font-black text-slate-800 mb-2 leading-tight">
-              {isEnglish ? 'Welcome back' : '歡迎回來'}, {currentUser?.displayName}!
+              {t('dashboard.welcomeBack')}, {currentUser?.displayName}!
             </h1>
             <p className="text-lg text-slate-600 font-medium">{currentUser?.email}</p>
           </div>
           <button
-            onClick={handleLogout}
+            onClick={() => setShowLogoutConfirm(true)}
             className="flex items-center gap-2 px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold transition-all shadow-md"
           >
             <LogOut size={18} />
-            {isEnglish ? 'Logout' : '登出'}
+            {t('dashboard.logout')}
           </button>
         </div>
 
@@ -119,7 +125,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mb-2">
               <Trophy className="text-amber-700" size={20} />
               <span className="text-xs font-bold text-amber-800 uppercase tracking-wide">
-                {isEnglish ? 'Total Attempts' : '總測驗次數'}
+                {t('dashboard.totalAttempts')}
               </span>
             </div>
             <div className="text-4xl font-black text-amber-900">{userProfile?.totalAttempts || 0}</div>
@@ -128,7 +134,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mb-2">
               <Target className="text-emerald-700" size={20} />
               <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
-                {isEnglish ? 'Overall Accuracy' : '整體準確率'}
+                {t('dashboard.overallAccuracy')}
               </span>
             </div>
             <div className="text-4xl font-black text-emerald-900">{overallAccuracy}%</div>
@@ -137,7 +143,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp className="text-purple-700" size={20} />
               <span className="text-xs font-bold text-purple-800 uppercase tracking-wide">
-                {isEnglish ? 'Questions Solved' : '已完成題目'}
+                {t('dashboard.questionsSolved')}
               </span>
             </div>
             <div className="text-4xl font-black text-purple-900">{userProfile?.totalQuestions || 0}</div>
@@ -146,7 +152,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mb-2">
               <Calendar className="text-blue-700" size={20} />
               <span className="text-xs font-bold text-blue-800 uppercase tracking-wide">
-                {isEnglish ? 'Correct Answers' : '正確答案'}
+                {t('dashboard.correctAnswers')}
               </span>
             </div>
             <div className="text-4xl font-black text-blue-900">{userProfile?.totalCorrect || 0}</div>
@@ -155,12 +161,12 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 mb-2">
               <Flame className="text-orange-700" size={20} />
               <span className="text-xs font-bold text-orange-800 uppercase tracking-wide">
-                {isEnglish ? 'Study Streak' : '連續學習天數'}
+                {t('dashboard.studyStreak')}
               </span>
             </div>
             <div className="text-4xl font-black text-orange-900 flex items-baseline gap-2">
               {studyStreak}
-              <span className="text-base font-bold text-orange-700">{isEnglish ? 'days' : '天'}</span>
+              <span className="text-base font-bold text-orange-700">{t('dashboard.days')}</span>
             </div>
           </div>
         </div>
@@ -173,21 +179,21 @@ export default function DashboardPage() {
           className="bg-gradient-to-r from-indigo-400 to-indigo-500 text-white rounded-xl p-6 font-bold text-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 active:scale-95"
         >
           <Play fill="currentColor" size={24} />
-          {isEnglish ? 'Start New Quiz' : '開始新測驗'}
+          {t('dashboard.startNewQuiz')}
         </button>
         <button
           onClick={() => navigate('/forum')}
           className="bg-gradient-to-r from-purple-400 to-purple-500 text-white rounded-xl p-6 font-bold text-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 active:scale-95"
         >
           <MessageSquare size={24} />
-          {isEnglish ? 'Browse Forum' : '瀏覽討論區'}
+          {t('dashboard.browseForm')}
         </button>
         <button
           onClick={() => navigate('/notebook')}
           className="bg-gradient-to-r from-rose-400 to-rose-500 text-white rounded-xl p-6 font-bold text-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 active:scale-95"
         >
           <BookOpen size={24} />
-          {isEnglish ? 'Mistake Notebook' : '錯題簿'}
+          {t('dashboard.mistakeNotebook')}
         </button>
       </div>
 
@@ -198,7 +204,7 @@ export default function DashboardPage() {
             <AlertCircle className="text-red-600 flex-shrink-0 mt-1" size={20} />
             <div className="flex-1">
               <h3 className="font-bold text-red-900 mb-1">
-                {isEnglish ? 'Error Loading Attempts' : '載入記錄失敗'}
+                {t('dashboard.errorLoadingAttempts')}
               </h3>
               <p className="text-sm text-red-800 mb-3">{error}</p>
               <button
@@ -206,7 +212,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-all"
               >
                 <RefreshCw size={16} />
-                {isEnglish ? 'Retry' : '重試'}
+                {t('dashboard.retry')}
               </button>
             </div>
           </div>
@@ -218,18 +224,18 @@ export default function DashboardPage() {
         <div className="bg-slate-50 p-5 border-b-2 border-indigo-100 flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <Clock className="text-indigo-600" size={24} />
-            {isEnglish ? 'Recent Attempts' : '最近記錄'}
+            {t('dashboard.recentAttempts')}
           </h2>
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-400 italic hidden sm:block">
-              {isEnglish ? 'Click any row to see full analysis' : '點擊記錄查看完整分析'}
+              {t('dashboard.clickRowFullAnalysis')}
             </span>
             <button
               onClick={loadAttempts}
               className="text-sm text-indigo-600 hover:text-indigo-700 font-bold hover:underline flex items-center gap-1"
             >
               <RefreshCw size={14} />
-              {isEnglish ? 'Refresh' : '刷新'}
+              {t('dashboard.refresh')}
             </button>
           </div>
         </div>
@@ -239,16 +245,16 @@ export default function DashboardPage() {
             <div className="text-center py-12">
               <AlertCircle className="w-16 h-16 text-slate-300 mx-auto mb-4" />
               <p className="text-slate-600 text-lg mb-2 font-semibold">
-                {isEnglish ? 'No attempts yet!' : '尚無記錄！'}
+                {t('dashboard.noAttempts')}
               </p>
               <p className="text-slate-500 text-sm mb-4">
-                {isEnglish ? 'Complete a quiz to see your results here' : '完成測驗後記錄將顯示於此'}
+                {t('dashboard.completeQuizSeeResults')}
               </p>
               <button
                 onClick={() => navigate('/')}
                 className="px-6 py-3 bg-indigo-500 text-white rounded-xl font-bold hover:bg-indigo-600 transition-all shadow-md"
               >
-                {isEnglish ? 'Take Your First Quiz' : '開始第一個測驗'}
+                {t('dashboard.takeFirstQuiz')}
               </button>
             </div>
           ) : (
@@ -271,7 +277,7 @@ export default function DashboardPage() {
                     </div>
                     <div>
                       <div className="font-bold text-lg text-slate-800">
-                        {attempt.correctAnswers}/{attempt.totalQuestions} {isEnglish ? 'correct' : '正確'}
+                        {attempt.correctAnswers}/{attempt.totalQuestions} {t('dashboard.correct')}
                       </div>
                       <div className="text-sm text-slate-600 font-medium">{formatDate(attempt.timestamp)}</div>
                       {attempt.topics && (
@@ -285,7 +291,7 @@ export default function DashboardPage() {
                     {attempt.timeSpent && (
                       <div className="text-right hidden sm:block">
                         <div className="text-sm font-bold text-slate-700">⏱️ {formatTime(attempt.timeSpent)}</div>
-                        <div className="text-xs text-slate-500">{isEnglish ? 'Time spent' : '用時'}</div>
+                        <div className="text-xs text-slate-500">{t('dashboard.timeSpent')}</div>
                       </div>
                     )}
                     <ChevronRight size={20} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
@@ -303,6 +309,49 @@ export default function DashboardPage() {
           attempt={selectedAttempt}
           onClose={() => setSelectedAttempt(null)}
         />
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full animate-in fade-in slide-in-from-bottom duration-200">
+            <div className="p-6 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
+                  <LogOut className="text-rose-600" size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">
+                    {t('dashboard.confirmLogout')}
+                  </h3>
+                  <p className="text-sm text-slate-500">
+                    {t('dashboard.areYouSureLogout')}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-slate-600 mb-6">
+                {t('dashboard.needSignInAgain')}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all"
+                >
+                  {t('dashboard.cancel')}
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex-1 px-4 py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2"
+                >
+                  <LogOut size={18} />
+                  {t('dashboard.logout')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -23,7 +23,8 @@ function LevelBadge({ level, rank }) {
 }
 
 // ── Streak badge ─────────────────────────────────────────────────────────────
-function StreakBadge({ streak, rank, isEnglish }) {
+function StreakBadge({ streak, rank }) {
+  const { t } = useLanguage();
   if (!streak || streak < 1) return null;
   const isTopThree = rank <= 3;
   return (
@@ -31,7 +32,7 @@ function StreakBadge({ streak, rank, isEnglish }) {
       isTopThree ? 'bg-white/20 text-white border border-white/40' : 'bg-orange-100 text-orange-700 border border-orange-200'
     }`}>
       <Flame size={10} />
-      {streak} {isEnglish ? 'd' : '天'}
+      {streak} {t('dashboard.days').charAt(0)}
     </span>
   );
 }
@@ -41,7 +42,7 @@ export default function LeaderboardPage() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
   const { currentUser } = useAuth();
-  const { isEnglish } = useLanguage();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   useEffect(() => { loadLeaderboard(); }, [activeTab]);
@@ -82,30 +83,24 @@ export default function LeaderboardPage() {
     {
       value: 'weekly',
       icon: <Calendar size={16} />,
-      label: isEnglish ? 'This Week' : '本週',
+      label: t('leaderboard.thisWeek'),
     },
     {
       value: 'monthly',
       icon: <TrendingUp size={16} />,
-      label: isEnglish ? 'This Month' : '本月',
+      label: t('leaderboard.thisMonth'),
     },
     {
       value: 'alltime',
       icon: <Trophy size={16} />,
-      label: isEnglish ? 'All Time' : '歷史總榜',
+      label: t('leaderboard.allTime'),
     },
   ];
 
   const periodInfo = {
-    weekly: isEnglish
-      ? 'Average score from all attempts in the last 7 days'
-      : '過去 7 天所有測驗的平均分數',
-    monthly: isEnglish
-      ? 'Average score from all attempts in the last 30 days'
-      : '過去 30 天所有測驗的平均分數',
-    alltime: isEnglish
-      ? 'Overall accuracy across all attempts ever'
-      : '所有測驗的整體準確率',
+    weekly: t('leaderboard.averageScoreLast7'),
+    monthly: t('leaderboard.averageScoreLast30'),
+    alltime: t('leaderboard.overallAccuracyAllTime'),
   };
 
   return (
@@ -121,10 +116,10 @@ export default function LeaderboardPage() {
         <div className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-2xl shadow-xl p-6 text-white">
           <h1 className="text-3xl font-black flex items-center gap-3">
             <Trophy size={32} />
-            {isEnglish ? 'Leaderboard' : '排行榜'}
+            {t('leaderboard.title')}
           </h1>
           <p className="text-orange-100 mt-1">
-            {isEnglish ? 'See how you rank against other students' : '看看您在其他學生中的排名'}
+            {t('leaderboard.seeHowYouRank')}
           </p>
         </div>
       </div>
@@ -158,10 +153,10 @@ export default function LeaderboardPage() {
             <div className="text-center py-16">
               <Trophy className="w-16 h-16 text-slate-200 mx-auto mb-4" />
               <p className="text-slate-400 text-lg font-semibold">
-                {isEnglish ? 'No data yet' : '暫無數據'}
+                {t('leaderboard.noDataYet')}
               </p>
               <p className="text-slate-500 text-sm mt-2">
-                {isEnglish ? 'Be the first to complete a quiz!' : '成為第一個完成測驗的人！'}
+                {t('leaderboard.beFirstComplete')}
               </p>
             </div>
           ) : (
@@ -192,16 +187,16 @@ export default function LeaderboardPage() {
                         </span>
                         {isCurrentUser && (
                           <span className="text-xs bg-chemistry-green text-white px-2 py-0.5 rounded-full font-bold flex-shrink-0">
-                            {isEnglish ? 'You' : '您'}
+                            {t('leaderboard.you')}
                           </span>
                         )}
                         {entry.level && <LevelBadge level={entry.level} rank={rank} />}
-                        {entry.streak > 0 && <StreakBadge streak={entry.streak} rank={rank} isEnglish={isEnglish} />}
+                        {entry.streak > 0 && <StreakBadge streak={entry.streak} rank={rank} />}
                       </div>
                       <div className={`text-xs ${isTopThree ? 'text-white/75' : 'text-slate-500'}`}>
                         {activeTab === 'alltime'
-                          ? `${entry.totalAttempts} ${isEnglish ? 'attempts' : '次'} · ${entry.totalQuestions} ${isEnglish ? 'questions' : '題'}`
-                          : `${entry.attemptCount} ${isEnglish ? 'attempts' : '次'} · ${entry.totalQuestions} ${isEnglish ? 'questions' : '題'}`
+                          ? `${entry.totalAttempts} ${t('leaderboard.attempts')} · ${entry.totalQuestions} ${t('leaderboard.questions')}`
+                          : `${entry.attemptCount} ${t('leaderboard.attempts')} · ${entry.totalQuestions} ${t('leaderboard.questions')}`
                         }
                       </div>
                     </div>
@@ -226,17 +221,17 @@ export default function LeaderboardPage() {
       {/* Info box */}
       <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 text-sm text-blue-800">
         <p className="font-semibold mb-2">
-          📊 {isEnglish ? 'How rankings work:' : '排名規則：'}
+          📊 {t('leaderboard.howRankingsWork')}
         </p>
         <p className="text-blue-700">{periodInfo[activeTab]}</p>
         <div className="mt-3 flex flex-wrap gap-4 text-xs text-blue-700">
           <span className="flex items-center gap-1">
             <GraduationCap size={12} />
-            {isEnglish ? 'S4/S5/S6 = form level' : 'S4/S5/S6 = 年級'}
+            {t('leaderboard.formLevel')}
           </span>
           <span className="flex items-center gap-1">
             <Flame size={12} />
-            {isEnglish ? 'Flame = consecutive study days' : '火焰 = 連續學習天數'}
+            {t('leaderboard.flameStreak')}
           </span>
         </div>
       </div>

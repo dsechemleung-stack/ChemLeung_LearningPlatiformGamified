@@ -16,7 +16,8 @@ const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMC
 const CATEGORIES = ['general', 'question', 'announcement'];
 
 // ── Notification Panel ────────────────────────────────────────────────────────
-function NotificationPanel({ userId, isEnglish, onClose }) {
+function NotificationPanel({ userId, onClose }) {
+  const { t } = useLanguage();
   const [notifs, setNotifs] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,20 +38,20 @@ function NotificationPanel({ userId, isEnglish, onClose }) {
     await forumService.markNotificationRead(id);
   };
 
-  const typeLabel = (n, en) => {
+  const typeLabel = (n) => {
     switch (n.type) {
-      case 'like': return en ? `liked your comment` : '點讚了您的評論';
-      case 'reply': return en ? `replied to your post` : '回覆了您的帖子';
-      case 'post_like': return en ? `liked your post` : '點讚了您的帖子';
-      case 'reply_like': return en ? `liked your reply` : '點讚了您的回覆';
-      default: return en ? 'interacted with your content' : '互動了您的內容';
+      case 'like': return t('forum.likedYourComment');
+      case 'reply': return t('forum.repliedToPost');
+      case 'post_like': return t('forum.likedYourPost');
+      case 'reply_like': return t('forum.likedYourReply');
+      default: return 'interacted with your content';
     }
   };
 
   const formatAgo = (iso) => {
     const diffMs = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return isEnglish ? 'Just now' : '剛剛';
+    if (mins < 1) return t('forum.justNow');
     if (mins < 60) return `${mins}m`;
     const hrs = Math.floor(mins / 60);
     if (hrs < 24) return `${hrs}h`;
@@ -64,13 +65,13 @@ function NotificationPanel({ userId, isEnglish, onClose }) {
       <div className="p-4 border-b flex items-center justify-between bg-slate-50">
         <h3 className="font-bold text-slate-800 flex items-center gap-2">
           <Bell size={18} />
-          {isEnglish ? 'Notifications' : '通知'}
+          {t('forum.notifications')}
           {unread > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5">{unread}</span>}
         </h3>
         <div className="flex items-center gap-2">
           {unread > 0 && (
             <button onClick={handleMarkAllRead} className="text-xs text-lab-blue hover:underline font-semibold">
-              {isEnglish ? 'Mark all read' : '全部已讀'}
+              {t('forum.markAllRead')}
             </button>
           )}
           <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded"><X size={16} /></button>
@@ -81,7 +82,7 @@ function NotificationPanel({ userId, isEnglish, onClose }) {
         {loading ? (
           <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-lab-blue" /></div>
         ) : notifs.length === 0 ? (
-          <div className="text-center py-10 text-slate-400 text-sm">{isEnglish ? 'No notifications yet' : '暫無通知'}</div>
+          <div className="text-center py-10 text-slate-400 text-sm">{t('forum.noNotificationsYet')}</div>
         ) : (
           notifs.map(n => (
             <div key={n.id} onClick={() => handleMarkRead(n.id)}
@@ -90,7 +91,7 @@ function NotificationPanel({ userId, isEnglish, onClose }) {
                 <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-lab-blue' : 'bg-transparent'}`} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-slate-800 font-medium leading-snug">
-                    <span className="font-bold">Someone</span> {typeLabel(n, isEnglish)}
+                    <span className="font-bold">Someone</span> {typeLabel(n)}
                   </p>
                   {n.previewText && (
                     <p className="text-xs text-slate-500 mt-1 truncate">"{n.previewText}"</p>
@@ -110,7 +111,8 @@ function NotificationPanel({ userId, isEnglish, onClose }) {
 }
 
 // ── General Forum Post Detail ─────────────────────────────────────────────────
-function PostDetail({ postId, currentUser, isEnglish, onBack }) {
+function PostDetail({ postId, currentUser, onBack }) {
+  const { t } = useLanguage();
   const [post, setPost] = useState(null);
   const [replies, setReplies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -151,13 +153,13 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
       await forumService.updatePost(postId, currentUser.uid, editText, editTitle || undefined);
       setEditingId(null); await loadAll();
     } catch (e) {
-      if (e.message === 'EDIT_EXPIRED') alert(isEnglish ? 'Edit window expired (15 min).' : '編輯時間已過（15分鐘）。');
+      if (e.message === 'EDIT_EXPIRED') alert(t('forum.editExpired'));
       else alert(e.message);
     }
   }
 
   async function handleDeletePost() {
-    if (!window.confirm(isEnglish ? 'Delete this post?' : '刪除此帖子？')) return;
+    if (!window.confirm(t('forum.deletePost'))) return;
     await forumService.deletePost(postId);
     onBack();
   }
@@ -167,13 +169,13 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
       await forumService.updateReply(replyId, editText);
       setEditingId(null); await loadAll();
     } catch (e) {
-      if (e.message === 'EDIT_EXPIRED') alert(isEnglish ? 'Edit window expired.' : '編輯時間已過。');
+      if (e.message === 'EDIT_EXPIRED') alert(t('forum.editExpired'));
       else alert(e.message);
     }
   }
 
   async function handleDeleteReply(replyId) {
-    if (!window.confirm(isEnglish ? 'Delete this reply?' : '刪除此回覆？')) return;
+    if (!window.confirm(t('forum.deleteReply'))) return;
     await forumService.deleteReply(replyId); await loadAll();
   }
 
@@ -190,21 +192,21 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
   const formatDate = (iso) => {
     const d = new Date(iso), now = new Date();
     const mins = Math.floor((now - d) / 60000);
-    if (mins < 1) return isEnglish ? 'Just now' : '剛剛';
-    if (mins < 60) return `${mins} ${isEnglish ? 'min ago' : '分鐘前'}`;
-    if (mins < 1440) return `${Math.floor(mins / 60)} ${isEnglish ? 'hr ago' : '小時前'}`;
+    if (mins < 1) return t('forum.justNow');
+    if (mins < 60) return `${mins} min ago`;
+    if (mins < 1440) return `${Math.floor(mins / 60)} hr ago`;
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   const categoryColor = { general: 'bg-blue-100 text-blue-700', question: 'bg-amber-100 text-amber-700', announcement: 'bg-purple-100 text-purple-700' };
 
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lab-blue" /></div>;
-  if (!post) return <div className="text-center py-12 text-slate-400">{isEnglish ? 'Post not found.' : '帖子不存在。'}</div>;
+  if (!post) return <div className="text-center py-12 text-slate-400">Post not found.</div>;
 
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-lab-blue transition-colors">
-        <ChevronLeft size={18} /> {isEnglish ? 'Back to forum' : '返回討論區'}
+        <ChevronLeft size={18} /> {t('forum.backToForum')}
       </button>
 
       {/* Post */}
@@ -216,7 +218,7 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
                 <span className={`text-xs font-bold px-2 py-1 rounded-full ${categoryColor[post.category] || categoryColor.general}`}>
                   {post.category?.toUpperCase()}
                 </span>
-                {post.edited && <span className="text-xs text-slate-400 italic">({isEnglish ? 'edited' : '已編輯'})</span>}
+                {post.edited && <span className="text-xs text-slate-400 italic">({t('forum.edited')})</span>}
               </div>
               {editingId === 'post' ? (
                 <div className="space-y-2">
@@ -225,8 +227,8 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
                   <textarea value={editText} onChange={e => setEditText(e.target.value)} rows="4"
                     className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg outline-none focus:border-lab-blue resize-none" />
                   <div className="flex gap-2">
-                    <button onClick={handleEditPost} className="px-4 py-2 bg-lab-blue text-white rounded-lg font-bold text-sm">{isEnglish ? 'Save' : '儲存'}</button>
-                    <button onClick={() => setEditingId(null)} className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold text-sm">{isEnglish ? 'Cancel' : '取消'}</button>
+                    <button onClick={handleEditPost} className="px-4 py-2 bg-lab-blue text-white rounded-lg font-bold text-sm">{t('forum.save')}</button>
+                    <button onClick={() => setEditingId(null)} className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold text-sm">{t('forum.cancel')}</button>
                   </div>
                 </div>
               ) : (
@@ -268,7 +270,7 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
 
       {/* Replies */}
       <div className="space-y-3">
-        <h3 className="font-bold text-slate-700">{replies.length} {isEnglish ? 'Replies' : '則回覆'}</h3>
+        <h3 className="font-bold text-slate-700">{replies.length} {t('forum.replies')}</h3>
         {replies.map(reply => {
           const isOwner = currentUser && reply.userId === currentUser.uid;
           return (
@@ -281,7 +283,7 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
                   <div>
                     <span className="font-bold text-slate-800 text-sm">{reply.userDisplayName}</span>
                     <span className="text-xs text-slate-400 ml-2">{formatDate(reply.createdAt)}</span>
-                    {reply.edited && <span className="text-xs text-slate-400 italic ml-1">({isEnglish ? 'edited' : '已編輯'})</span>}
+                    {reply.edited && <span className="text-xs text-slate-400 italic ml-1">({t('forum.edited')})</span>}
                   </div>
                 </div>
                 {isOwner && (
@@ -301,8 +303,8 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
                   <textarea value={editText} onChange={e => setEditText(e.target.value)} rows="3"
                     className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg outline-none focus:border-lab-blue resize-none text-sm" />
                   <div className="flex gap-2">
-                    <button onClick={() => handleEditReply(reply.id)} className="px-3 py-1.5 bg-lab-blue text-white rounded-lg font-bold text-xs">{isEnglish ? 'Save' : '儲存'}</button>
-                    <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg font-bold text-xs">{isEnglish ? 'Cancel' : '取消'}</button>
+                    <button onClick={() => handleEditReply(reply.id)} className="px-3 py-1.5 bg-lab-blue text-white rounded-lg font-bold text-xs">{t('forum.save')}</button>
+                    <button onClick={() => setEditingId(null)} className="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg font-bold text-xs">{t('forum.cancel')}</button>
                   </div>
                 </div>
               ) : (
@@ -329,13 +331,13 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
             </div>
             <div className="flex-1">
               <textarea value={newReply} onChange={e => setNewReply(e.target.value)} rows="3"
-                placeholder={isEnglish ? 'Write a reply...' : '撰寫回覆...'}
+                placeholder={t('forum.writeReply')}
                 className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg outline-none focus:border-lab-blue resize-none text-sm" />
               <div className="flex justify-end mt-2">
                 <button onClick={handleReply} disabled={!newReply.trim() || submitting}
                   className="flex items-center gap-2 px-4 py-2 bg-lab-blue text-white rounded-lg font-bold text-sm hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all">
                   {submitting ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : <Send size={14} />}
-                  {isEnglish ? 'Reply' : '回覆'}
+                  {t('forum.reply')}
                 </button>
               </div>
             </div>
@@ -343,7 +345,7 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
         </div>
       ) : (
         <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 text-sm font-semibold text-amber-800">
-          {isEnglish ? 'Please log in to reply.' : '請登入以回覆。'}
+          {t('forum.pleaseLoginReply')}
         </div>
       )}
     </div>
@@ -351,7 +353,8 @@ function PostDetail({ postId, currentUser, isEnglish, onBack }) {
 }
 
 // ── New Post Modal ────────────────────────────────────────────────────────────
-function NewPostModal({ currentUser, isEnglish, onClose, onCreated }) {
+function NewPostModal({ currentUser, onClose, onCreated }) {
+  const { t } = useLanguage();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
@@ -373,12 +376,12 @@ function NewPostModal({ currentUser, isEnglish, onClose, onCreated }) {
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
         <div className="p-6 border-b flex items-center justify-between">
-          <h2 className="text-xl font-black text-slate-800">{isEnglish ? 'Create New Post' : '建立新帖子'}</h2>
+          <h2 className="text-xl font-black text-slate-800">{t('forum.createNewPost')}</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X size={20} /></button>
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-600 mb-2">{isEnglish ? 'Category' : '類別'}</label>
+            <label className="block text-sm font-bold text-slate-600 mb-2">{t('forum.category')}</label>
             <div className="flex gap-2">
               {CATEGORIES.map(cat => (
                 <button key={cat} onClick={() => setCategory(cat)}
@@ -389,26 +392,26 @@ function NewPostModal({ currentUser, isEnglish, onClose, onCreated }) {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-600 mb-2">{isEnglish ? 'Title' : '標題'}</label>
+            <label className="block text-sm font-bold text-slate-600 mb-2">{t('forum.title')}</label>
             <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120}
-              placeholder={isEnglish ? 'Enter a clear, descriptive title' : '輸入清晰的標題'}
+              placeholder={t('forum.enterClearTitle')}
               className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg outline-none focus:border-lab-blue font-semibold" />
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-600 mb-2">{isEnglish ? 'Content' : '內容'}</label>
+            <label className="block text-sm font-bold text-slate-600 mb-2">{t('forum.content')}</label>
             <textarea value={content} onChange={e => setContent(e.target.value)} rows="6"
-              placeholder={isEnglish ? 'Share your thoughts, question, or announcement...' : '分享您的想法、問題或公告...'}
+              placeholder={t('forum.shareThoughts')}
               className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg outline-none focus:border-lab-blue resize-none" />
           </div>
         </div>
         <div className="p-6 border-t flex gap-3 justify-end">
           <button onClick={onClose} className="px-6 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold hover:bg-slate-300 transition-all">
-            {isEnglish ? 'Cancel' : '取消'}
+            {t('forum.cancel')}
           </button>
           <button onClick={handleSubmit} disabled={!title.trim() || !content.trim() || submitting}
             className="flex items-center gap-2 px-6 py-2 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all">
             {submitting ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Send size={16} />}
-            {isEnglish ? 'Post' : '發表'}
+            {t('forum.post')}
           </button>
         </div>
       </div>
@@ -420,7 +423,7 @@ function NewPostModal({ currentUser, isEnglish, onClose, onCreated }) {
 export default function ForumPage() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { isEnglish } = useLanguage();
+  const { t } = useLanguage();
   const { questions, loading: questionsLoading } = useQuizData(SHEET_URL);
 
   const [activeTab, setActiveTab] = useState('mcq'); // 'mcq' | 'general'
@@ -494,12 +497,12 @@ export default function ForumPage() {
   const formatDate = (iso) => {
     const d = new Date(iso), now = new Date(), diffMs = now - d;
     const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return isEnglish ? 'Just now' : '剛剛';
-    if (mins < 60) return `${mins} ${isEnglish ? 'min ago' : '分鐘前'}`;
+    if (mins < 1) return t('forum.justNow');
+    if (mins < 60) return `${mins} min ago`;
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} ${isEnglish ? 'hr ago' : '小時前'}`;
+    if (hrs < 24) return `${hrs} hr ago`;
     const days = Math.floor(hrs / 24);
-    if (days < 7) return `${days} ${isEnglish ? 'days ago' : '天前'}`;
+    if (days < 7) return `${days} days ago`;
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
@@ -508,7 +511,7 @@ export default function ForumPage() {
   if (activePost) {
     return (
       <div className="max-w-4xl mx-auto space-y-6">
-        <PostDetail postId={activePost} currentUser={currentUser} isEnglish={isEnglish}
+        <PostDetail postId={activePost} currentUser={currentUser}
           onBack={() => { setActivePost(null); loadPosts(); }} />
       </div>
     );
@@ -524,9 +527,9 @@ export default function ForumPage() {
         <div className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl shadow-xl p-6 text-white">
           <h1 className="text-3xl font-black flex items-center gap-3">
             <MessageSquare size={32} />
-            {isEnglish ? 'Forum' : '討論區'}
+            {t('forum.title')}
           </h1>
-          <p className="text-purple-100 mt-1">{isEnglish ? 'Connect and discuss with other students' : '與其他學生交流討論'}</p>
+          <p className="text-purple-100 mt-1">{t('forum.connectDiscuss')}</p>
         </div>
         {/* Notification Bell */}
         {currentUser && (
@@ -541,7 +544,7 @@ export default function ForumPage() {
               )}
             </button>
             {showNotifPanel && (
-              <NotificationPanel userId={currentUser.uid} isEnglish={isEnglish} onClose={() => setShowNotifPanel(false)} />
+              <NotificationPanel userId={currentUser.uid} onClose={() => setShowNotifPanel(false)} />
             )}
           </div>
         )}
@@ -553,12 +556,12 @@ export default function ForumPage() {
           <button onClick={() => setActiveTab('mcq')}
             className={`flex-1 px-6 py-4 font-bold text-base transition-all flex items-center justify-center gap-2 ${activeTab === 'mcq' ? 'bg-lab-blue text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
             <MessageCircle size={18} />
-            {isEnglish ? 'MCQ Discussion' : 'MCQ 討論'}
+            {t('forum.mcqDiscussion')}
           </button>
           <button onClick={() => setActiveTab('general')}
             className={`flex-1 px-6 py-4 font-bold text-base transition-all flex items-center justify-center gap-2 ${activeTab === 'general' ? 'bg-purple-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
             <MessageSquare size={18} />
-            {isEnglish ? 'General Forum' : '一般討論區'}
+            {t('forum.generalForum')}
           </button>
         </div>
 
@@ -569,11 +572,11 @@ export default function ForumPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                 <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                  placeholder={isEnglish ? 'Search questions, topics, DSE codes...' : '搜尋題目、主題、DSE 代碼...'}
+                  placeholder={t('forum.searchQuestions')}
                   className="w-full pl-11 pr-4 py-3 border-2 border-slate-200 rounded-lg focus:border-lab-blue outline-none transition-all" />
               </div>
               <div className="flex gap-2">
-                {[['recent', <Clock size={16} />, isEnglish ? 'Recent' : '最新'], ['popular', <TrendingUp size={16} />, isEnglish ? 'Popular' : '熱門']].map(([val, icon, label]) => (
+                {[['recent', <Clock size={16} />, t('forum.recent')], ['popular', <TrendingUp size={16} />, t('forum.popular')]].map(([val, icon, label]) => (
                   <button key={val} onClick={() => setSortBy(val)}
                     className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-bold transition-all ${sortBy === val ? 'bg-lab-blue text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                     {icon}{label}
@@ -581,14 +584,14 @@ export default function ForumPage() {
                 ))}
               </div>
             </div>
-            <p className="text-sm text-slate-600"><span className="font-bold text-lab-blue">{filteredMcqQuestions.length}</span> {isEnglish ? 'questions with discussions' : '個題目有討論'}</p>
+            <p className="text-sm text-slate-600"><span className="font-bold text-lab-blue">{filteredMcqQuestions.length}</span> {t('forum.questionsWithDiscussions')}</p>
 
             {mcqLoading || questionsLoading ? (
               <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lab-blue" /></div>
             ) : filteredMcqQuestions.length === 0 ? (
               <div className="text-center py-12">
                 <MessageSquare className="w-14 h-14 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-400">{searchTerm ? (isEnglish ? 'No results found' : '找不到結果') : (isEnglish ? 'No MCQ discussions yet. Start one from any quiz!' : '尚無MCQ討論。在測驗中開始討論！')}</p>
+                <p className="text-slate-400">{searchTerm ? t('forum.noResultsFound') : t('forum.noMcqDiscussions')}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -607,7 +610,7 @@ export default function ForumPage() {
                           <div className="text-slate-700 font-medium mb-2 line-clamp-2"
                             dangerouslySetInnerHTML={{ __html: qd.Question.substring(0, 150) + '...' }} />
                           <div className="flex items-center gap-4 text-sm text-slate-500">
-                            <div className="flex items-center gap-1"><MessageCircle size={14} /><span className="font-semibold">{dq.commentCount}</span><span>{isEnglish ? 'comments' : '則評論'}</span></div>
+                            <div className="flex items-center gap-1"><MessageCircle size={14} /><span className="font-semibold">{dq.commentCount}</span><span>{t('forum.comments')}</span></div>
                             <div className="flex items-center gap-1"><Clock size={14} /><span>{formatDate(dq.lastActivity)}</span></div>
                           </div>
                         </div>
@@ -630,7 +633,7 @@ export default function ForumPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input type="text" value={postSearch} onChange={e => setPostSearch(e.target.value)}
-                  placeholder={isEnglish ? 'Search posts...' : '搜尋帖子...'}
+                  placeholder={t('forum.searchPosts')}
                   className="w-full pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-lg focus:border-purple-400 outline-none" />
               </div>
               {/* Category filter */}
@@ -638,7 +641,7 @@ export default function ForumPage() {
                 {['all', ...CATEGORIES].map(cat => (
                   <button key={cat} onClick={() => setPostCategory(cat)}
                     className={`px-3 py-2 rounded-lg text-xs font-bold border-2 transition-all ${postCategory === cat ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
-                    {cat === 'all' ? (isEnglish ? 'All' : '全部') : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                    {cat === 'all' ? t('forum.all') : cat.charAt(0).toUpperCase() + cat.slice(1)}
                   </button>
                 ))}
               </div>
@@ -646,7 +649,7 @@ export default function ForumPage() {
                 <button onClick={() => setShowNewPost(true)}
                   className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition-all shadow-md whitespace-nowrap">
                   <PlusCircle size={18} />
-                  {isEnglish ? 'New Post' : '新帖子'}
+                  {t('forum.newPost')}
                 </button>
               )}
             </div>
@@ -656,10 +659,10 @@ export default function ForumPage() {
             ) : filteredPosts.length === 0 ? (
               <div className="text-center py-12">
                 <MessageSquare className="w-14 h-14 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-400 mb-3">{isEnglish ? 'No posts yet. Be the first!' : '暫無帖子，成為第一個！'}</p>
+                <p className="text-slate-400 mb-3">{t('forum.noPosts')}</p>
                 {currentUser && (
                   <button onClick={() => setShowNewPost(true)} className="px-5 py-2 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition-all">
-                    {isEnglish ? 'Create a Post' : '建立帖子'}
+                    {t('forum.createPost')}
                   </button>
                 )}
               </div>
@@ -674,7 +677,7 @@ export default function ForumPage() {
                           <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${catColors[post.category] || catColors.general}`}>
                             {post.category?.toUpperCase()}
                           </span>
-                          {post.edited && <span className="text-xs text-slate-400 italic">({isEnglish ? 'edited' : '已編輯'})</span>}
+                          {post.edited && <span className="text-xs text-slate-400 italic">({t('forum.edited')})</span>}
                         </div>
                         <h3 className="font-bold text-slate-800 text-base mb-1 line-clamp-1">{post.title}</h3>
                         <p className="text-sm text-slate-600 line-clamp-2">{post.content}</p>
@@ -702,7 +705,7 @@ export default function ForumPage() {
 
       {/* New Post Modal */}
       {showNewPost && currentUser && (
-        <NewPostModal currentUser={currentUser} isEnglish={isEnglish}
+        <NewPostModal currentUser={currentUser}
           onClose={() => setShowNewPost(false)}
           onCreated={() => { setShowNewPost(false); loadPosts(); }} />
       )}

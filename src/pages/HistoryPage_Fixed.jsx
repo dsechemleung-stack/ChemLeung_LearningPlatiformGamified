@@ -11,7 +11,7 @@ import {
 
 export default function HistoryPage() {
   const { currentUser } = useAuth();
-  const { isEnglish } = useLanguage();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [attempts, setAttempts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +80,7 @@ export default function HistoryPage() {
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lab-blue mx-auto mb-4"></div>
-          <p className="text-slate-600">{isEnglish ? 'Loading your history...' : '載入歷史記錄...'}</p>
+          <p className="text-slate-600">{t('history.loadingHistory')}</p>
         </div>
       </div>
     );
@@ -96,10 +96,10 @@ export default function HistoryPage() {
         <div className="flex-1 bg-gradient-to-r from-purple-600 to-purple-800 rounded-2xl shadow-xl p-6 text-white">
           <h1 className="text-3xl font-black flex items-center gap-3">
             <History size={32} />
-            {isEnglish ? 'Practice History' : '練習歷史'}
+            {t('history.title')}
           </h1>
           <p className="text-purple-100 mt-1">
-            {isEnglish ? 'Click any attempt to see the full analysis' : '點擊任何記錄查看完整分析'}
+            {t('history.clickToSeeAnalysis')}
           </p>
         </div>
       </div>
@@ -109,10 +109,10 @@ export default function HistoryPage() {
           <div className="flex items-start gap-3">
             <AlertCircle className="text-red-500 flex-shrink-0 mt-1" size={20} />
             <div className="flex-1">
-              <h3 className="font-bold text-red-900 mb-1">{isEnglish ? 'Error Loading History' : '載入失敗'}</h3>
+              <h3 className="font-bold text-red-900 mb-1">{t('dashboard.errorLoadingAttempts')}</h3>
               <p className="text-sm text-red-800 mb-3">{error}</p>
               <button onClick={loadHistory} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-all">
-                <RefreshCw size={16} /> {isEnglish ? 'Retry' : '重試'}
+                <RefreshCw size={16} /> {t('dashboard.retry')}
               </button>
             </div>
           </div>
@@ -122,10 +122,10 @@ export default function HistoryPage() {
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { icon: <Target className="text-lab-blue" size={20} />, label: isEnglish ? 'Total Attempts' : '總次數', val: stats.total, color: 'text-lab-blue' },
-          { icon: <TrendingUp className="text-chemistry-green" size={20} />, label: isEnglish ? 'Average Score' : '平均分數', val: `${stats.average}%`, color: 'text-chemistry-green' },
-          { icon: <Trophy className="text-amber-500" size={20} />, label: isEnglish ? 'Best Score' : '最高分數', val: `${stats.best}%`, color: 'text-amber-500' },
-          { icon: <Clock className="text-purple-600" size={20} />, label: isEnglish ? 'Total Time' : '總時間', val: formatTime(stats.totalTime), color: 'text-purple-600' },
+          { icon: <Target className="text-lab-blue" size={20} />, label: t('history.totalAttempts'), val: stats.total, color: 'text-lab-blue' },
+          { icon: <TrendingUp className="text-chemistry-green" size={20} />, label: t('history.averageScore'), val: `${stats.average}%`, color: 'text-chemistry-green' },
+          { icon: <Trophy className="text-amber-500" size={20} />, label: t('history.bestScore'), val: `${stats.best}%`, color: 'text-amber-500' },
+          { icon: <Clock className="text-purple-600" size={20} />, label: t('history.totalTime'), val: formatTime(stats.totalTime), color: 'text-purple-600' },
         ].map(({ icon, label, val, color }) => (
           <div key={label} className="bg-white rounded-xl shadow-lg border-2 border-slate-200 p-4">
             <div className="flex items-center gap-2 mb-2">{icon}<span className="text-sm font-semibold text-slate-600">{label}</span></div>
@@ -142,7 +142,7 @@ export default function HistoryPage() {
         >
           <div className="flex items-center gap-2">
             <Filter className="text-lab-blue" size={20} />
-            <span className="font-bold text-slate-800">{isEnglish ? 'Filters & Sorting' : '篩選與排序'}</span>
+            <span className="font-bold text-slate-800">{t('history.filtersAndSorting')}</span>
           </div>
           <ChevronDown size={20} className={`text-slate-400 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
         </button>
@@ -151,13 +151,13 @@ export default function HistoryPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">
-                  {isEnglish ? 'Time Period' : '時間範圍'}
+                  {t('history.timePeriod')}
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { value: 'all', label: isEnglish ? 'All Time' : '全部' },
-                    { value: 'month', label: isEnglish ? 'Last Month' : '上個月' },
-                    { value: 'week', label: isEnglish ? 'Last Week' : '上週' },
+                    { value: 'all', label: t('history.allTime') },
+                    { value: 'month', label: t('history.lastMonth') },
+                    { value: 'week', label: t('history.lastWeek') },
                   ].map(o => (
                     <button key={o.value} onClick={() => setFilterPeriod(o.value)}
                       className={`py-2 rounded-lg font-semibold text-sm transition-all ${filterPeriod === o.value ? 'bg-lab-blue text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border-2 border-slate-200'}`}>
@@ -168,13 +168,13 @@ export default function HistoryPage() {
               </div>
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-2">
-                  {isEnglish ? 'Sort By' : '排序方式'}
+                  {t('history.sortBy')}
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { value: 'recent', label: isEnglish ? 'Recent' : '最新' },
-                    { value: 'score', label: isEnglish ? 'Score' : '分數' },
-                    { value: 'time', label: isEnglish ? 'Time' : '時間' },
+                    { value: 'recent', label: t('history.recent') },
+                    { value: 'score', label: t('history.score') },
+                    { value: 'time', label: t('history.time') },
                   ].map(o => (
                     <button key={o.value} onClick={() => setSortBy(o.value)}
                       className={`py-2 rounded-lg font-semibold text-sm transition-all ${sortBy === o.value ? 'bg-chemistry-green text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border-2 border-slate-200'}`}>
@@ -192,14 +192,14 @@ export default function HistoryPage() {
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
         <div className="bg-slate-50 p-4 border-b flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-800">
-            {isEnglish ? 'Your Attempts' : '您的記錄'} ({filteredAttempts.length})
+            {t('history.yourAttempts')} ({filteredAttempts.length})
           </h2>
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-400 italic hidden sm:block">
-              {isEnglish ? 'Click to view full analysis' : '點擊查看完整分析'}
+              {t('history.clickViewAnalysis')}
             </span>
             <button onClick={loadHistory} className="text-sm text-lab-blue hover:underline flex items-center gap-1">
-              <RefreshCw size={14} /> {isEnglish ? 'Refresh' : '刷新'}
+              <RefreshCw size={14} /> {t('history.refresh')}
             </button>
           </div>
         </div>
@@ -208,15 +208,15 @@ export default function HistoryPage() {
           {filteredAttempts.length === 0 ? (
             <div className="text-center py-12">
               <History className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-400 text-lg mb-2">{isEnglish ? 'No attempts found' : '沒有找到記錄'}</p>
+              <p className="text-slate-400 text-lg mb-2">{t('history.noAttemptsFound')}</p>
               <p className="text-slate-500 text-sm mb-4">
                 {filterPeriod !== 'all'
-                  ? (isEnglish ? 'Try changing the filter period' : '嘗試更改時間範圍')
-                  : (isEnglish ? 'Start practicing to see your history!' : '開始練習以查看歷史記錄！')}
+                  ? t('history.tryChangingFilter')
+                  : t('history.startPracticingHistory')}
               </p>
               {attempts.length === 0 && (
                 <button onClick={() => navigate('/')} className="px-6 py-3 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-800 transition-all">
-                  {isEnglish ? 'Take Your First Quiz' : '開始第一個測驗'}
+                  {t('history.takeFirstQuiz')}
                 </button>
               )}
             </div>
@@ -241,7 +241,7 @@ export default function HistoryPage() {
                     </div>
                     <div className="flex-1">
                       <div className="font-bold text-slate-800 text-lg">
-                        {attempt.correctAnswers}/{attempt.totalQuestions} {isEnglish ? 'correct' : '正確'}
+                        {attempt.correctAnswers}/{attempt.totalQuestions} {t('history.correct')}
                       </div>
                       <div className="text-sm text-slate-500 flex items-center gap-2">
                         <Calendar size={14} /> {formatDate(attempt.timestamp)}

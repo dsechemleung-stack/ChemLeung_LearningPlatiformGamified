@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { quizService } from '../services/quizService';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -7,6 +8,7 @@ import { CheckCircle, XCircle, AlertCircle, Database, RefreshCw } from 'lucide-r
 
 export default function DebugDashboard() {
   const { currentUser, userProfile } = useAuth();
+  const { t } = useLanguage();
   const [logs, setLogs] = useState([]);
   const [testing, setTesting] = useState(false);
   const [rawData, setRawData] = useState(null);
@@ -19,50 +21,50 @@ export default function DebugDashboard() {
     setLogs([]);
     setTesting(true);
     
-    addLog('info', '🔍 Starting comprehensive diagnostics...');
+    addLog('info', `🔍 ${t('Starting comprehensive diagnostics...')}`);
     
     // Test 1: Check Authentication
-    addLog('info', '--- TEST 1: Authentication ---');
+    addLog('info', `--- ${t('TEST 1: Authentication')} ---`);
     if (currentUser) {
-      addLog('success', `✅ User authenticated: ${currentUser.email}`);
-      addLog('info', `User ID: ${currentUser.uid}`);
+      addLog('success', `✅ ${t('User authenticated:')} ${currentUser.email}`);
+      addLog('info', `${t('User ID:')} ${currentUser.uid}`);
     } else {
-      addLog('error', '❌ No user authenticated');
+      addLog('error', `❌ ${t('No user authenticated')}`);
       setTesting(false);
       return;
     }
 
     // Test 2: Check User Profile
-    addLog('info', '--- TEST 2: User Profile ---');
+    addLog('info', `--- ${t('TEST 2: User Profile')} ---`);
     if (userProfile) {
-      addLog('success', `✅ Profile loaded`);
-      addLog('info', `Display Name: ${userProfile.displayName}`);
-      addLog('info', `Total Attempts: ${userProfile.totalAttempts || 0}`);
-      addLog('info', `Total Questions: ${userProfile.totalQuestions || 0}`);
-      addLog('info', `Total Correct: ${userProfile.totalCorrect || 0}`);
+      addLog('success', `✅ ${t('Profile loaded')}`);
+      addLog('info', `${t('Display Name:')} ${userProfile.displayName}`);
+      addLog('info', `${t('Total Attempts:')} ${userProfile.totalAttempts || 0}`);
+      addLog('info', `${t('Total Questions:')} ${userProfile.totalQuestions || 0}`);
+      addLog('info', `${t('Total Correct:')} ${userProfile.totalCorrect || 0}`);
     } else {
-      addLog('error', '❌ Profile not loaded');
+      addLog('error', `❌ ${t('Profile not loaded')}`);
     }
 
     // Test 3: Direct Firestore Read - Users Collection
-    addLog('info', '--- TEST 3: Direct Firestore Read (Users) ---');
+    addLog('info', `--- ${t('TEST 3: Direct Firestore Read (Users)')} ---`);
     try {
       const { doc, getDoc } = await import('firebase/firestore');
       const userDocRef = doc(db, 'users', currentUser.uid);
       const userDocSnap = await getDoc(userDocRef);
       
       if (userDocSnap.exists()) {
-        addLog('success', '✅ User document exists in Firestore');
-        addLog('info', `Data: ${JSON.stringify(userDocSnap.data())}`);
+        addLog('success', `✅ ${t('User document exists in Firestore')}`);
+        addLog('info', `${t('Data:')} ${JSON.stringify(userDocSnap.data())}`);
       } else {
-        addLog('error', '❌ User document does NOT exist in Firestore');
+        addLog('error', `❌ ${t('User document does NOT exist in Firestore')}`);
       }
     } catch (error) {
-      addLog('error', `❌ Error reading user document: ${error.message}`);
+      addLog('error', `❌ ${t('Error reading user document:')} ${error.message}`);
     }
 
     // Test 4: Direct Firestore Read - Attempts Collection
-    addLog('info', '--- TEST 4: Direct Firestore Read (Attempts) ---');
+    addLog('info', `--- ${t('TEST 4: Direct Firestore Read (Attempts)')} ---`);
     try {
       const attemptsQuery = query(
         collection(db, 'attempts'),
@@ -72,29 +74,29 @@ export default function DebugDashboard() {
       );
       
       const querySnapshot = await getDocs(attemptsQuery);
-      addLog('info', `Found ${querySnapshot.size} attempts in Firestore`);
+      addLog('info', `${t('Found')} ${querySnapshot.size} ${t('attempts in Firestore')}`);
       
       if (querySnapshot.size > 0) {
-        addLog('success', `✅ Attempts collection has data`);
+        addLog('success', `✅ ${t('Attempts collection has data')}`);
         querySnapshot.forEach((doc) => {
           const data = doc.data();
-          addLog('info', `Attempt ${doc.id}: ${data.percentage}% - ${data.timestamp}`);
+          addLog('info', `${t('Attempt')} ${doc.id}: ${data.percentage}% - ${data.timestamp}`);
         });
       } else {
-        addLog('warning', '⚠️ Attempts collection is EMPTY - no quiz results saved yet');
+        addLog('warning', `⚠️ ${t('Attempts collection is EMPTY - no quiz results saved yet')}`);
       }
 
       setRawData({ attempts: querySnapshot.size });
     } catch (error) {
-      addLog('error', `❌ Error reading attempts: ${error.message}`);
+      addLog('error', `❌ ${t('Error reading attempts:')} ${error.message}`);
       if (error.code === 'failed-precondition') {
-        addLog('error', '❌ FIRESTORE INDEX MISSING! You need to create an index.');
-        addLog('info', 'Firebase will show a link in the console to create the index automatically.');
+        addLog('error', `❌ ${t('FIRESTORE INDEX MISSING! You need to create an index.')}`);
+        addLog('info', t('Firebase will show a link in the console to create the index automatically.'));
       }
     }
 
     // Test 5: Test Save Function
-    addLog('info', '--- TEST 5: Test Save Attempt ---');
+    addLog('info', `--- ${t('TEST 5: Test Save Attempt')} ---`);
     try {
       const testAttemptData = {
         score: 85,
@@ -107,66 +109,66 @@ export default function DebugDashboard() {
         answers: {}
       };
 
-      addLog('info', 'Attempting to save test quiz result...');
+      addLog('info', t('Attempting to save test quiz result...'));
       const attemptId = await quizService.saveAttempt(currentUser.uid, testAttemptData);
-      addLog('success', `✅ Test attempt saved successfully! ID: ${attemptId}`);
+      addLog('success', `✅ ${t('Test attempt saved successfully! ID:')} ${attemptId}`);
     } catch (error) {
-      addLog('error', `❌ Failed to save test attempt: ${error.message}`);
-      addLog('error', `Error code: ${error.code}`);
+      addLog('error', `❌ ${t('Failed to save test attempt:')} ${error.message}`);
+      addLog('error', `${t('Error code:')} ${error.code}`);
     }
 
     // Test 6: Test Fetch Function
-    addLog('info', '--- TEST 6: Test Fetch Attempts ---');
+    addLog('info', `--- ${t('TEST 6: Test Fetch Attempts')} ---`);
     try {
       const attempts = await quizService.getUserAttempts(currentUser.uid, 5);
-      addLog('success', `✅ Successfully fetched ${attempts.length} attempts`);
+      addLog('success', `✅ ${t('Successfully fetched')} ${attempts.length} ${t('attempts')}`);
       if (attempts.length > 0) {
         attempts.forEach((att, idx) => {
-          addLog('info', `Attempt ${idx + 1}: ${att.percentage}% (${att.correctAnswers}/${att.totalQuestions})`);
+          addLog('info', `${t('Attempt')} ${idx + 1}: ${att.percentage}% (${att.correctAnswers}/${att.totalQuestions})`);
         });
       }
     } catch (error) {
-      addLog('error', `❌ Failed to fetch attempts: ${error.message}`);
+      addLog('error', `❌ ${t('Failed to fetch attempts:')} ${error.message}`);
     }
 
     // Test 7: Check Leaderboard
-    addLog('info', '--- TEST 7: Test Leaderboard ---');
+    addLog('info', `--- ${t('TEST 7: Test Leaderboard')} ---`);
     try {
       const leaderboard = await quizService.getWeeklyLeaderboard(5);
-      addLog('success', `✅ Leaderboard loaded with ${leaderboard.length} users`);
+      addLog('success', `✅ ${t('Leaderboard loaded with')} ${leaderboard.length} ${t('users')}`);
     } catch (error) {
-      addLog('error', `❌ Failed to load leaderboard: ${error.message}`);
+      addLog('error', `❌ ${t('Failed to load leaderboard:')} ${error.message}`);
     }
 
-    addLog('info', '✅ Diagnostics complete!');
+    addLog('info', `✅ ${t('Diagnostics complete!')}`);
     setTesting(false);
   }
 
   async function createTestAttempt() {
     if (!currentUser) {
-      addLog('error', '❌ Must be logged in');
+      addLog('error', `❌ ${t('Must be logged in')}`);
       return;
     }
 
-    addLog('info', 'Creating test quiz attempt...');
+    addLog('info', t('Creating test quiz attempt...'));
     
     try {
       const testAttemptData = {
-        score: Math.floor(Math.random() * 40) + 60, // Random 60-100
+        score: Math.floor(Math.random() * 40) + 60,
         totalQuestions: 10,
-        correctAnswers: Math.floor(Math.random() * 4) + 6, // Random 6-10
+        correctAnswers: Math.floor(Math.random() * 4) + 6,
         percentage: Math.floor(Math.random() * 40) + 60,
         topics: ['Organic Chemistry', 'Acids and Bases'],
-        timeSpent: Math.floor(Math.random() * 300000) + 60000, // Random 1-6 min
+        timeSpent: Math.floor(Math.random() * 300000) + 60000,
         questionTimes: {},
         answers: {}
       };
 
       const attemptId = await quizService.saveAttempt(currentUser.uid, testAttemptData);
-      addLog('success', `✅ Test attempt created! ID: ${attemptId}`);
-      addLog('info', 'Now check Dashboard and History pages to see if it appears');
+      addLog('success', `✅ ${t('Test attempt created! ID:')} ${attemptId}`);
+      addLog('info', t('Now check Dashboard and History pages to see if it appears'));
     } catch (error) {
-      addLog('error', `❌ Failed to create test attempt: ${error.message}`);
+      addLog('error', `❌ ${t('Failed to create test attempt:')} ${error.message}`);
     }
   }
 
@@ -188,10 +190,10 @@ export default function DebugDashboard() {
       <div className="bg-gradient-to-r from-red-600 to-orange-600 rounded-2xl shadow-xl p-6 text-white">
         <h1 className="text-3xl font-black flex items-center gap-3">
           <Database size={32} />
-          Firebase Debug Dashboard
+          {t('Firebase Debug Dashboard')}
         </h1>
         <p className="text-orange-100 mt-1">
-          Comprehensive diagnostics for data saving issues
+          {t('Comprehensive diagnostics for data saving issues')}
         </p>
       </div>
 
@@ -205,12 +207,12 @@ export default function DebugDashboard() {
           {testing ? (
             <>
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-              Running Tests...
+              {t('Running Tests...')}
             </>
           ) : (
             <>
               <RefreshCw size={20} />
-              Run Full Diagnostics
+              {t('Run Full Diagnostics')}
             </>
           )}
         </button>
@@ -220,7 +222,7 @@ export default function DebugDashboard() {
           className="py-6 bg-chemistry-green text-white rounded-xl font-bold text-lg shadow-lg hover:opacity-90 transition-all flex items-center justify-center gap-2"
         >
           <Database size={20} />
-          Create Test Quiz Attempt
+          {t('Create Test Quiz Attempt')}
         </button>
       </div>
 
@@ -229,14 +231,14 @@ export default function DebugDashboard() {
         <div className="bg-slate-800 p-4 border-b">
           <h2 className="text-lg font-bold text-white font-mono flex items-center gap-2">
             <Database size={20} />
-            Console Output
+            {t('Console Output')}
           </h2>
         </div>
 
         <div className="p-4 bg-slate-900 max-h-[600px] overflow-y-auto">
           {logs.length === 0 ? (
             <p className="text-slate-500 text-center py-8 font-mono">
-              Click "Run Full Diagnostics" to start testing...
+              {t('Click "Run Full Diagnostics" to start testing...')}
             </p>
           ) : (
             <div className="space-y-2 font-mono text-sm">
@@ -272,36 +274,38 @@ export default function DebugDashboard() {
         <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
           <h3 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
             <CheckCircle size={18} />
-            What Success Looks Like
+            {t('What Success Looks Like')}
           </h3>
           <ul className="text-sm text-blue-800 space-y-1">
-            <li>✅ User authenticated</li>
-            <li>✅ Profile loaded</li>
-            <li>✅ User document exists</li>
-            <li>✅ Can read attempts collection</li>
-            <li>✅ Can save test attempt</li>
-            <li>✅ Can fetch attempts</li>
-            <li>✅ Leaderboard loads</li>
+            <li>✅ {t('User authenticated')}</li>
+            <li>✅ {t('Profile loaded')}</li>
+            <li>✅ {t('User document exists')}</li>
+            <li>✅ {t('Can read attempts collection')}</li>
+            <li>✅ {t('Can save test attempt')}</li>
+            <li>✅ {t('Can fetch attempts')}</li>
+            <li>✅ {t('Leaderboard loads')}</li>
           </ul>
         </div>
 
         <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
           <h3 className="font-bold text-red-900 mb-2 flex items-center gap-2">
             <XCircle size={18} />
-            Common Errors & Fixes
+            {t('Common Errors & Fixes')}
           </h3>
           <ul className="text-sm text-red-800 space-y-2">
-            <li><strong>Permission denied:</strong> Update Firestore rules</li>
-            <li><strong>Failed precondition:</strong> Missing Firestore index</li>
-            <li><strong>Not authenticated:</strong> Log in first</li>
-            <li><strong>Empty attempts:</strong> Complete a quiz first</li>
+            <li><strong>{t('Permission denied:')}</strong> {t('Update Firestore rules')}</li>
+            <li><strong>{t('Failed precondition:')}</strong> {t('Missing Firestore index')}</li>
+            <li><strong>{t('Not authenticated:')}</strong> {t('Log in first')}</li>
+            <li><strong>{t('Empty attempts:')}</strong> {t('Complete a quiz first')}</li>
           </ul>
         </div>
       </div>
 
       {/* Firestore Rules Reminder */}
       <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
-        <h3 className="font-bold text-amber-900 mb-2">📋 Required Firestore Rules</h3>
+        <h3 className="font-bold text-amber-900 mb-2">
+          📋 {t('Required Firestore Rules')}
+        </h3>
         <pre className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-x-auto text-xs">
 {`rules_version = '2';
 service cloud.firestore {
@@ -320,7 +324,7 @@ service cloud.firestore {
 }`}
         </pre>
         <p className="text-sm text-amber-800 mt-2">
-          Copy this to Firebase Console → Firestore Database → Rules tab → Publish
+          {t('Copy this to Firebase Console → Firestore Database → Rules tab → Publish')}
         </p>
       </div>
     </div>

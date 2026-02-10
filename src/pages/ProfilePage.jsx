@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { updateProfile } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -11,6 +12,7 @@ const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMC
 
 export default function ProfilePage() {
   const { currentUser, userProfile, loadUserProfile } = useAuth();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const { questions, loading: questionsLoading } = useQuizData(SHEET_URL);
   
@@ -85,10 +87,16 @@ export default function ProfilePage() {
       // Reload user profile
       await loadUserProfile(currentUser.uid);
 
-      setMessage({ type: 'success', text: 'Profile updated successfully!' });
+      setMessage({ 
+        type: 'success', 
+        text: t('profile.profileUpdated')
+      });
     } catch (error) {
       console.error('Error updating profile:', error);
-      setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
+      setMessage({ 
+        type: 'error', 
+        text: t('profile.failedUpdate')
+      });
     }
 
     setSaving(false);
@@ -122,10 +130,10 @@ export default function ProfilePage() {
         <div className="flex-1 bg-gradient-to-r from-lab-blue to-blue-700 rounded-2xl shadow-xl p-6 text-white">
           <h1 className="text-3xl font-black flex items-center gap-3">
             <User size={32} />
-            Profile Settings
+            {t('profile.profileSettings')}
           </h1>
           <p className="text-blue-100 mt-1">
-            Manage your account and learning preferences
+            {t('profile.manageAccount')}
           </p>
         </div>
       </div>
@@ -133,14 +141,18 @@ export default function ProfilePage() {
       {/* Stats Summary */}
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
         <div className="bg-slate-50 p-4 border-b">
-          <h2 className="text-lg font-bold text-slate-800">Your Statistics</h2>
+          <h2 className="text-lg font-bold text-slate-800">
+            {t('profile.yourStatistics')}
+          </h2>
         </div>
         
         <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
             <div className="flex items-center gap-2 mb-2">
               <Trophy className="text-lab-blue" size={20} />
-              <span className="text-sm font-semibold text-slate-600">Total Attempts</span>
+              <span className="text-sm font-semibold text-slate-600">
+                {t('profile.totalAttempts')}
+              </span>
             </div>
             <div className="text-3xl font-black text-lab-blue">
               {userProfile?.totalAttempts || 0}
@@ -150,7 +162,9 @@ export default function ProfilePage() {
           <div className="bg-green-50 rounded-xl p-4 border-2 border-green-200">
             <div className="flex items-center gap-2 mb-2">
               <Target className="text-chemistry-green" size={20} />
-              <span className="text-sm font-semibold text-slate-600">Overall Accuracy</span>
+              <span className="text-sm font-semibold text-slate-600">
+                {t('profile.overallAccuracy')}
+              </span>
             </div>
             <div className="text-3xl font-black text-chemistry-green">
               {overallAccuracy}%
@@ -160,7 +174,9 @@ export default function ProfilePage() {
           <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
             <div className="flex items-center gap-2 mb-2">
               <GraduationCap className="text-purple-600" size={20} />
-              <span className="text-sm font-semibold text-slate-600">Questions Solved</span>
+              <span className="text-sm font-semibold text-slate-600">
+                {t('profile.questionsSolved')}
+              </span>
             </div>
             <div className="text-3xl font-black text-purple-600">
               {userProfile?.totalQuestions || 0}
@@ -172,7 +188,9 @@ export default function ProfilePage() {
       {/* Profile Form */}
       <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
         <div className="bg-slate-50 p-4 border-b">
-          <h2 className="text-lg font-bold text-slate-800">Account Information</h2>
+          <h2 className="text-lg font-bold text-slate-800">
+            {t('profile.accountInformation')}
+          </h2>
         </div>
 
         <div className="p-6 space-y-6">
@@ -191,7 +209,7 @@ export default function ProfilePage() {
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
               <User size={16} />
-              Display Name
+              {t('profile.displayName')}
             </label>
             <input
               type="text"
@@ -199,7 +217,7 @@ export default function ProfilePage() {
               onChange={(e) => setDisplayName(e.target.value)}
               required
               className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-lab-blue focus:ring-2 focus:ring-blue-100 outline-none transition-all"
-              placeholder="Enter your name"
+              placeholder={t('profile.enterYourName')}
             />
           </div>
 
@@ -207,7 +225,7 @@ export default function ProfilePage() {
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
               <Mail size={16} />
-              Email Address
+              {t('profile.email')}
             </label>
             <input
               type="email"
@@ -215,14 +233,16 @@ export default function ProfilePage() {
               disabled
               className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg bg-slate-50 text-slate-500 cursor-not-allowed"
             />
-            <p className="text-xs text-slate-500 mt-1">Email cannot be changed</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {t('profile.emailCannotChange')}
+            </p>
           </div>
 
           {/* School Level */}
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
               <GraduationCap size={16} />
-              School Level (Form)
+              {t('profile.schoolLevel')}
             </label>
             <div className="grid grid-cols-3 gap-3">
               {['S4', 'S5', 'S6'].map((lvl) => (
@@ -241,7 +261,7 @@ export default function ProfilePage() {
               ))}
             </div>
             <p className="text-xs text-slate-500 mt-2">
-              Select your current form (Secondary 4, 5, or 6)
+              {t('profile.selectCurrentForm')}
             </p>
           </div>
 
@@ -249,10 +269,10 @@ export default function ProfilePage() {
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
               <BookOpen size={16} />
-              Topics Learned Up To
+              {t('profile.topicsLearnedUpTo')}
             </label>
             <p className="text-xs text-slate-500 mb-3">
-              Select the highest topic number you've learned. For example, "08" means you've learned topics 01-08.
+              {t('profile.selectHighestTopic')}
             </p>
             <div className="grid grid-cols-6 md:grid-cols-8 gap-2">
               {allTopics.map((topic) => {
@@ -281,10 +301,10 @@ export default function ProfilePage() {
             <div className="border-t-2 border-slate-100 pt-6">
               <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                 <Lock size={16} />
-                Topic Exceptions (Mark topics NOT learned)
+                {t('profile.topicExceptionsLabel')}
               </label>
               <p className="text-xs text-slate-500 mb-3">
-                Click to exclude topics you haven't covered yet, even though they're below your "learned up to" level.
+                {t('profile.clickToExclude')}
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {learnedRangeTopics.map((topic) => {
@@ -318,7 +338,7 @@ export default function ProfilePage() {
             <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
               <h3 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
                 <BookOpen size={16} />
-                Your Available Topics ({availableTopics.length})
+                {t('profile.yourAvailableTopicsCount')} ({availableTopics.length})
               </h3>
               <div className="flex flex-wrap gap-2">
                 {availableTopics.map((topic) => (
@@ -331,7 +351,7 @@ export default function ProfilePage() {
                 ))}
               </div>
               <p className="text-xs text-blue-700 mt-2">
-                These topics will appear in your Timed and Marathon practice modes.
+                {t('profile.theseTopicsWillAppear')}
               </p>
             </div>
           )}
@@ -340,7 +360,7 @@ export default function ProfilePage() {
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
               <Calendar size={16} />
-              Member Since
+              {t('profile.memberSince')}
             </label>
             <div className="px-4 py-3 border-2 border-slate-200 rounded-lg bg-slate-50 text-slate-700 font-semibold">
               {formatDate(userProfile?.createdAt)}
@@ -356,12 +376,12 @@ export default function ProfilePage() {
             {saving ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                Saving...
+                {t('profile.saving')}
               </>
             ) : (
               <>
                 <Save size={20} />
-                Save Changes
+                {t('profile.saveChanges')}
               </>
             )}
           </button>
