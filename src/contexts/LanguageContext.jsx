@@ -234,6 +234,7 @@ const translations = {
       pleaseLoginReply: "Please log in to reply.",
       createNewPost: "Create New Post",
       category: "Category",
+      title2: "Title",
       enterClearTitle: "Enter a clear, descriptive title",
       content: "Content",
       shareThoughts: "Share your thoughts, question, or announcement...",
@@ -336,6 +337,18 @@ const translations = {
       // ── Extra How-It-Works bullets ───────────────────────────
       spacedRepetitionNote: "Cards sorted by Spaced Repetition priority — highest urgency first.",
       metacognitiveNote: "Tag each mistake with an Error Category to track your patterns.",
+      
+      // ── Learning Analytics Dashboard ─────────────────────────
+      learningAnalytics: "Learning Analytics",
+      mistakeClearingActivity: "Mistake Clearing Activity",
+      errorDensityByTopic: "Error Density by Topic",
+      improvementTrend: "Improvement Trend (14 days)",
+      aiDailyMission: "AI Daily Mission",
+      aiDailyMissionNote: "Smart AI selects 20 questions with interleaved practice to maximize retention.",
+      needMoreQuestions: "Need at least 20 mistakes for AI Daily Mission (you have {count})",
+      less: "Less",
+      more: "More",
+      tagError: "Tag Error",
     },
     
     // History
@@ -700,6 +713,7 @@ const translations = {
       pleaseLoginReply: "請登入以回覆。",
       createNewPost: "建立新帖子",
       category: "類別",
+      title2: "標題",
       enterClearTitle: "輸入清晰的標題",
       content: "內容",
       shareThoughts: "分享您的想法、問題或公告...",
@@ -802,6 +816,18 @@ const translations = {
       // ── 額外運作原理說明 ─────────────────────────────────────
       spacedRepetitionNote: "卡片按間隔重複優先分排序——最緊急的排在最前。",
       metacognitiveNote: "為每道錯題標記錯誤類別，追蹤您的學習模式。",
+      
+      // ── 學習分析儀表板 ───────────────────────────────────────
+      learningAnalytics: "學習分析",
+      mistakeClearingActivity: "錯題清除活動",
+      errorDensityByTopic: "按主題錯誤密度",
+      improvementTrend: "改進趨勢（14天）",
+      aiDailyMission: "AI每日任務",
+      aiDailyMissionNote: "智能AI選擇20道題目，交錯熟練以最大化記憶保持。",
+      needMoreQuestions: "需要至少20道錯題才能使用AI每日任務（您有{count}道）",
+      less: "較少",
+      more: "更多",
+      tagError: "標記錯誤",
     },
     
     // 歷史記錄
