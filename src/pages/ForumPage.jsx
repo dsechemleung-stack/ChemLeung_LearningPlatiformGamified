@@ -392,7 +392,7 @@ function NewPostModal({ currentUser, onClose, onCreated }) {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-600 mb-2">{t('forum.title')}</label>
+            <label className="block text-sm font-bold text-slate-600 mb-2">{t('forum.title2')}</label>
             <input value={title} onChange={e => setTitle(e.target.value)} maxLength={120}
               placeholder={t('forum.enterClearTitle')}
               className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg outline-none focus:border-lab-blue font-semibold" />
