@@ -247,6 +247,8 @@ const translations = {
     // Mistake Notebook
     notebook: {
       title: "Mistake Notebook",
+      mistakeDeck: "Mistake Deck",
+      learningAnalytics: "Learning Analytics",
       review: "Review Mistakes",
       practiceMistakes: "Practice Mistakes Only",
       cleared: "All mistakes cleared!",
@@ -339,7 +341,6 @@ const translations = {
       metacognitiveNote: "Tag each mistake with an Error Category to track your patterns.",
       
       // ── Learning Analytics Dashboard ─────────────────────────
-      learningAnalytics: "Learning Analytics",
       mistakeClearingActivity: "Mistake Clearing Activity",
       errorDensityByTopic: "Error Density by Topic",
       improvementTrend: "Improvement Trend (14 days)",
@@ -726,6 +727,8 @@ const translations = {
     // 錯題簿
     notebook: {
       title: "錯題簿",
+      mistakeDeck: "錯題卡組",
+      learningAnalytics: "學習分析",
       review: "檢討錯題",
       practiceMistakes: "只練習錯題",
       cleared: "所有錯題已清除！",
@@ -818,7 +821,6 @@ const translations = {
       metacognitiveNote: "為每道錯題標記錯誤類別，追蹤您的學習模式。",
       
       // ── 學習分析儀表板 ───────────────────────────────────────
-      learningAnalytics: "學習分析",
       mistakeClearingActivity: "錯題清除活動",
       errorDensityByTopic: "按主題錯誤密度",
       improvementTrend: "改進趨勢（14天）",

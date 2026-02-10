@@ -13,15 +13,15 @@ import {
   BookOpen, ArrowLeft, Play, AlertCircle, Target,
   CheckCircle, Filter, ChevronDown, Calendar, Hash, Tag,
   Clock, Zap, TrendingUp, Brain, BarChart2, Layers, X,
-  AlertTriangle, Flame, Star, PlusCircle, Wand2,
+  AlertTriangle, Flame, Star, PlusCircle, Wand2, Eye, EyeOff, 
+  Grid3x3, List as ListIcon, Command, Archive, Sparkles,
+  ChevronRight, Maximize2, Check,
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
-
 const MASTERY_THRESHOLD = 3; // Correct answers to graduate a mistake
-
 const ERROR_TYPES = [
   { value: 'misread', label: 'Misread Question', color: 'blue' },
   { value: 'calculation', label: 'Calculation Error', color: 'red' },
@@ -40,7 +40,6 @@ const MASTERY_LEVELS = {
 // ═══════════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS: ISRS & State Management
 // ═══════════════════════════════════════════════════════════════════════════════
-
 /**
  * Calculate multi-weighted ISRS (Integrated Spaced Repetition System) priority score
  * Score = (U × 0.4) + (D × 0.4) + (R × 0.2)
@@ -180,7 +179,6 @@ function selectAIDailyMission(mistakes, recentTopics = []) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // UI COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
-
 /**
  * TooltipWithPortal: Floating UI smart tooltip with viewport edge detection
  */
@@ -330,7 +328,7 @@ function TopicHeatmap({ mistakes }) {
     if (density < 0.4) return 'bg-orange-200 text-orange-900';
     if (density < 0.6) return 'bg-orange-400 text-orange-900';
     if (density < 0.8) return 'bg-red-500 text-white';
-    return 'bg-crimson-700 text-white';
+    return 'bg-red-700 text-white';
   };
   
   return (
@@ -457,19 +455,18 @@ function ErrorTagSelector({ questionId, currentTag, onTag }) {
 function RetentionDashboard({ mistakes, improvements }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
-
+  
   const stats = useMemo(() => {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const addedThisWeek = mistakes.filter(
       (m) => new Date(m.lastAttempted).getTime() >= weekAgo
     ).length;
-
     const masteredThisWeek = Object.values(improvements).filter(
       (d) => (d.correctCount || 0) >= MASTERY_THRESHOLD &&
              d.lastCorrect &&
              new Date(d.lastCorrect).getTime() >= weekAgo
     ).length;
-
+    
     const subtopicMap = {};
     mistakes.forEach((m) => {
       const key = m.Subtopic || 'Unknown';
@@ -477,14 +474,14 @@ function RetentionDashboard({ mistakes, improvements }) {
       subtopicMap[key].count++;
       if (m.attemptCount > 1) subtopicMap[key].repeats++;
     });
-
+    
     const weakest = Object.entries(subtopicMap)
       .sort((a, b) => b[1].count + b[1].repeats * 2 - (a[1].count + a[1].repeats * 2))
       .slice(0, 6);
-
+    
     return { addedThisWeek, masteredThisWeek, weakest };
   }, [mistakes, improvements]);
-
+  
   const decayLabel =
     stats.addedThisWeek === 0 && stats.masteredThisWeek === 0
       ? '—'
@@ -493,7 +490,7 @@ function RetentionDashboard({ mistakes, improvements }) {
       : stats.masteredThisWeek === stats.addedThisWeek
       ? t('notebook.decayStable')
       : t('notebook.decayGrowing');
-
+  
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
       <button
@@ -509,7 +506,7 @@ function RetentionDashboard({ mistakes, improvements }) {
           className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
-
+      
       {open && (
         <div className="border-t border-slate-200 p-6 space-y-6 bg-slate-50">
           <div className="grid grid-cols-3 gap-4">
@@ -532,7 +529,7 @@ function RetentionDashboard({ mistakes, improvements }) {
               <div className="text-lg font-black text-purple-700 mt-1">{decayLabel}</div>
             </div>
           </div>
-
+          
           <div>
             <h3 className="text-sm font-black text-slate-600 uppercase tracking-widest mb-3 flex items-center gap-2">
               <Flame size={14} className="text-red-500" />
@@ -569,14 +566,337 @@ function RetentionDashboard({ mistakes, improvements }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// DYNAMIC PROGRESS BAR COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+function ProgressSegments({ current, target = 3, size = 'sm' }) {
+  const sizeClasses = {
+    sm: 'h-2',
+    md: 'h-3',
+    lg: 'h-4',
+  };
+  
+  return (
+    <div className={`flex gap-1 ${sizeClasses[size]}`}>
+      {Array.from({ length: target }).map((_, i) => (
+        <div
+          key={i}
+          className={`flex-1 rounded-full transition-all ${
+            i < current
+              ? 'bg-green-500 shadow-lg'
+              : i === current
+              ? 'bg-amber-400'
+              : 'bg-slate-200'
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INTERACTIVE TOPIC HEATMAP WITH FILTER SYNC
+// ═══════════════════════════════════════════════════════════════════════════════
+function InteractiveTopicHeatmap({ mistakes, onTopicClick }) {
+  const { t } = useLanguage();
+  
+  const errorDensity = useMemo(() => {
+    const topicMap = {};
+    mistakes.forEach(m => {
+      if (!topicMap[m.Topic]) {
+        topicMap[m.Topic] = { attempted: 0, wrong: 0 };
+      }
+      topicMap[m.Topic].wrong++;
+      topicMap[m.Topic].attempted += Math.max(m.attemptCount, 1);
+    });
+    
+    return Object.entries(topicMap).map(([topic, data]) => ({
+      topic,
+      errorDensity: Math.min(1.0, data.wrong / Math.max(data.attempted, 1)),
+      wrongCount: data.wrong,
+      attemptedCount: data.attempted
+    })).sort((a, b) => b.errorDensity - a.errorDensity);
+  }, [mistakes]);
+  
+  const getColor = (density) => {
+    if (density < 0.2) return 'from-yellow-100 to-yellow-200 text-yellow-900 hover:from-yellow-200 hover:to-yellow-300 cursor-pointer';
+    if (density < 0.4) return 'from-orange-200 to-orange-300 text-orange-900 hover:from-orange-300 hover:to-orange-400 cursor-pointer';
+    if (density < 0.6) return 'from-orange-400 to-orange-500 text-white hover:from-orange-500 hover:to-orange-600 cursor-pointer';
+    if (density < 0.8) return 'from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 cursor-pointer';
+    return 'from-red-700 to-red-800 text-white hover:from-red-800 hover:to-red-900 cursor-pointer';
+  };
+  
+  return (
+    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6">
+      <h3 className="font-bold text-lg text-slate-800 mb-2 flex items-center gap-2">
+        <BarChart2 size={20} className="text-orange-600" />
+        {t('notebook.errorDensityByTopic')}
+      </h3>
+      <p className="text-xs text-slate-500 mb-4">Click a topic to filter →</p>
+      
+      <div className="space-y-3">
+        {errorDensity.map(({ topic, errorDensity: density, wrongCount, attemptedCount }) => (
+          <button
+            key={topic}
+            onClick={() => onTopicClick(topic)}
+            className={`w-full flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r transition-all transform hover:scale-105 active:scale-95 ${getColor(density)}`}
+          >
+            <div className="w-32 font-semibold text-sm text-left truncate">
+              {topic}
+            </div>
+            <div className="flex-1 text-right font-bold text-sm">
+              {(density * 100).toFixed(0)}% ({wrongCount}/{attemptedCount})
+            </div>
+            <ChevronRight size={16} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIST VIEW: Compact expandable list of mistakes
+// ═══════════════════════════════════════════════════════════════════════════════
+function ListViewDeck({ mistakes, errorTags, onTag, masteryStyle, calcPriority, formatDate, selectedIds, onToggleSelect, onToggleSelectAll, allSelected }) {
+  const { t } = useLanguage();
+  const [expandedId, setExpandedId] = useState(null);
+  
+  return (
+    <div className="space-y-2">
+      {/* Select All */}
+      <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={onToggleSelectAll}
+          className="w-4 h-4 rounded cursor-pointer"
+        />
+        <span className="text-sm font-bold text-slate-700">
+          Select All ({selectedIds.size}/{mistakes.length})
+        </span>
+      </div>
+      
+      {/* Mistake Rows */}
+      {mistakes.map((mistake) => {
+        const style = masteryStyle(mistake.improvementCount ?? 0);
+        const priority = calcPriority(mistake);
+        const isExpanded = expandedId === mistake.ID;
+        const isSelected = selectedIds.has(mistake.ID);
+        
+        return (
+          <div
+            key={mistake.ID}
+            className={`rounded-lg border-2 transition-all ${style.border} ${style.bg}`}
+          >
+            {/* Row Header (Always Visible) */}
+            <div className="flex items-center gap-3 p-4">
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => onToggleSelect(mistake.ID)}
+                className="w-4 h-4 rounded cursor-pointer"
+              />
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : mistake.ID)}
+                className="flex-1 flex items-center justify-between hover:bg-white/50 p-2 rounded-lg transition-all"
+              >
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="w-10 h-10 rounded bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                    {mistake.Topic.slice(0, 2)}
+                  </div>
+                  <div className="text-left min-w-0 flex-1">
+                    <div className="text-xs font-bold text-slate-600">
+                      {mistake.Topic} → {mistake.Subtopic}
+                    </div>
+                    <div className="text-sm text-slate-800 font-semibold truncate">
+                      {mistake.Question?.substring(0, 60)}...
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <ProgressSegments current={mistake.improvementCount ?? 0} target={3} size="sm" />
+                  <span className={`text-xs font-black px-2 py-1 rounded-full ${
+                    priority > 15 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {priority.toFixed(1)}
+                  </span>
+                  <ChevronRight size={16} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                </div>
+              </button>
+            </div>
+            
+            {/* Expanded Content */}
+            {isExpanded && (
+              <div className="p-4 border-t border-slate-300 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+                    <div className="text-xs font-bold text-red-700 mb-1">{t('notebook.yourAnswer')}</div>
+                    <div className="text-sm font-semibold text-red-900">{mistake.userAnswer}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-green-50 border border-green-200">
+                    <div className="text-xs font-bold text-green-700 mb-1">{t('notebook.correctAnswer')}</div>
+                    <div className="text-sm font-semibold text-green-900">{mistake.CorrectOption}</div>
+                  </div>
+                </div>
+                {mistake.Explanation && (
+                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                    <div className="text-xs font-bold text-blue-700 mb-2">{t('notebook.explanation')}</div>
+                    <div
+                      className="text-sm text-blue-900 line-clamp-3"
+                      dangerouslySetInnerHTML={{ __html: mistake.Explanation }}
+                    />
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-slate-500 uppercase">Tag:</span>
+                  <ErrorTagSelector
+                    questionId={mistake.ID}
+                    currentTag={errorTags[mistake.ID]}
+                    onTag={onTag}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// KANBAN VIEW: Drag-friendly column-based layout
+// ═══════════════════════════════════════════════════════════════════════════════
+function KanbanViewDeck({ columns, errorTags, onTag, masteryStyle, calcPriority, formatDate }) {
+  const { t } = useLanguage();
+  const [expandedId, setExpandedId] = useState(null);
+  
+  const columnLabels = {
+    new: { label: 'New', color: 'red', icon: AlertTriangle },
+    progressing: { label: 'Developing', color: 'amber', icon: Flame },
+    near: { label: 'Near-Mastery', color: 'green', icon: Star },
+  };
+  
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
+      {Object.entries(columns).map(([key, mistakes]) => {
+        const config = columnLabels[key];
+        const colorMap = { red: 'from-red-50 to-red-100', amber: 'from-amber-50 to-amber-100', green: 'from-green-50 to-green-100' };
+        const borderMap = { red: 'border-red-300', amber: 'border-amber-300', green: 'border-green-300' };
+        
+        return (
+          <div
+            key={key}
+            className={`rounded-2xl border-2 ${borderMap[config.color]} bg-gradient-to-b ${colorMap[config.color]} p-4 flex flex-col`}
+          >
+            {/* Column Header */}
+            <div className="mb-4 pb-3 border-b-2 border-slate-300">
+              <h3 className="font-black text-lg text-slate-800 flex items-center gap-2">
+                <config.icon size={20} className={`${
+                  config.color === 'red' ? 'text-red-600' :
+                  config.color === 'amber' ? 'text-amber-600' :
+                  'text-green-600'
+                }`} />
+                {config.label} ({mistakes.length})
+              </h3>
+            </div>
+            
+            {/* Column Cards */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+              {mistakes.length === 0 ? (
+                <div className="text-center py-8">
+                  <CheckCircle size={32} className={`${
+                    config.color === 'red' ? 'text-red-300' :
+                    config.color === 'amber' ? 'text-amber-300' :
+                    'text-green-300'
+                  } mx-auto mb-2`} />
+                  <p className={`text-xs font-bold ${
+                    config.color === 'red' ? 'text-red-700' :
+                    config.color === 'amber' ? 'text-amber-700' :
+                    'text-green-700'
+                  }`}>
+                    All caught up!
+                  </p>
+                </div>
+              ) : (
+                mistakes.map((mistake) => {
+                  const style = masteryStyle(mistake.improvementCount ?? 0);
+                  const priority = calcPriority(mistake);
+                  const isExpanded = expandedId === mistake.ID;
+                  
+                  return (
+                    <div
+                      key={mistake.ID}
+                      className="bg-white rounded-xl p-4 shadow-md border-2 border-slate-200 hover:shadow-lg transition-all cursor-pointer"
+                      onClick={() => setExpandedId(isExpanded ? null : mistake.ID)}
+                    >
+                      {/* Card Header */}
+                      <div className="mb-3">
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+                          {mistake.Topic}
+                        </div>
+                        <div className="text-sm font-bold text-slate-800 line-clamp-2">
+                          {mistake.Question?.substring(0, 80)}...
+                        </div>
+                      </div>
+                      
+                      {/* Progress Bar */}
+                      <div className="mb-3">
+                        <ProgressSegments current={mistake.improvementCount ?? 0} target={3} size="sm" />
+                      </div>
+                      
+                      {/* Priority Badge */}
+                      <div className={`inline-block text-xs font-black px-2 py-1 rounded-full mb-3 ${
+                        priority > 15
+                          ? 'bg-red-100 text-red-700 animate-pulse'
+                          : priority > 7
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        Priority: {priority.toFixed(1)}
+                      </div>
+                      
+                      {/* Expanded Details */}
+                      {isExpanded && (
+                        <div className="pt-3 border-t border-slate-200 space-y-3">
+                          <div className="grid grid-cols-1 gap-2">
+                            <div className="p-2 rounded bg-red-50 border border-red-200">
+                              <div className="text-xs font-bold text-red-700 mb-1">Your Answer</div>
+                              <div className="text-xs font-semibold text-red-900">{mistake.userAnswer}</div>
+                            </div>
+                            <div className="p-2 rounded bg-green-50 border border-green-200">
+                              <div className="text-xs font-bold text-green-700 mb-1">Correct</div>
+                              <div className="text-xs font-semibold text-green-900">{mistake.CorrectOption}</div>
+                            </div>
+                          </div>
+                          {mistake.Explanation && (
+                            <div 
+                              className="text-xs text-slate-700 bg-blue-50 p-2 rounded border border-blue-200 max-h-20 overflow-y-auto"
+                              dangerouslySetInnerHTML={{ __html: mistake.Explanation.substring(0, 150) + '...' }}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
-
 export default function MistakeNotebookPage() {
   const { currentUser } = useAuth();
   const { t, tf } = useLanguage();
   const navigate = useNavigate();
-
+  
   // Core state
   const [mistakes, setMistakes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -584,7 +904,7 @@ export default function MistakeNotebookPage() {
   const [errorTags, setErrorTags] = useState(() =>
     JSON.parse(localStorage.getItem('mistake_error_tags') || '{}')
   );
-
+  
   // New ISRS state
   const [recentQuizTopics, setRecentQuizTopics] = useState(() =>
     JSON.parse(localStorage.getItem('recent_quiz_topics') || '[]')
@@ -593,7 +913,7 @@ export default function MistakeNotebookPage() {
     JSON.parse(localStorage.getItem('mistake_archive') || '{}')
   );
   const [showAnalytics, setShowAnalytics] = useState(true);
-
+  
   // Filter state
   const [showFilters, setShowFilters] = useState(true);
   const [questionCount, setQuestionCount] = useState('5');
@@ -601,15 +921,19 @@ export default function MistakeNotebookPage() {
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedSubtopics, setSelectedSubtopics] = useState([]);
   const [selectedMasteryLevels, setSelectedMasteryLevels] = useState([]);
-
+  
   // Timer settings
   const [timerEnabled, setTimerEnabled] = useState(true);
   const [isTimedMode, setIsTimedMode] = useState(false);
-
+  
+  // Dashboard features
+  const [activeTab, setActiveTab] = useState('deck'); // 'deck', 'analytics', 'archive'
+  const [viewMode, setViewMode] = useState('list'); // 'list', 'kanban'
+  const [selectedMistakeIds, setSelectedMistakeIds] = useState(new Set());
+  
   // ── Load data ──
-
   useEffect(() => { loadMistakes(); }, [currentUser]);
-
+  
   async function loadMistakes() {
     if (!currentUser) { setLoading(false); return; }
     try {
@@ -619,23 +943,23 @@ export default function MistakeNotebookPage() {
       const improvementData = JSON.parse(
         localStorage.getItem('mistake_improvements') || '{}'
       );
-
+      
       attempts.forEach((attempt) => {
         if (!attempt.answers || !attempt.questions) return;
         attempt.questions.forEach((question) => {
           const userAnswer = attempt.answers[question.ID];
           const isCorrect = userAnswer && userAnswer === question.CorrectOption;
-
+          
           if (isCorrect && improvementData[question.ID]) {
             improvementData[question.ID].correctCount =
               (improvementData[question.ID].correctCount || 0) + 1;
             improvementData[question.ID].lastCorrect = attempt.timestamp;
           }
-
+          
           if (userAnswer && userAnswer !== question.CorrectOption) {
             const improveCount = improvementData[question.ID]?.correctCount || 0;
             if (improveCount >= MASTERY_THRESHOLD) return;
-
+            
             if (!incorrectMap.has(question.ID)) {
               incorrectMap.set(question.ID, {
                 ...question,
@@ -656,10 +980,10 @@ export default function MistakeNotebookPage() {
           }
         });
       });
-
+      
       localStorage.setItem('mistake_improvements', JSON.stringify(improvementData));
       setImprovements(improvementData);
-
+      
       const arr = Array.from(incorrectMap.values()).sort(
         (a, b) => calcPriority(b) - calcPriority(a)
       );
@@ -670,25 +994,18 @@ export default function MistakeNotebookPage() {
       setLoading(false);
     }
   }
-
+  
   // ── Effects for persistence ──
-
   useEffect(() => {
     localStorage.setItem('mistake_error_tags', JSON.stringify(errorTags));
   }, [errorTags]);
-
+  
   useEffect(() => {
     localStorage.setItem('recent_quiz_topics', JSON.stringify(recentQuizTopics));
   }, [recentQuizTopics]);
-
-  useEffect(() => {
-    // Apply Rule of 3 on improvements change
-    const updated = applyRuleOfThree(improvements);
-    setArchivedMistakes(JSON.parse(localStorage.getItem('mistake_archive') || '{}'));
-  }, [improvements]);
-
+  
+  
   // ── ISRS Calculations (Memoized) ──
-
   const prioritizedMistakes = useMemo(() => {
     return mistakes
       .map(m => ({
@@ -698,27 +1015,26 @@ export default function MistakeNotebookPage() {
       }))
       .sort((a, b) => b.masteryPriority - a.masteryPriority);
   }, [mistakes, recentQuizTopics]);
-
+  
   // ── Filter helpers ──
-
   const allTopics = useMemo(
     () => [...new Set(mistakes.map((m) => m.Topic).filter(Boolean))].sort(),
     [mistakes]
   );
-
+  
   const availableSubtopics = useMemo(() => {
     const base = selectedTopics.length > 0
       ? mistakes.filter((m) => selectedTopics.includes(m.Topic))
       : mistakes;
     return [...new Set(base.map((m) => m.Subtopic).filter(Boolean))].sort();
   }, [mistakes, selectedTopics]);
-
+  
   useEffect(() => {
     setSelectedSubtopics((prev) =>
       prev.filter((s) => availableSubtopics.includes(s))
     );
   }, [availableSubtopics]);
-
+  
   const topicBreakdown = useMemo(() => {
     const bd = {};
     mistakes.forEach((m) => {
@@ -728,24 +1044,26 @@ export default function MistakeNotebookPage() {
     });
     return bd;
   }, [mistakes]);
-
+  
   const filteredMistakes = useMemo(() => {
     let result = [...mistakes];
-
+    
     if (datePeriod === 'week') {
-      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+      const weekAgo = new Date(); 
+      weekAgo.setDate(weekAgo.getDate() - 7);
       result = result.filter((m) => new Date(m.lastAttempted) >= weekAgo);
     } else if (datePeriod === 'month') {
-      const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
+      const monthAgo = new Date(); 
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
       result = result.filter((m) => new Date(m.lastAttempted) >= monthAgo);
     }
-
+    
     if (selectedTopics.length > 0)
       result = result.filter((m) => selectedTopics.includes(m.Topic));
-
+    
     if (selectedSubtopics.length > 0)
       result = result.filter((m) => selectedSubtopics.includes(m.Subtopic));
-
+    
     if (selectedMasteryLevels.length > 0) {
       result = result.filter((m) => {
         const ic = m.improvementCount ?? 0;
@@ -755,17 +1073,16 @@ export default function MistakeNotebookPage() {
         });
       });
     }
-
+    
     return result;
   }, [mistakes, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels]);
-
+  
   const practiceCount =
     questionCount === 'All'
       ? filteredMistakes.length
       : Math.min(parseInt(questionCount), filteredMistakes.length);
-
+  
   // ── Handlers ──
-
   const handleTag = useCallback((questionId, tag) => {
     setErrorTags((prev) => {
       const next = { ...prev };
@@ -774,25 +1091,25 @@ export default function MistakeNotebookPage() {
       return next;
     });
   }, []);
-
+  
   const toggleTopic = useCallback((topic) => {
     setSelectedTopics((prev) =>
       prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]
     );
   }, []);
-
+  
   const toggleSubtopic = useCallback((sub) => {
     setSelectedSubtopics((prev) =>
       prev.includes(sub) ? prev.filter((s) => s !== sub) : [...prev, sub]
     );
   }, []);
-
+  
   const toggleMasteryLevel = useCallback((lvl) => {
     setSelectedMasteryLevels((prev) =>
       prev.includes(lvl) ? prev.filter((l) => l !== lvl) : [...prev, lvl]
     );
   }, []);
-
+  
   const handlePracticeMistakes = () => {
     if (filteredMistakes.length === 0) return;
     const selected = [...filteredMistakes]
@@ -805,7 +1122,7 @@ export default function MistakeNotebookPage() {
     localStorage.setItem('quiz_is_timed_mode', isTimedMode.toString());
     navigate('/quiz');
   };
-
+  
   const handleAIDailyMission = () => {
     const selected = selectAIDailyMission(mistakes, recentQuizTopics);
     quizStorage.clearQuizData();
@@ -815,25 +1132,24 @@ export default function MistakeNotebookPage() {
     localStorage.setItem('quiz_is_timed_mode', 'true');
     navigate('/quiz');
   };
-
+  
   const formatDate = (iso) =>
     new Date(iso).toLocaleDateString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric',
     });
-
+  
   // ── Derived stats ──
-
   const repeatedMistakes = useMemo(
     () => mistakes.filter((m) => m.attemptCount > 1).length,
     [mistakes]
   );
+  
   const topicsToFocus = useMemo(
     () => new Set(mistakes.map((m) => m.Topic)).size,
     [mistakes]
   );
-
+  
   // ── Loading state ──
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -844,590 +1160,508 @@ export default function MistakeNotebookPage() {
       </div>
     );
   }
-
+  
   // ═══════════════════════════════════════════════════════════════════════════════
-  // RENDER
+  // RENDER - NEW DASHBOARD LAYOUT
   // ═══════════════════════════════════════════════════════════════════════════════
-
+  
+  const handleTopicFilterClick = (topic) => {
+    setSelectedTopics([topic]);
+    setActiveTab('deck');
+  };
+  
+  const toggleMistakeSelection = (questionId) => {
+    setSelectedMistakeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(questionId)) next.delete(questionId);
+      else next.add(questionId);
+      return next;
+    });
+  };
+  
+  const toggleSelectAll = () => {
+    if (selectedMistakeIds.size === filteredMistakes.length) {
+      setSelectedMistakeIds(new Set());
+    } else {
+      setSelectedMistakeIds(new Set(filteredMistakes.map(m => m.ID)));
+    }
+  };
+  
+  // Organize mistakes by mastery state for Kanban
+  const kanbanColumns = useMemo(() => ({
+    new: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 0),
+    progressing: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 1),
+    near: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 2),
+  }), [filteredMistakes]);
+  
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-10">
-
-      {/* ── Header ── */}
-      <div className="flex items-center gap-4">
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="p-3 bg-white rounded-lg border-2 border-slate-200 hover:border-lab-blue transition-all"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <div className="flex-1 bg-gradient-to-r from-orange-600 to-red-600 rounded-2xl shadow-xl p-6 text-white">
-          <h1 className="text-3xl font-black flex items-center gap-3">
-            <BookOpen size={32} />
-            {t('notebook.title')}
+    <div className="flex h-screen bg-slate-50 overflow-hidden">
+      {/* ═══════════════════════════════════════════════════════════════════════════════
+          PERSIST SIDEBAR: Practice Configurator + AI Daily Mission
+          ═══════════════════════════════════════════════════════════════════════════════ */}
+      
+      <div className="w-80 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+        {/* Header with back button */}
+        <div className="p-4 border-b border-slate-200 flex items-center gap-2">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-all"
+            title="Back to Dashboard"
+          >
+            <ArrowLeft size={20} className="text-slate-700" />
+          </button>
+          <h1 className="font-black text-lg text-slate-800 flex items-center gap-2">
+            <Command size={20} className="text-indigo-600"/>
           </h1>
-          <p className="text-orange-100 mt-1">{t('notebook.reviewMaster')}</p>
+        </div>
+        
+        {/* AI Daily Mission Hero Button */}
+        <div className="p-4 border-b border-slate-200">
+          <button
+            onClick={handleAIDailyMission}
+            disabled={mistakes.length < 20}
+            className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl font-black text-sm shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 active:scale-95"
+            title={mistakes.length < 20 ? t('notebook.needMoreQuestions') : t('notebook.aiDailyMission')}
+          >
+            <Sparkles size={18} />
+            {t('notebook.aiDailyMission')}
+          </button>
+          <p className="text-xs text-slate-500 mt-2 text-center">
+            {mistakes.length < 20 ? t('notebook.needMoreQuestions') : '20 Questions • Interleaved'}
+          </p>
+        </div>
+        
+        {/* Practice Configurator */}
+        <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+          {/* Question Count */}
+          <div>
+            <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2 flex items-center gap-1">
+              <Hash size={12} />
+              {t('notebook.numberOfQuestions')}
+            </label>
+            <div className="grid grid-cols-3 gap-1">
+              {['5', '10', '15', '20', '30', 'All'].map((num) => (
+                <button
+                  key={num}
+                  onClick={() => setQuestionCount(num)}
+                  disabled={num !== 'All' && parseInt(num) > filteredMistakes.length}
+                  className={`py-2 rounded-lg border text-xs font-bold transition-all ${
+                    questionCount === num
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-600'
+                      : 'border-slate-200 text-slate-500 hover:border-slate-300 disabled:opacity-30'
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {/* Date Range */}
+          <div>
+            <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2 flex items-center gap-1">
+              <Calendar size={12} />
+              {t('notebook.timeRange')}
+            </label>
+            <div className="space-y-1">
+              {[
+                { value: 'all',   label: t('notebook.allTime') },
+                { value: 'month', label: t('notebook.lastMonth') },
+                { value: 'week',  label: t('notebook.lastWeek') },
+              ].map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => setDatePeriod(o.value)}
+                  className={`w-full px-3 py-2 rounded-lg border text-xs font-bold text-left transition-all ${
+                    datePeriod === o.value
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {/* Mastery Level */}
+          <div>
+            <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2">
+              {t('notebook.masteryLevel')}
+            </label>
+            <div className="space-y-1">
+              {Object.entries(MASTERY_LEVELS).map(([key, lvl]) => {
+                const colors = {
+                  new:         'bg-red-500 border-red-500 text-white',
+                  progressing: 'bg-amber-500 border-amber-500 text-white',
+                  near:        'bg-green-500 border-green-500 text-white',
+                };
+                const inactive = {
+                  new:         'bg-white border-red-200 text-red-700',
+                  progressing: 'bg-white border-amber-200 text-amber-700',
+                  near:        'bg-white border-green-200 text-green-700',
+                };
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggleMasteryLevel(key)}
+                    className={`w-full px-3 py-2 rounded-lg text-xs font-bold border text-left transition-all ${
+                      selectedMasteryLevels.includes(key) ? colors[key] : inactive[key]
+                    }`}
+                  >
+                    {t(`notebook.mastery${key.charAt(0).toUpperCase() + key.slice(1)}`)}
+                    <span className="ml-1 opacity-70">
+                      ({mistakes.filter((m) => {
+                        const ic = m.improvementCount ?? 0;
+                        return ic >= lvl.min && ic <= lvl.max;
+                      }).length})
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          
+          {/* Topics */}
+          {allTopics.length > 1 && (
+            <div>
+              <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2">
+                {t('notebook.topics')}
+              </label>
+              <div className="space-y-1">
+                {allTopics.map((topic) => (
+                  <button
+                    key={topic}
+                    onClick={() => toggleTopic(topic)}
+                    className={`w-full px-3 py-2 rounded-lg text-xs font-bold text-left border transition-all ${
+                      selectedTopics.includes(topic)
+                        ? 'bg-indigo-500 border-indigo-500 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
+                    }`}
+                  >
+                    {topic}
+                    <span className="ml-1 opacity-70">
+                      ({mistakes.filter((m) => m.Topic === topic).length})
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Subtopics */}
+          {availableSubtopics.length > 1 && (
+            <div>
+              <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2">
+                {t('notebook.subtopics')}
+              </label>
+              <div className="space-y-1">
+                {availableSubtopics.slice(0, 8).map((sub) => (
+                  <button
+                    key={sub}
+                    onClick={() => toggleSubtopic(sub)}
+                    className={`w-full px-3 py-2 rounded-lg text-xs font-bold text-left border transition-all ${
+                      selectedSubtopics.includes(sub)
+                        ? 'bg-indigo-400 border-indigo-400 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-200'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Timer Settings */}
+          <div className="space-y-2 pt-2 border-t border-slate-200">
+            <button
+              onClick={() => setTimerEnabled(!timerEnabled)}
+              className={`w-full px-3 py-2 rounded-lg text-xs font-bold border transition-all text-left flex items-center justify-between ${
+                timerEnabled
+                  ? 'bg-chemistry-green border-chemistry-green text-white'
+                  : 'bg-white border-slate-200 text-slate-600'
+              }`}
+            >
+              <span className="flex items-center gap-1">
+                <Clock size={12} />
+                {t('quiz.enableTimer')}
+              </span>
+              <Check size={14} />
+            </button>
+            {timerEnabled && (
+              <button
+                onClick={() => setIsTimedMode(!isTimedMode)}
+                className={`w-full px-3 py-2 rounded-lg text-xs font-bold border transition-all text-left flex items-center justify-between ${
+                  isTimedMode
+                    ? 'bg-amber-600 border-amber-600 text-white'
+                    : 'bg-white border-slate-200 text-slate-600'
+                }`}
+              >
+                <span className="flex items-center gap-1">
+                  <Zap size={12} />
+                  {t('quiz.timedMode')}
+                </span>
+                <Check size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+        
+        {/* Start Practice Button */}
+        <div className="p-4 border-t border-slate-200">
+          <button
+            onClick={handlePracticeMistakes}
+            disabled={filteredMistakes.length === 0}
+            className="w-full py-3 bg-orange-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-orange-700 disabled:bg-slate-300 transition-all flex items-center justify-center gap-2 active:scale-95"
+          >
+            <Play fill="currentColor" size={16} />
+            {tf('notebook.practiceMistakesCount', {
+              count: practiceCount,
+              plural: practiceCount !== 1 ? 's' : '',
+            })}
+          </button>
+          <p className="text-xs text-slate-500 mt-2 text-center">
+            {filteredMistakes.length} {t('notebook.questionsAvailable')}
+          </p>
         </div>
       </div>
-
-      {/* ── Stats ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <TooltipWithPortal
-          content={
-            <>
-              <div className="font-bold mb-2">{t('notebook.topicBreakdown')}</div>
-              <div className="space-y-1 max-h-40 overflow-y-auto">
-                {Object.entries(topicBreakdown)
-                  .sort((a, b) => b[1].count - a[1].count)
-                  .slice(0, 10)
-                  .map(([topic, data]) => (
-                    <div key={topic} className="flex justify-between gap-2">
-                      <span className="truncate">{topic}</span>
-                      <span className="font-bold shrink-0">{data.count}</span>
-                    </div>
-                  ))}
+      
+      {/* ═══════════════════════════════════════════════════════════════════════════════
+          MAIN WORKSPACE: Tabbed Interface
+          ═══════════════════════════════════════════════════════════════════════════════ */}
+      
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header with Tabs and View Toggle */}
+        <div className="bg-white border-b border-slate-200 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setActiveTab('deck')}
+                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                  activeTab === 'deck'
+                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500'
+                    : 'bg-slate-100 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <Grid3x3 size={16} className="inline mr-2" />
+                {t('notebook.mistakeDeck')} ({filteredMistakes.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('analytics')}
+                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                  activeTab === 'analytics'
+                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500'
+                    : 'bg-slate-100 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <Brain size={16} className="inline mr-2" />
+                {t('notebook.learningAnalytics')}
+              </button>
+              <button
+                onClick={() => setActiveTab('archive')}
+                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                  activeTab === 'archive'
+                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500'
+                    : 'bg-slate-100 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <Archive size={16} className="inline mr-2" />
+                Mastery Archive ({Object.keys(archivedMistakes).length})
+              </button>
+            </div>
+            
+            {activeTab === 'deck' && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-lg transition-all ${
+                    viewMode === 'list'
+                      ? 'bg-indigo-500 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                  title="List View"
+                >
+                  <ListIcon size={18} />
+                </button>
+                <button
+                  onClick={() => setViewMode('kanban')}
+                  className={`p-2 rounded-lg transition-all ${
+                    viewMode === 'kanban'
+                      ? 'bg-indigo-500 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                  title="Kanban View"
+                >
+                  <Grid3x3 size={18} />
+                </button>
               </div>
-            </>
-          }
-          trigger={
-            <div className="bg-white rounded-xl shadow-lg border-2 border-slate-200 p-4 cursor-default">
-              <div className="flex items-center gap-2 mb-2">
-                <AlertCircle className="text-red-600" size={20} />
-                <span className="text-sm font-semibold text-slate-600">
-                  {t('notebook.totalMistakes')}
+            )}
+          </div>
+          
+          {/* Filter Summary */}
+          {(selectedTopics.length > 0 || selectedMasteryLevels.length > 0 || datePeriod !== 'all') && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {selectedTopics.map(t => (
+                <span key={t} className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
+                  Topic: {t}
+                  <button onClick={() => toggleTopic(t)} className="ml-1">✕</button>
                 </span>
-              </div>
-              <div className="text-3xl font-black text-red-600">{mistakes.length}</div>
-            </div>
-          }
-        />
-
-        <TooltipWithPortal
-          content={
-            <>
-              <div className="font-bold mb-2">{t('notebook.weakTopics')}</div>
-              <div className="space-y-1">
-                {Object.entries(topicBreakdown)
-                  .sort((a, b) => b[1].count - a[1].count)
-                  .slice(0, 6)
-                  .map(([topic, data]) => (
-                    <div key={topic} className="text-amber-300 text-xs">
-                      • {topic}: {data.count}
-                    </div>
-                  ))}
-              </div>
-            </>
-          }
-          trigger={
-            <div className="bg-white rounded-xl shadow-lg border-2 border-slate-200 p-4 cursor-default">
-              <div className="flex items-center gap-2 mb-2">
-                <Target className="text-amber-600" size={20} />
-                <span className="text-sm font-semibold text-slate-600">
-                  {t('notebook.topicsToFocus')}
+              ))}
+              {selectedMasteryLevels.map(l => (
+                <span key={l} className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
+                  {MASTERY_LEVELS[l].label}
+                  <button onClick={() => toggleMasteryLevel(l)} className="ml-1">✕</button>
                 </span>
-              </div>
-              <div className="text-3xl font-black text-amber-600">{topicsToFocus}</div>
-            </div>
-          }
-        />
-
-        <TooltipWithPortal
-          content={
-            <>
-              <div className="font-bold mb-2">{t('notebook.repeatsByTopic')}</div>
-              <div className="space-y-1">
-                {Object.entries(topicBreakdown)
-                  .filter(([, data]) => data.repeated > 0)
-                  .sort((a, b) => b[1].repeated - a[1].repeated)
-                  .slice(0, 6)
-                  .map(([topic, data]) => (
-                    <div key={topic} className="flex justify-between gap-2 text-xs">
-                      <span>{topic}</span>
-                      <span className="text-red-400 font-bold">{data.repeated}×</span>
-                    </div>
-                  ))}
-              </div>
-            </>
-          }
-          trigger={
-            <div className="bg-white rounded-xl shadow-lg border-2 border-slate-200 p-4 cursor-default">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingUp className="text-chemistry-green" size={20} />
-                <span className="text-sm font-semibold text-slate-600">
-                  {t('notebook.repeatedMistakes')}
+              ))}
+              {datePeriod !== 'all' && (
+                <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
+                  {datePeriod === 'week' ? t('notebook.lastWeek') : t('notebook.lastMonth')}
+                  <button onClick={() => setDatePeriod('all')} className="ml-1">✕</button>
                 </span>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Tab Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Tab 1: Mistake Deck */}
+          {activeTab === 'deck' && (
+            <div>
+              {mistakes.length === 0 ? (
+                <div className="text-center py-12">
+                  <CheckCircle className="w-16 h-16 text-green-300 mx-auto mb-4" />
+                  <p className="text-slate-400 text-lg mb-2 font-semibold">
+                    {t('notebook.noMistakesYet')}
+                  </p>
+                  <p className="text-slate-500 text-sm mb-4">
+                    {t('notebook.keepPracticing')}
+                  </p>
+                  <button
+                    onClick={() => navigate('/')}
+                    className="px-6 py-3 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-800 transition-all"
+                  >
+                    {t('notebook.startPracticing')}
+                  </button>
+                </div>
+              ) : filteredMistakes.length === 0 ? (
+                <div className="text-center py-12">
+                  <AlertCircle className="w-16 h-16 text-amber-300 mx-auto mb-4" />
+                  <p className="text-slate-400 text-lg mb-2 font-semibold">
+                    No questions match your filters
+                  </p>
+                  <p className="text-slate-500 text-sm">
+                    Try adjusting your filter settings
+                  </p>
+                </div>
+              ) : viewMode === 'list' ? (
+                <ListViewDeck
+                  mistakes={filteredMistakes}
+                  errorTags={errorTags}
+                  onTag={handleTag}
+                  masteryStyle={masteryStyle}
+                  calcPriority={calcPriority}
+                  formatDate={formatDate}
+                  selectedIds={selectedMistakeIds}
+                  onToggleSelect={toggleMistakeSelection}
+                  onToggleSelectAll={toggleSelectAll}
+                  allSelected={selectedMistakeIds.size === filteredMistakes.length}
+                />
+              ) : (
+                <KanbanViewDeck
+                  columns={kanbanColumns}
+                  errorTags={errorTags}
+                  onTag={handleTag}
+                  masteryStyle={masteryStyle}
+                  calcPriority={calcPriority}
+                  formatDate={formatDate}
+                />
+              )}
+            </div>
+          )}
+          
+          {/* Tab 2: Learning Analytics */}
+          {activeTab === 'analytics' && mistakes.length > 0 && (
+            <div className="space-y-6">
+              {/* Quick Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                    {t('notebook.totalMistakes')}
+                  </div>
+                  <div className="text-3xl font-black text-red-600">{mistakes.length}</div>
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                    {t('notebook.topicsToFocus')}
+                  </div>
+                  <div className="text-3xl font-black text-amber-600">{topicsToFocus}</div>
+                </div>
+                <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                    {t('notebook.repeatedMistakes')}
+                  </div>
+                  <div className="text-3xl font-black text-chemistry-green">{repeatedMistakes}</div>
+                </div>
               </div>
-              <div className="text-3xl font-black text-chemistry-green">{repeatedMistakes}</div>
-            </div>
-          }
-        />
-      </div>
-
-      {/* ── Retention Dashboard ── */}
-      {mistakes.length > 0 && (
-        <RetentionDashboard mistakes={mistakes} improvements={improvements} />
-      )}
-
-      {/* ── Learning Analytics Dashboard ── */}
-      {mistakes.length > 0 && (
-        <div>
-          <button
-            onClick={() => setShowAnalytics(!showAnalytics)}
-            className="w-full flex items-center justify-between p-5 bg-white rounded-t-2xl shadow-xl border border-slate-200 hover:bg-slate-50 transition-all"
-          >
-            <div className="flex items-center gap-2">
-              <Brain className="text-indigo-600" size={20} />
-              <span className="font-bold text-slate-800 text-lg">{t('notebook.learningAnalytics')}</span>
-            </div>
-            <ChevronDown
-              size={20}
-              className={`text-slate-400 transition-transform ${showAnalytics ? 'rotate-180' : ''}`}
-            />
-          </button>
-
-          {showAnalytics && (
-            <div className="bg-white rounded-b-2xl shadow-xl border border-t-0 border-slate-200 p-6 space-y-6 bg-gradient-to-b from-white to-slate-50">
+              
+              {/* Interactive Heatmap */}
+              <InteractiveTopicHeatmap mistakes={mistakes} onTopicClick={handleTopicFilterClick} />
+              
+              {/* Detailed Analytics */}
+              <RetentionDashboard mistakes={mistakes} improvements={improvements} />
+              
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <TopicHeatmap mistakes={mistakes} />
                 <CalendarHeatmap improvements={improvements} />
               </div>
+              
               <ImprovementTrendChart improvements={improvements} />
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── Practice Configurator ── */}
-      {mistakes.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-all"
-          >
-            <div className="flex items-center gap-2">
-              <Filter className="text-orange-600" size={20} />
-              <span className="font-bold text-slate-800 text-lg">
-                {t('notebook.configurePractice')}
-              </span>
-            </div>
-            <ChevronDown
-              size={20}
-              className={`text-slate-400 transition-transform ${showFilters ? 'rotate-180' : ''}`}
-            />
-          </button>
-
-          {showFilters && (
-            <div className="border-t border-slate-200 p-6 space-y-6 bg-slate-50">
-
-              {/* Question Count */}
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-slate-600 uppercase tracking-widest mb-3">
-                  <Hash size={14} />
-                  {t('notebook.numberOfQuestions')}
-                </label>
-                <div className="grid grid-cols-4 md:grid-cols-7 gap-2">
-                  {['5', '10', '15', '20', '30', '40', 'All'].map((num) => (
-                    <button
-                      key={num}
-                      onClick={() => setQuestionCount(num)}
-                      disabled={num !== 'All' && parseInt(num) > filteredMistakes.length}
-                      className={`py-2.5 rounded-xl border-2 font-bold text-sm transition-all ${
-                        questionCount === num
-                          ? 'border-orange-500 bg-orange-50 text-orange-600'
-                          : 'border-slate-200 text-slate-500 hover:border-slate-300 disabled:opacity-30 disabled:cursor-not-allowed'
-                      }`}
+          
+          {/* Tab 3: Mastery Archive */}
+          {activeTab === 'archive' && (
+            <div>
+              {Object.keys(archivedMistakes).length === 0 ? (
+                <div className="text-center py-12">
+                  <Archive className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-400 text-lg mb-2 font-semibold">
+                    No archived questions yet
+                  </p>
+                  <p className="text-slate-500 text-sm">
+                    Answer 3 questions correctly to archive them
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.values(archivedMistakes).map((question) => (
+                    <div
+                      key={question.ID}
+                      className="p-4 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300"
                     >
-                      {num}
-                    </button>
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <div className="text-xs font-bold text-green-700 uppercase">
+                            {question.Topic}
+                          </div>
+                          <div className="text-xs text-green-600">{question.Subtopic}</div>
+                        </div>
+                        <div className="text-xs text-green-600 font-bold">
+                          ✓ Mastered on {formatDate(question.archivedAt)}
+                        </div>
+                      </div>
+                      <div className="text-sm text-green-900 font-medium prose max-w-none">
+                        {question.Question?.substring(0, 100)}...
+                      </div>
+                    </div>
                   ))}
                 </div>
-                <p className="text-xs text-slate-500 mt-2">
-                  {filteredMistakes.length} {t('notebook.questionsAvailable')}
-                </p>
-              </div>
-
-              {/* Date Range */}
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-slate-600 uppercase tracking-widest mb-3">
-                  <Calendar size={14} />
-                  {t('notebook.timeRange')}
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: 'all',   label: t('notebook.allTime'),   desc: t('notebook.default') },
-                    { value: 'month', label: t('notebook.lastMonth'), desc: '' },
-                    { value: 'week',  label: t('notebook.lastWeek'),  desc: '' },
-                  ].map((o) => (
-                    <button
-                      key={o.value}
-                      onClick={() => setDatePeriod(o.value)}
-                      className={`py-3 px-4 rounded-xl border-2 font-bold text-sm transition-all text-left ${
-                        datePeriod === o.value
-                          ? 'border-orange-500 bg-orange-50 text-orange-700'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300 bg-white'
-                      }`}
-                    >
-                      {o.label}
-                      {o.desc && (
-                        <span className="block text-xs font-normal opacity-70">{o.desc}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Mastery Level */}
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-slate-600 uppercase tracking-widest mb-3">
-                  <Star size={14} />
-                  {t('notebook.masteryLevel')}
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(MASTERY_LEVELS).map(([key, lvl]) => {
-                    const colors = {
-                      new:         'bg-red-500 border-red-500 text-white',
-                      progressing: 'bg-amber-500 border-amber-500 text-white',
-                      near:        'bg-green-500 border-green-500 text-white',
-                    };
-                    const inactive = {
-                      new:         'bg-white border-red-200 text-red-700 hover:border-red-400',
-                      progressing: 'bg-white border-amber-200 text-amber-700 hover:border-amber-400',
-                      near:        'bg-white border-green-200 text-green-700 hover:border-green-400',
-                    };
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => toggleMasteryLevel(key)}
-                        className={`px-3 py-2 rounded-full text-xs font-bold border-2 transition-all ${
-                          selectedMasteryLevels.includes(key) ? colors[key] : inactive[key]
-                        }`}
-                      >
-                        {t(`notebook.mastery${key.charAt(0).toUpperCase() + key.slice(1)}`)}
-                        <span className="ml-1 opacity-70">
-                          ({mistakes.filter((m) => {
-                            const ic = m.improvementCount ?? 0;
-                            return ic >= lvl.min && ic <= lvl.max;
-                          }).length})
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Topics */}
-              {allTopics.length > 1 && (
-                <div>
-                  <label className="flex items-center gap-2 text-sm font-black text-slate-600 uppercase tracking-widest mb-3">
-                    <Tag size={14} />
-                    {t('notebook.topics')}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {allTopics.map((topic) => (
-                      <button
-                        key={topic}
-                        onClick={() => toggleTopic(topic)}
-                        className={`px-3 py-2 rounded-full text-xs font-bold border-2 transition-all ${
-                          selectedTopics.includes(topic)
-                            ? 'bg-orange-500 border-orange-500 text-white'
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-orange-300'
-                        }`}
-                      >
-                        {topic}
-                        <span className="ml-1 opacity-70">
-                          ({mistakes.filter((m) => m.Topic === topic).length})
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
               )}
-
-              {/* Subtopics */}
-              {availableSubtopics.length > 1 && (
-                <div className={`rounded-xl p-4 border-2 transition-all ${
-                  selectedTopics.length > 0
-                    ? 'border-orange-200 bg-orange-50/50'
-                    : 'border-slate-200 bg-white'
-                }`}>
-                  <label className="flex items-center gap-2 text-sm font-black text-slate-600 uppercase tracking-widest mb-3">
-                    <Layers size={14} />
-                    {t('notebook.subtopics')}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {availableSubtopics.map((sub) => (
-                      <button
-                        key={sub}
-                        onClick={() => toggleSubtopic(sub)}
-                        className={`px-3 py-2 rounded-full text-xs font-bold border-2 transition-all ${
-                          selectedSubtopics.includes(sub)
-                            ? 'bg-orange-400 border-orange-400 text-white'
-                            : 'bg-white border-slate-200 text-slate-600 hover:border-orange-200'
-                        }`}
-                      >
-                        {sub}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Timer Settings */}
-              <div className="space-y-3 pt-4 border-t">
-                <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Clock size={20} className="text-lab-blue" />
-                      <div>
-                        <h3 className="font-bold text-slate-800">{t('quiz.enableTimer')}</h3>
-                        <p className="text-xs text-slate-500">{t('quiz.trackTimeSpent')}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setTimerEnabled(!timerEnabled)}
-                      className={`relative w-14 h-8 rounded-full transition-all ${
-                        timerEnabled ? 'bg-chemistry-green' : 'bg-slate-300'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                          timerEnabled ? 'translate-x-6' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {timerEnabled && (
-                  <div className="bg-amber-50 rounded-xl p-4 border-2 border-amber-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Zap size={20} className="text-amber-600" />
-                        <div>
-                          <h3 className="font-bold text-amber-900">{t('quiz.timedMode')}</h3>
-                          <p className="text-xs text-amber-700">{t('quiz.countdownTimer')}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setIsTimedMode(!isTimedMode)}
-                        className={`relative w-14 h-8 rounded-full transition-all ${
-                          isTimedMode ? 'bg-amber-600' : 'bg-slate-300'
-                        }`}
-                      >
-                        <div
-                          className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform ${
-                            isTimedMode ? 'translate-x-6' : 'translate-x-0'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Buttons */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <button
-                  onClick={handlePracticeMistakes}
-                  disabled={filteredMistakes.length === 0}
-                  className="py-4 bg-orange-600 text-white rounded-2xl font-black text-lg shadow-lg hover:bg-orange-700 disabled:bg-slate-300 transition-all flex items-center justify-center gap-2 active:scale-95"
-                >
-                  <Play fill="currentColor" size={18} />
-                  {tf('notebook.practiceMistakesCount', {
-                    count: practiceCount,
-                    plural: practiceCount !== 1 ? 's' : '',
-                  })}
-                </button>
-
-                <button
-                  onClick={handleAIDailyMission}
-                  disabled={mistakes.length < 20}
-                  className="py-4 bg-purple-600 text-white rounded-2xl font-black text-lg shadow-lg hover:bg-purple-700 disabled:bg-slate-300 transition-all flex items-center justify-center gap-2 active:scale-95"
-                  title={mistakes.length < 20 ? t('notebook.needMoreQuestions') : t('notebook.aiDailyMission')}
-                >
-                  <Wand2 fill="currentColor" size={18} />
-                  {t('notebook.aiDailyMission')}
-                </button>
-              </div>
             </div>
           )}
         </div>
-      )}
-
-      {/* ── Mistakes List ── */}
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        <div className="bg-slate-50 p-4 border-b flex items-center justify-between">
-          <h2 className="text-lg font-bold text-slate-800">
-            {t('notebook.allMistakes')} ({filteredMistakes.length})
-          </h2>
-          {filteredMistakes.length !== mistakes.length && (
-            <span className="text-xs text-orange-600 font-semibold bg-orange-50 px-2 py-1 rounded-full border border-orange-200">
-              {t('notebook.filteredFrom')} {mistakes.length}
-            </span>
-          )}
-        </div>
-
-        <div className="p-6">
-          {mistakes.length === 0 ? (
-            <div className="text-center py-12">
-              <CheckCircle className="w-16 h-16 text-green-300 mx-auto mb-4" />
-              <p className="text-slate-400 text-lg mb-2 font-semibold">
-                {t('notebook.noMistakesYet')}
-              </p>
-              <p className="text-slate-500 text-sm mb-4">
-                {t('notebook.keepPracticing')}
-              </p>
-              <button
-                onClick={() => navigate('/')}
-                className="px-6 py-3 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-800 transition-all"
-              >
-                {t('notebook.startPracticing')}
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredMistakes.map((mistake, index) => {
-                const style = masteryStyle(mistake.improvementCount ?? 0);
-                const priority = calcPriority(mistake);
-
-                return (
-                  <div
-                    key={mistake.ID}
-                    className={`p-6 rounded-xl border-2 transition-all ${style.border} ${style.bg}`}
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center font-black text-red-600">
-                          #{index + 1}
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase">
-                            {mistake.Topic}
-                          </div>
-                          <div className="text-xs text-slate-400">{mistake.Subtopic}</div>
-                          <span className={`inline-flex items-center gap-1 mt-1 text-[10px] font-black px-2 py-0.5 rounded-full ${style.badge}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
-                            {t(style.labelKey)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="text-right space-y-1">
-                        <div className="text-xs text-slate-500">{t('notebook.lastAttempt')}</div>
-                        <div className="text-sm font-semibold text-slate-700">
-                          {formatDate(mistake.lastAttempted)}
-                        </div>
-                        <div
-                          className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full ${
-                            priority > 15
-                              ? 'bg-red-100 text-red-700'
-                              : priority > 7
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-slate-100 text-slate-500'
-                          }`}
-                        >
-                          <Zap size={9} /> {priority.toFixed(1)}
-                        </div>
-                        {mistake.attemptCount > 1 && (
-                          <div className="text-xs text-amber-600 font-bold block">
-                            ⚠️ {tf('notebook.missed', { count: mistake.attemptCount })}
-                          </div>
-                        )}
-                        {mistake.improvementCount > 0 && (
-                          <div className="text-xs text-green-600 font-bold block">
-                            ✓ {tf('notebook.improved', { count: mistake.improvementCount })} / {MASTERY_THRESHOLD}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mb-4 p-4 bg-white/70 rounded-lg border border-slate-100">
-                      <div
-                        className="text-base text-slate-800 font-medium prose max-w-none whitespace-pre-wrap"
-                        dangerouslySetInnerHTML={{ __html: mistake.Question }}
-                      />
-                    </div>
-
-                    {mistake.Pictureurl && (
-                      <div className="mb-4 flex justify-center bg-white p-4 rounded-xl border border-slate-100">
-                        <img
-                          src={mistake.Pictureurl}
-                          alt="Diagram"
-                          className="max-w-full h-auto max-h-[200px] object-contain rounded-md"
-                        />
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                      <div className="p-3 rounded-lg bg-red-50 border border-red-200">
-                        <div className="text-xs font-bold text-red-700 mb-1">
-                          {t('notebook.yourAnswer')}
-                        </div>
-                        <div className="text-sm font-semibold text-red-900">
-                          {mistake.userAnswer}
-                        </div>
-                      </div>
-                      <div className="p-3 rounded-lg bg-green-50 border border-green-200">
-                        <div className="text-xs font-bold text-green-700 mb-1">
-                          {t('notebook.correctAnswer')}
-                        </div>
-                        <div className="text-sm font-semibold text-green-900">
-                          {mistake.CorrectOption}
-                        </div>
-                      </div>
-                    </div>
-
-                    {mistake.Explanation && (
-                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg mb-4">
-                        <div className="text-xs font-bold text-blue-700 mb-2 flex items-center gap-1">
-                          <BookOpen size={14} /> {t('notebook.explanation')}
-                        </div>
-                        <div
-                          className="text-sm text-blue-900 leading-relaxed prose max-w-none"
-                          dangerouslySetInnerHTML={{ __html: mistake.Explanation }}
-                        />
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        {t('notebook.errorTypeLabel')}
-                      </span>
-                      <ErrorTagSelector
-                        questionId={mistake.ID}
-                        currentTag={errorTags[mistake.ID]}
-                        onTag={handleTag}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── How It Works ── */}
-      <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 text-sm">
-        <p className="text-blue-900 font-semibold mb-2">
-          💡 {t('notebook.howItWorks')}
-        </p>
-        <ul className="list-disc list-inside space-y-1 text-blue-800 text-xs">
-          <li>{t('notebook.wrongAnswersAutoSaved')}</li>
-          <li>{t('notebook.useFilters')}</li>
-          <li>{t('notebook.practiceUntilMaster')}</li>
-          <li className="text-green-700 font-semibold">
-            {t('notebook.clearAfterThreeCorrect')}
-          </li>
-          <li className="text-purple-700 font-semibold">
-            {t('notebook.spacedRepetitionNote')}
-          </li>
-          <li className="text-indigo-700 font-semibold">
-            {t('notebook.metacognitiveNote')}
-          </li>
-          <li className="text-blue-800">
-            ✨ AI Daily Mission: {t('notebook.aiDailyMissionNote')}
-          </li>
-        </ul>
       </div>
     </div>
   );
