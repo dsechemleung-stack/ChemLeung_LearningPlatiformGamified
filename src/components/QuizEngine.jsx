@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QuestionCard from './QuestionCard';
 import { ChevronLeft, ChevronRight, Send, Timer, FlaskConical, Flag, Clock, X } from 'lucide-react';
+import { calendarService } from '../services/calendarService';
+import { useAuth } from '../context/AuthContext';
 
 export default function QuizEngine({ questions, onComplete }) {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -15,6 +17,7 @@ export default function QuizEngine({ questions, onComplete }) {
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const timerInitialized = useRef(false);
   
+  const { currentUser } = useAuth();
   const currentQuestion = questions[currentIndex];
   const totalQuestions = questions.length;
   const progress = ((currentIndex + 1) / totalQuestions) * 100;
@@ -65,6 +68,53 @@ export default function QuizEngine({ questions, onComplete }) {
       }));
     }
   };
+
+  /**
+   * Handle quiz completion with calendar AND performance tracking integration
+   */
+  async function handleQuizComplete(finalAnswers, finalQuestionTimes) {
+    try {
+      const quizMode = localStorage.getItem('quiz_mode');
+      const eventId = localStorage.getItem('quiz_event_id');
+      
+      if (currentUser?.uid) {
+        const correctCount = Object.entries(finalAnswers).filter(([qId, answer]) => {
+          const question = questions.find(q => q.ID === qId);
+          return question && answer === question.CorrectOption;
+        }).length;
+
+        // Log completion WITH performance tracking
+        await calendarService.logCompletion(
+          currentUser.uid, 
+          new Date().toISOString(), 
+          {
+            type: quizMode || 'practice',
+            topic: questions[0]?.Topic || 'Mixed',
+            questionCount: questions.length,
+            correctCount
+          },
+          questions,  // Pass questions for performance analysis
+          finalAnswers  // Pass answers for performance analysis
+        );
+
+        // Mark linked event as completed if exists
+        if (eventId && (quizMode === 'study-plan' || quizMode === 'spaced-repetition' || quizMode === 'ai-recommendation')) {
+          await calendarService.markEventCompleted(eventId);
+        }
+      }
+
+      // Clear event tracking
+      localStorage.removeItem('quiz_event_id');
+      localStorage.removeItem('quiz_mode');
+      
+      // Call original completion handler
+      onComplete(finalAnswers, timerEnabled ? finalQuestionTimes : null);
+    } catch (error) {
+      console.error('Error handling quiz completion:', error);
+      // Still complete the quiz even if logging fails
+      onComplete(finalAnswers, timerEnabled ? finalQuestionTimes : null);
+    }
+  }
 
   const handleOptionSelect = (option) => {
     setAnswers({
@@ -244,7 +294,7 @@ export default function QuizEngine({ questions, onComplete }) {
           <button
             onClick={() => {
               recordQuestionTime();
-              onComplete(answers, timerEnabled ? questionTimes : null);
+              handleQuizComplete(answers, timerEnabled ? questionTimes : null);
             }}
             className={`flex items-center justify-center w-16 h-16 rounded-full font-bold transition-all shadow-lg hover:scale-110 active:scale-95 ${
               allAnswered 

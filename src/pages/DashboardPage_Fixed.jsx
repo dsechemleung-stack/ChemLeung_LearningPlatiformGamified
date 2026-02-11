@@ -5,12 +5,14 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { quizService } from '../services/quizService';
 import { quizStorage } from '../utils/quizStorage';
 import { loadMistakesFromStorage } from '../utils/masteryHelper';
+import { useQuizData } from '../hooks/useQuizData';
 import AttemptDetailModal from '../components/AttemptDetailModal';
 import MasteryProgressHub from '../components/dashboard/MasteryProgressHub';
 import CurrentGoalWidget from '../components/dashboard/CurrentGoalWidget';
 import PriorityReviewSection from '../components/dashboard/PriorityReviewSection';
 import DailyMissionCard from '../components/dashboard/DailyMissionCard';
-import CalendarHeatmap from '../components/dashboard/CalendarHeatmap';
+import SmartMonthlyCalendar from '../components/dashboard/SmartMonthlyCalendar';
+import EventCreationModal from '../components/dashboard/EventCreationModal';
 import CompactAttemptsList from '../components/dashboard/CompactAttemptsList';
 import { LogOut, AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
 
@@ -63,6 +65,8 @@ function selectAIDailyMission(mistakes, recentTopics = []) {
 export default function DashboardPage() {
   const { currentUser, userProfile, logout } = useAuth();
   const { t } = useLanguage();
+  const navigate = useNavigate();
+  
   const [attempts, setAttempts] = useState([]);
   const [mistakes, setMistakes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +74,13 @@ export default function DashboardPage() {
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [loadingAIMission, setLoadingAIMission] = useState(false);
-  const navigate = useNavigate();
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [calendarKey, setCalendarKey] = useState(0);
+
+  // Load all questions for calendar integration
+  const { questions: allQuestions, loading: questionsLoading } = useQuizData(
+    'https://docs.google.com/spreadsheets/d/e/2PACX-1vSAGfKZzqNrLrxgqhOmm5xZ81eeGc58F5-GbSyMt1H2tJJGIRiDGwLk5PWUYvbA8yDfnRCfwxNMgZ-o/pub?output=csv'
+  );
 
   useEffect(() => {
     loadAttempts();
@@ -104,7 +114,6 @@ export default function DashboardPage() {
   async function handleAIDailyMission() {
     setLoadingAIMission(true);
     try {
-      // Load user's mistakes
       const userAttempts = await quizService.getUserAttempts(currentUser.uid, 100);
       const incorrectMap = new Map();
       const improvementData = JSON.parse(
@@ -157,10 +166,8 @@ export default function DashboardPage() {
         return;
       }
 
-      // Use AI selection
       const selected = selectAIDailyMission(mistakesList, recentTopics);
       
-      // Start quiz directly
       quizStorage.clearQuizData();
       quizStorage.saveSelectedQuestions(selected);
       localStorage.setItem('quiz_mode', 'ai-daily');
@@ -181,6 +188,11 @@ export default function DashboardPage() {
     } catch (e) { 
       console.error(e); 
     }
+  }
+
+  function handleEventCreated() {
+    setCalendarKey(prev => prev + 1); // Force calendar reload
+    setShowEventModal(false);
   }
 
   if (loading) {
@@ -278,6 +290,14 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* SMART MONTHLY CALENDAR - NEW! */}
+        <SmartMonthlyCalendar
+          key={calendarKey}
+          userId={currentUser?.uid}
+          questions={allQuestions}
+          onAddEvent={() => setShowEventModal(true)}
+        />
+
         {/* TWO-COLUMN LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* LEFT COLUMN: 2/3 width - Learning Progress */}
@@ -287,9 +307,6 @@ export default function DashboardPage() {
 
             {/* Current Goal Widget */}
             <CurrentGoalWidget mistakes={mistakes} />
-
-            {/* Calendar Heatmap */}
-            <CalendarHeatmap mistakes={mistakes} />
           </div>
 
           {/* RIGHT COLUMN: 1/3 width - Quick Actions & Review */}
@@ -333,6 +350,16 @@ export default function DashboardPage() {
           <AttemptDetailModal
             attempt={selectedAttempt}
             onClose={() => setSelectedAttempt(null)}
+          />
+        )}
+
+        {/* Event Creation Modal */}
+        {showEventModal && (
+          <EventCreationModal
+            userId={currentUser?.uid}
+            questions={allQuestions}
+            onClose={() => setShowEventModal(false)}
+            onEventCreated={handleEventCreated}
           />
         )}
 
