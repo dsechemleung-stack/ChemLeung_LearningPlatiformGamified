@@ -246,45 +246,105 @@ const translations = {
     
     // Mistake Notebook
     notebook: {
+      // Main Navigation
       title: "Mistake Notebook",
+      commandCenter: "Mistake Command Center",
       mistakeDeck: "Mistake Deck",
+      learningInsights: "Learning Insights",
       learningAnalytics: "Learning Analytics",
+      masteryArchive: "Mastery Archive",
+      
+      // Actions
       review: "Review Mistakes",
       practiceMistakes: "Practice Mistakes Only",
+      practiceMistakesCount: "Practice {count} Mistake{plural}",
+      practiceSelected: "Practice {count} Selected",
       cleared: "All mistakes cleared!",
       addedToNotebook: "Added to Mistake Notebook",
       removedFromNotebook: "Removed from Notebook",
       reviewMaster: "Review and master questions you got wrong",
+      
+      // Full Question Modal
+      questionDetail: "Question Detail",
+      question: "Question",
+      options: "Options",
+      viewFullQuestion: "View Full Question",
+      viewFull: "View Full",
+      attempts: "Attempts",
+      masteryLevelLabel: "Mastery Level",
+      lastAttemptedLabel: "Last Attempted",
+      
+      // Statistics
       totalMistakes: "Total Mistakes",
       topicsToFocus: "Topics to Focus",
       repeatedMistakes: "Repeated Mistakes",
+      
+      // Configurator
       configurePractice: "Configure Practice Session",
-      numberOfQuestions: "1. Number of Questions",
-      questionsAvailable: "questions available with current filters",
-      timeRange: "2. Time Range (when you made the mistake)",
+      numberOfQuestions: "Questions",
+      questionsLabel: "1. Number of Questions",
+      questionsAvailable: "available",
+      questionsAvailableFull: "questions available with current filters",
+      timeRange: "Time Range",
+      timeRangeLabel: "2. Time Range (when you made the mistake)",
       allTime: "All Time",
       lastMonth: "Last Month",
       lastWeek: "Last Week",
       default: "default",
-      topics: "3. Topics (leave empty for all)",
+      
+      // Filters
+      topics: "Topics",
+      topicsLabel: "3. Topics (leave empty for all)",
+      subtopics: "Subtopics",
+      subtopicsFilteredNote: "(filtered by selected topics)",
+      masteryLevel: "Mastery Level",
       clearTopicFilter: "✕ Clear topic filter",
-      practiceMistakesCount: "Practice {count} Mistake{plural}",
+      clearSubtopicFilter: "Clear subtopic filter",
+      clearMasteryFilter: "Clear mastery filter",
+      filteredFrom: "Filtered from",
+      clearSelection: "Clear Selection",
+      
+      // Mastery Status Labels
+      masteryNew: "New",
+      masteryDeveloping: "Developing",
+      masteryProgressing: "Progressing",
+      masteryNear: "Near-Mastery",
+      statusUnprocessed: "Unprocessed",
+      statusInProgress: "In Progress",
+      statusNearMastery: "Near Mastery",
+      
+      // Empty States
       allMistakes: "All Mistakes",
       noMistakesYet: "No mistakes yet!",
       keepPracticing: "Keep practicing. Wrong answers appear here.",
       startPracticing: "Start Practicing",
+      noQuestionsFound: "No questions match your filters",
+      tryAdjustFilters: "Try adjusting your filter settings",
+      noArchivedYet: "No archived questions yet",
+      archiveInstructions: "Answer 3 questions correctly to archive them",
+      allCaughtUp: "All caught up!",
+      
+      // Question Details
       lastAttempt: "Last Attempt",
       missed: "Missed {count}×",
       yourAnswer: "Your Answer",
       correctAnswer: "Correct Answer",
+      correct: "Correct",
       explanation: "Explanation",
+      priority: "Priority",
+      
+      // How It Works
       howItWorks: "How it works",
       wrongAnswersAutoSaved: "Wrong answers are auto-saved here",
       useFilters: "Use filters to focus on specific topics or recent mistakes",
       practiceUntilMaster: "Practice until you master them!",
-      loadingMistakes: "Loading your mistakes...",
-      noQuestionsFound: "No questions found for this selection. Try broader filters!",
+      clearAfterThreeCorrect: "✨ Questions automatically clear after 3 consecutive correct attempts!",
+      
+      // Loading States
+      loadingMistakes: "Loading mistakes...",
       sessionLimited: "Session limited to {max} questions maximum.",
+      
+      // Topic Analysis
       topicBreakdown: "Topic Breakdown",
       hoverForDetails: "Hover over stats for details",
       weakTopics: "Weak Topics",
@@ -292,9 +352,8 @@ const translations = {
       repeatsByTopic: "Repeated Mistakes by Topic",
       needMorePractice: "Need more practice",
       improved: "Improved {count}",
-      clearAfterThreeCorrect: "✨ Questions automatically clear after 3 consecutive correct attempts!",
-
-      // ── Retention Dashboard ──────────────────────────────────
+      
+      // Retention Dashboard
       retentionDashboard: "Retention Dashboard",
       addedThisWeek: "Added (7d)",
       masteredThisWeek: "Mastered (7d)",
@@ -304,27 +363,11 @@ const translations = {
       decayGrowing: "📉 Growing",
       weakestSubtopics: "Weakest Subtopics",
       urgentReviews: "Urgent Reviews (by priority score)",
-
-      // ── Hierarchical Filters ─────────────────────────────────
-      subtopics: "Subtopics",
-      subtopicsFilteredNote: "(filtered by selected topics)",
-      clearSubtopicFilter: "Clear subtopic filter",
-      masteryLevel: "Mastery Level",
-      clearMasteryFilter: "Clear mastery filter",
-      filteredFrom: "Filtered from",
-
-      // ── Mastery Status Labels ────────────────────────────────
-      masteryNew: "New",
-      masteryProgressing: "Progressing",
-      masteryNear: "Near-Mastered",
-      statusUnprocessed: "Unprocessed",
-      statusInProgress: "In Progress",
-      statusNearMastery: "Near Mastery",
-
-      // ── Priority Badge ───────────────────────────────────────
+      
+      // Priority Badge
       priorityScore: "Spaced Repetition Priority Score",
-
-      // ── Metacognitive Tagging ────────────────────────────────
+      
+      // Metacognitive Tagging
       errorTypeLabel: "Error Type:",
       tagErrorType: "Tag Error Type",
       errorCategory: "Error Category",
@@ -335,21 +378,43 @@ const translations = {
       errorCareless: "Careless Mistake",
       errorVocabulary: "Vocabulary Gap",
       errorDiagram: "Diagram Misread",
-
-      // ── Extra How-It-Works bullets ───────────────────────────
+      tagError: "Tag Error",
+      
+      // Extra Notes
       spacedRepetitionNote: "Cards sorted by Spaced Repetition priority — highest urgency first.",
       metacognitiveNote: "Tag each mistake with an Error Category to track your patterns.",
       
-      // ── Learning Analytics Dashboard ─────────────────────────
+      // Learning Analytics Dashboard
       mistakeClearingActivity: "Mistake Clearing Activity",
       errorDensityByTopic: "Error Density by Topic",
       improvementTrend: "Improvement Trend (14 days)",
-      aiDailyMission: "AI Daily Mission",
-      aiDailyMissionNote: "Smart AI selects 20 questions with interleaved practice to maximize retention.",
-      needMoreQuestions: "Need at least 20 mistakes for AI Daily Mission (you have {count})",
+      clickTopicToFilter: "Click a topic to filter →",
+      clickTopicsToFilter: "Click topics to filter (multi-select)",
       less: "Less",
       more: "More",
-      tagError: "Tag Error",
+      
+      // AI Daily Mission
+      aiDailyMission: "AI Daily Mission",
+      aiDailyMissionNote: "Smart AI selects 10 questions with interleaved practice to maximize retention.",
+      needMoreQuestions: "Need 10+ mistakes (have {count})",
+      interleavedPractice: "10 Questions • Interleaved Practice",
+      
+      // Timer Settings
+      timerEnabled: "Timer Enabled",
+      timedMode: "Timed Mode",
+      
+      // View Modes
+      listView: "List View",
+      kanbanView: "Kanban View",
+      selectAll: "Select All",
+      
+      // Archive
+      mastered: "Mastered",
+      masteredOn: "Mastered {date}",
+      archivedAt: "Archived at",
+      
+      // Filter Pills
+      topicFilter: "Topic: {topic}",
     },
     
     // History
@@ -726,45 +791,105 @@ const translations = {
     
     // 錯題簿
     notebook: {
+      // 主導航
       title: "錯題簿",
+      commandCenter: "錯題指揮中心",
       mistakeDeck: "錯題卡組",
+      learningInsights: "學習洞察",
       learningAnalytics: "學習分析",
+      masteryArchive: "掌握檔案",
+      
+      // 操作
       review: "檢討錯題",
       practiceMistakes: "只練習錯題",
+      practiceMistakesCount: "練習 {count} 道錯題",
+      practiceSelected: "練習 {count} 道選中題目",
       cleared: "所有錯題已清除！",
       addedToNotebook: "已加入錯題簿",
       removedFromNotebook: "已從錯題簿移除",
       reviewMaster: "複習並掌握您答錯的題目",
+      
+      // 完整題目彈窗
+      questionDetail: "題目詳情",
+      question: "題目",
+      options: "選項",
+      viewFullQuestion: "查看完整題目",
+      viewFull: "查看完整",
+      attempts: "嘗試次數",
+      masteryLevelLabel: "掌握程度",
+      lastAttemptedLabel: "最後嘗試",
+      
+      // 統計
       totalMistakes: "總錯題數",
       topicsToFocus: "需加強主題",
       repeatedMistakes: "重複錯誤",
+      
+      // 配置器
       configurePractice: "設定練習",
-      numberOfQuestions: "1. 題目數量",
-      questionsAvailable: "題符合目前篩選條件",
-      timeRange: "2. 時間範圍（犯錯時間）",
+      numberOfQuestions: "題目數量",
+      questionsLabel: "1. 題目數量",
+      questionsAvailable: "題可用",
+      questionsAvailableFull: "題符合目前篩選條件",
+      timeRange: "時間範圍",
+      timeRangeLabel: "2. 時間範圍（犯錯時間）",
       allTime: "所有時間",
       lastMonth: "上個月",
       lastWeek: "上週",
       default: "預設",
-      topics: "3. 主題（留空表示全部）",
+      
+      // 篩選器
+      topics: "主題",
+      topicsLabel: "3. 主題（留空表示全部）",
+      subtopics: "子主題",
+      subtopicsFilteredNote: "（已按選定主題篩選）",
+      masteryLevel: "掌握程度",
       clearTopicFilter: "✕ 清除主題篩選",
-      practiceMistakesCount: "練習 {count} 道錯題",
+      clearSubtopicFilter: "清除子主題篩選",
+      clearMasteryFilter: "清除掌握程度篩選",
+      filteredFrom: "從以下項目篩選",
+      clearSelection: "清除選擇",
+      
+      // 掌握狀態標籤
+      masteryNew: "未處理",
+      masteryDeveloping: "發展中",
+      masteryProgressing: "進行中",
+      masteryNear: "接近掌握",
+      statusUnprocessed: "未處理",
+      statusInProgress: "進行中",
+      statusNearMastery: "接近掌握",
+      
+      // 空狀態
       allMistakes: "所有錯題",
       noMistakesYet: "目前沒有錯題！",
       keepPracticing: "繼續練習。答錯的題目會出現在這裡。",
       startPracticing: "開始練習",
+      noQuestionsFound: "找不到符合條件的題目",
+      tryAdjustFilters: "請嘗試調整您的篩選設定",
+      noArchivedYet: "暫無已歸檔題目",
+      archiveInstructions: "連續答對 3 次以歸檔題目",
+      allCaughtUp: "全部完成！",
+      
+      // 題目詳情
       lastAttempt: "最後嘗試",
       missed: "錯 {count} 次",
       yourAnswer: "您的答案",
       correctAnswer: "正確答案",
+      correct: "正確",
       explanation: "解釋",
+      priority: "優先度",
+      
+      // 運作原理
       howItWorks: "運作原理",
       wrongAnswersAutoSaved: "答錯的題目自動儲存在這裡",
       useFilters: "使用篩選器專注於特定主題或最近的錯誤",
       practiceUntilMaster: "練習直到您掌握它們！",
+      clearAfterThreeCorrect: "✨ 連續答對 3 次後，題目將自動清除！",
+      
+      // 載入狀態
       loadingMistakes: "載入錯題中...",
-      noQuestionsFound: "找不到符合條件的題目。請嘗試更廣泛的篩選！",
       sessionLimited: "每次練習最多 {max} 題。",
+      
+      // 主題分析
       topicBreakdown: "主題分析",
       hoverForDetails: "移至統計以查看詳情",
       weakTopics: "弱勢主題",
@@ -772,9 +897,8 @@ const translations = {
       repeatsByTopic: "按主題重複錯誤",
       needMorePractice: "需要更多練習",
       improved: "改進 {count} 次",
-      clearAfterThreeCorrect: "✨ 連續答對 3 次後，題目將自動清除！",
-
-      // ── 保留儀表板 ───────────────────────────────────────────
+      
+      // 保留儀表板
       retentionDashboard: "學習保留儀表板",
       addedThisWeek: "新增（7天）",
       masteredThisWeek: "已掌握（7天）",
@@ -784,27 +908,11 @@ const translations = {
       decayGrowing: "📉 錯題增加",
       weakestSubtopics: "最弱子主題",
       urgentReviews: "緊急複習（按優先分排序）",
-
-      // ── 層次篩選 ─────────────────────────────────────────────
-      subtopics: "子主題",
-      subtopicsFilteredNote: "（已按選定主題篩選）",
-      clearSubtopicFilter: "清除子主題篩選",
-      masteryLevel: "掌握程度",
-      clearMasteryFilter: "清除掌握程度篩選",
-      filteredFrom: "從以下項目篩選",
-
-      // ── 掌握狀態標籤 ─────────────────────────────────────────
-      masteryNew: "未處理",
-      masteryProgressing: "進行中",
-      masteryNear: "接近掌握",
-      statusUnprocessed: "未處理",
-      statusInProgress: "進行中",
-      statusNearMastery: "接近掌握",
-
-      // ── 優先分徽章 ───────────────────────────────────────────
+      
+      // 優先分徽章
       priorityScore: "間隔重複優先分",
-
-      // ── 元認知標記 ───────────────────────────────────────────
+      
+      // 元認知標記
       errorTypeLabel: "錯誤類型：",
       tagErrorType: "標記錯誤類型",
       errorCategory: "錯誤類別",
@@ -815,21 +923,43 @@ const translations = {
       errorCareless: "粗心大意",
       errorVocabulary: "詞彙不足",
       errorDiagram: "圖表誤讀",
-
-      // ── 額外運作原理說明 ─────────────────────────────────────
+      tagError: "標記錯誤",
+      
+      // 額外說明
       spacedRepetitionNote: "卡片按間隔重複優先分排序——最緊急的排在最前。",
       metacognitiveNote: "為每道錯題標記錯誤類別，追蹤您的學習模式。",
       
-      // ── 學習分析儀表板 ───────────────────────────────────────
+      // 學習分析儀表板
       mistakeClearingActivity: "錯題清除活動",
       errorDensityByTopic: "按主題錯誤密度",
       improvementTrend: "改進趨勢（14天）",
-      aiDailyMission: "AI每日任務",
-      aiDailyMissionNote: "智能AI選擇20道題目，交錯熟練以最大化記憶保持。",
-      needMoreQuestions: "需要至少20道錯題才能使用AI每日任務（您有{count}道）",
+      clickTopicToFilter: "點擊主題以篩選 →",
+      clickTopicsToFilter: "點擊主題以篩選（可多選）",
       less: "較少",
       more: "更多",
-      tagError: "標記錯誤",
+      
+      // AI每日任務
+      aiDailyMission: "AI每日任務",
+      aiDailyMissionNote: "智能AI選擇10道題目，交錯練習以最大化記憶保持。",
+      needMoreQuestions: "需要10+錯題（您有{count}道）",
+      interleavedPractice: "10道題目 • 交錯練習",
+      
+      // 計時器設定
+      timerEnabled: "計時器已啟用",
+      timedMode: "限時模式",
+      
+      // 檢視模式
+      listView: "列表檢視",
+      kanbanView: "看板檢視",
+      selectAll: "全選",
+      
+      // 歸檔
+      mastered: "已掌握",
+      masteredOn: "於{date}掌握",
+      archivedAt: "歸檔於",
+      
+      // 篩選標籤
+      topicFilter: "主題：{topic}",
     },
     
     // 歷史記錄

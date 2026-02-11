@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { quizService } from '../services/quizService';
+import { quizStorage } from '../utils/quizStorage';
 import { loadMistakesFromStorage } from '../utils/masteryHelper';
 import AttemptDetailModal from '../components/AttemptDetailModal';
 import MasteryProgressHub from '../components/dashboard/MasteryProgressHub';
@@ -11,7 +12,53 @@ import PriorityReviewSection from '../components/dashboard/PriorityReviewSection
 import DailyMissionCard from '../components/dashboard/DailyMissionCard';
 import CalendarHeatmap from '../components/dashboard/CalendarHeatmap';
 import CompactAttemptsList from '../components/dashboard/CompactAttemptsList';
-import { LogOut, AlertCircle, RefreshCw } from 'lucide-react';
+import { LogOut, AlertCircle, RefreshCw, Sparkles } from 'lucide-react';
+
+const MASTERY_THRESHOLD = 3;
+
+// Helper function for AI Daily Mission
+function calculateMasteryPriority(mistake, recentTopics = []) {
+  const now = Date.now();
+  const lastAttemptTime = new Date(mistake.lastAttempted).getTime();
+  const daysSinceLastAttempt = Math.max(0, (now - lastAttemptTime) / (1000 * 60 * 60 * 24));
+  const U = Math.pow(2, daysSinceLastAttempt / 7);
+  const D = Math.min(1.0, (mistake.attemptCount || 1) / 3);
+  let R = 0.5;
+  if (recentTopics.length > 0 && recentTopics.includes(mistake.Topic)) {
+    R = 1.5;
+  }
+  return (U * 0.4) + (D * 0.4) + (R * 0.2);
+}
+
+function selectAIDailyMission(mistakes, recentTopics = []) {
+  const prioritized = mistakes
+    .map(m => ({
+      ...m,
+      masteryPriority: calculateMasteryPriority(m, recentTopics)
+    }))
+    .sort((a, b) => b.masteryPriority - a.masteryPriority);
+  
+  const byTopic = {};
+  prioritized.forEach(m => {
+    if (!byTopic[m.Topic]) byTopic[m.Topic] = [];
+    byTopic[m.Topic].push(m);
+  });
+  
+  const selected = [];
+  const topicList = Object.keys(byTopic);
+  const indices = Object.fromEntries(topicList.map(t => [t, 0]));
+  
+  while (selected.length < 10 && topicList.some(t => indices[t] < byTopic[t].length)) {
+    for (const topic of topicList) {
+      if (selected.length >= 10) break;
+      if (indices[topic] < byTopic[topic].length) {
+        selected.push(byTopic[topic][indices[topic]++]);
+      }
+    }
+  }
+  
+  return selected.slice(0, 10);
+}
 
 export default function DashboardPage() {
   const { currentUser, userProfile, logout } = useAuth();
@@ -22,6 +69,7 @@ export default function DashboardPage() {
   const [error, setError] = useState(null);
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [loadingAIMission, setLoadingAIMission] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -50,6 +98,79 @@ export default function DashboardPage() {
     } catch (err) {
       console.error('Error loading mistakes:', err);
       setMistakes([]);
+    }
+  }
+
+  async function handleAIDailyMission() {
+    setLoadingAIMission(true);
+    try {
+      // Load user's mistakes
+      const userAttempts = await quizService.getUserAttempts(currentUser.uid, 100);
+      const incorrectMap = new Map();
+      const improvementData = JSON.parse(
+        localStorage.getItem('mistake_improvements') || '{}'
+      );
+      const recentTopics = JSON.parse(localStorage.getItem('recent_quiz_topics') || '[]');
+      
+      userAttempts.forEach((attempt) => {
+        if (!attempt.answers || !attempt.questions) return;
+        attempt.questions.forEach((question) => {
+          const userAnswer = attempt.answers[question.ID];
+          const isCorrect = userAnswer && userAnswer === question.CorrectOption;
+          
+          if (isCorrect && improvementData[question.ID]) {
+            improvementData[question.ID].correctCount =
+              (improvementData[question.ID].correctCount || 0) + 1;
+            improvementData[question.ID].lastCorrect = attempt.timestamp;
+          }
+          
+          if (userAnswer && userAnswer !== question.CorrectOption) {
+            const improveCount = improvementData[question.ID]?.correctCount || 0;
+            if (improveCount >= MASTERY_THRESHOLD) return;
+            
+            if (!incorrectMap.has(question.ID)) {
+              incorrectMap.set(question.ID, {
+                ...question,
+                attemptCount: 1,
+                lastAttempted: attempt.timestamp,
+                userAnswer,
+                improvementCount: improveCount,
+              });
+            } else {
+              const existing = incorrectMap.get(question.ID);
+              existing.attemptCount += 1;
+              existing.improvementCount = improveCount;
+              if (new Date(attempt.timestamp) > new Date(existing.lastAttempted)) {
+                existing.lastAttempted = attempt.timestamp;
+                existing.userAnswer = userAnswer;
+              }
+            }
+          }
+        });
+      });
+
+      const mistakesList = Array.from(incorrectMap.values());
+      
+      if (mistakesList.length < 10) {
+        alert(`You need at least 10 mistakes to start AI Daily Mission. You currently have ${mistakesList.length}.`);
+        setLoadingAIMission(false);
+        return;
+      }
+
+      // Use AI selection
+      const selected = selectAIDailyMission(mistakesList, recentTopics);
+      
+      // Start quiz directly
+      quizStorage.clearQuizData();
+      quizStorage.saveSelectedQuestions(selected);
+      localStorage.setItem('quiz_mode', 'ai-daily');
+      localStorage.setItem('quiz_timer_enabled', 'true');
+      localStorage.setItem('quiz_is_timed_mode', 'true');
+      navigate('/quiz');
+    } catch (error) {
+      console.error('Error loading AI Daily Mission:', error);
+      alert('Failed to load AI Daily Mission. Please try again.');
+      setLoadingAIMission(false);
     }
   }
 
@@ -117,9 +238,44 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* DAILY MISSION HERO SECTION */}
-        <div>
-          <DailyMissionCard />
+        {/* AI DAILY MISSION HERO SECTION */}
+        <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 rounded-2xl shadow-xl p-8 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-3">
+                <Sparkles size={32} strokeWidth={3} />
+                <h2 className="text-3xl font-black">AI Daily Mission</h2>
+                <div className="bg-white/20 rounded-full px-3 py-1 text-sm font-bold">
+                  10 Questions
+                </div>
+              </div>
+              <p className="text-purple-100 mb-4 max-w-2xl">
+                AI-optimized mistake review using spaced repetition and topic interleaving for maximum retention
+              </p>
+              <button
+                onClick={handleAIDailyMission}
+                disabled={loadingAIMission}
+                className="px-8 py-4 bg-white text-purple-700 rounded-xl font-black text-lg shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+              >
+                {loadingAIMission ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-700" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={20} />
+                    Start Mission
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="hidden lg:block">
+              <div className="w-48 h-48 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur">
+                <Sparkles size={96} className="text-white/40" />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* TWO-COLUMN LAYOUT */}

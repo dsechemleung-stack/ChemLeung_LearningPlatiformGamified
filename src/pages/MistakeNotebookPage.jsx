@@ -1,8 +1,9 @@
 import React, {
-  useState, useEffect, useMemo, useRef, useCallback,
+  useState, useEffect, useMemo, useCallback,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { quizService } from '../services/quizService';
@@ -15,13 +16,13 @@ import {
   Clock, Zap, TrendingUp, Brain, BarChart2, Layers, X,
   AlertTriangle, Flame, Star, PlusCircle, Wand2, Eye, EyeOff, 
   Grid3x3, List as ListIcon, Command, Archive, Sparkles,
-  ChevronRight, Maximize2, Check,
+  ChevronRight, Maximize2, Check, Activity, LineChart,
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
-const MASTERY_THRESHOLD = 3; // Correct answers to graduate a mistake
+const MASTERY_THRESHOLD = 3;
 const ERROR_TYPES = [
   { value: 'misread', label: 'Misread Question', color: 'blue' },
   { value: 'calculation', label: 'Calculation Error', color: 'red' },
@@ -30,45 +31,28 @@ const ERROR_TYPES = [
   { value: 'vocab', label: 'Vocabulary Gap', color: 'purple' },
   { value: 'diagram', label: 'Diagram Misread', color: 'pink' },
 ];
-
 const MASTERY_LEVELS = {
-  new:        { label: 'New',         min: 0, max: 0 },
-  progressing:{ label: 'Progressing', min: 1, max: 1 },
-  near:       { label: 'Near-Mastered', min: 2, max: 2 },
+  new:        { label: 'New',         min: 0, max: 0, color: 'red' },
+  progressing:{ label: 'Developing', min: 1, max: 1, color: 'amber' },
+  near:       { label: 'Near-Mastery', min: 2, max: 2, color: 'green' },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS: ISRS & State Management
+// HELPER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
-/**
- * Calculate multi-weighted ISRS (Integrated Spaced Repetition System) priority score
- * Score = (U × 0.4) + (D × 0.4) + (R × 0.2)
- * where U = Urgency (Ebbinghaus curve), D = Difficulty, R = Recency/Context boost
- */
 function calculateMasteryPriority(mistake, recentTopics = []) {
-  // 1. URGENCY: Ebbinghaus Forgetting Curve
   const now = Date.now();
   const lastAttemptTime = new Date(mistake.lastAttempted).getTime();
   const daysSinceLastAttempt = Math.max(0, (now - lastAttemptTime) / (1000 * 60 * 60 * 24));
-  
-  // U = 2^(days/7) exponential curve
   const U = Math.pow(2, daysSinceLastAttempt / 7);
-  
-  // 2. DIFFICULTY: Based on attempt count (max 1.0 at 3+ attempts)
   const D = Math.min(1.0, (mistake.attemptCount || 1) / 3);
-  
-  // 3. RECENCY/CONTEXT: Boost if matches recent quiz topics
-  let R = 0.5; // Baseline
+  let R = 0.5;
   if (recentTopics.length > 0 && recentTopics.includes(mistake.Topic)) {
-    R = 1.5; // 1.5x boost for contextual relevance
+    R = 1.5;
   }
-  
   return (U * 0.4) + (D * 0.4) + (R * 0.2);
 }
 
-/**
- * Get mastery state (0: Unprocessed, 1: Acquiring, 2: Consolidating, 3: Mastered)
- */
 function getMasteryState(improvementCount = 0) {
   if (improvementCount === 0) return { state: 0, label: 'Unprocessed', color: 'red' };
   if (improvementCount === 1) return { state: 1, label: 'Acquiring', color: 'amber' };
@@ -76,24 +60,17 @@ function getMasteryState(improvementCount = 0) {
   return { state: 3, label: 'Mastered', color: 'green' };
 }
 
-/**
- * Legacy priority calculation for backward compatibility
- */
 function calcPriority(mistake) {
   const days = (Date.now() - new Date(mistake.lastAttempted).getTime()) / (1000 * 60 * 60 * 24);
   return days * 1.2 - (mistake.improvementCount ?? 0) * 2;
 }
 
-/**
- * Mastery styling helper
- */
 function masteryStyle(improvementCount) {
   if (improvementCount >= 2)
     return {
       border: 'border-green-300',
       bg: 'bg-green-50/60',
       badge: 'bg-green-100 text-green-700',
-      labelKey: 'notebook.statusNearMastery',
       dot: 'bg-green-500',
     };
   if (improvementCount === 1)
@@ -101,21 +78,16 @@ function masteryStyle(improvementCount) {
       border: 'border-amber-300',
       bg: 'bg-amber-50/60',
       badge: 'bg-amber-100 text-amber-700',
-      labelKey: 'notebook.statusInProgress',
       dot: 'bg-amber-400',
     };
   return {
     border: 'border-red-200',
     bg: 'bg-white',
     badge: 'bg-red-100 text-red-700',
-    labelKey: 'notebook.statusUnprocessed',
     dot: 'bg-red-500',
   };
 }
 
-/**
- * Apply Rule of 3: Archive questions after 3 consecutive correct answers
- */
 function applyRuleOfThree(improvements) {
   const archived = JSON.parse(localStorage.getItem('mistake_archive') || '{}');
   const activeImprovements = { ...improvements };
@@ -134,53 +106,223 @@ function applyRuleOfThree(improvements) {
   return activeImprovements;
 }
 
-/**
- * Select 20 questions for AI Daily Mission with interleaved practice (≥3 topics)
- */
-function selectAIDailyMission(mistakes, recentTopics = []) {
-  // Calculate priority for each mistake
-  const prioritized = mistakes
-    .map(m => ({
-      ...m,
-      masteryPriority: calculateMasteryPriority(m, recentTopics)
-    }))
-    .sort((a, b) => b.masteryPriority - a.masteryPriority);
-  
-  // Group by topic
-  const byTopic = {};
-  prioritized.forEach(m => {
-    if (!byTopic[m.Topic]) byTopic[m.Topic] = [];
-    byTopic[m.Topic].push(m);
-  });
-  
-  // Round-robin selection for interleaved practice
-  const selected = [];
-  const topicList = Object.keys(byTopic);
-  const indices = Object.fromEntries(topicList.map(t => [t, 0]));
-  
-  while (selected.length < 20 && topicList.some(t => indices[t] < byTopic[t].length)) {
-    for (const topic of topicList) {
-      if (selected.length >= 20) break;
-      if (indices[topic] < byTopic[topic].length) {
-        selected.push(byTopic[topic][indices[topic]++]);
-      }
-    }
-  }
-  
-  // Verify interleaved practice
-  const uniqueTopics = new Set(selected.map(q => q.Topic)).size;
-  if (uniqueTopics < 3) {
-    console.warn(`AI Daily Mission: Only ${uniqueTopics} topics, need ≥3 for interleaved practice`);
-  }
-  
-  return selected.slice(0, 20);
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // UI COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
+
 /**
- * TooltipWithPortal: Floating UI smart tooltip with viewport edge detection
+ * FullQuestionModal: Pop-up to show complete question details
+ */
+function FullQuestionModal({ mistake, errorTag, onTag, onClose }) {
+  const { t } = useLanguage();
+  const [selectedTag, setSelectedTag] = useState(errorTag || '');
+
+  const handleTagSelect = (tag) => {
+    setSelectedTag(tag);
+    onTag(mistake.ID, tag);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 overflow-y-auto">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-6"
+      >
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-700 to-slate-900 p-6 rounded-t-2xl flex justify-between items-center">
+          <div>
+            <h2 className="text-2xl font-black text-white mb-1">{t('notebook.questionDetail')}</h2>
+            <p className="text-slate-300 text-sm">{mistake.Topic} → {mistake.Subtopic}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-white/20 rounded-lg transition-all text-white"
+          >
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+          {/* Question */}
+          <div>
+            <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3">
+              {t('notebook.question')}
+            </h3>
+            <div
+              className="prose prose-slate max-w-none text-base bg-slate-50 p-4 rounded-xl border-2 border-slate-200"
+              dangerouslySetInnerHTML={{ __html: mistake.Question }}
+            />
+          </div>
+
+          {/* Image if exists */}
+          {mistake.Pictureurl && (
+            <div className="flex justify-center">
+              <img 
+                src={mistake.Pictureurl} 
+                alt="Question diagram" 
+                className="max-h-96 object-contain rounded-lg border-2 border-slate-200 shadow-md" 
+              />
+            </div>
+          )}
+
+          {/* Options Grid */}
+          <div>
+            <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3">
+              {t('notebook.options')}
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {['A', 'B', 'C', 'D'].map((opt) => {
+                const isUserAnswer = mistake.userAnswer === opt;
+                const isCorrect = mistake.CorrectOption === opt;
+                
+                return (
+                  <div
+                    key={opt}
+                    className={`p-4 rounded-xl border-2 ${
+                      isCorrect
+                        ? 'border-green-500 bg-green-50'
+                        : isUserAnswer
+                        ? 'border-red-500 bg-red-50'
+                        : 'border-slate-200 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0 ${
+                        isCorrect
+                          ? 'bg-green-500 text-white'
+                          : isUserAnswer
+                          ? 'bg-red-500 text-white'
+                          : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {opt}
+                      </div>
+                      <div className="flex-1">
+                        {isCorrect && (
+                          <div className="text-xs font-bold text-green-700 mb-1 flex items-center gap-1">
+                            <CheckCircle size={12} /> {t('notebook.correctAnswer')}
+                          </div>
+                        )}
+                        {isUserAnswer && !isCorrect && (
+                          <div className="text-xs font-bold text-red-700 mb-1">
+                            {t('notebook.yourAnswer')}
+                          </div>
+                        )}
+                        <div className={`text-sm ${
+                          isCorrect ? 'text-green-900 font-semibold' : isUserAnswer ? 'text-red-900' : 'text-slate-700'
+                        }`}>
+                          {mistake[`Option${opt}`] || opt}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Explanation */}
+          {mistake.Explanation && (
+            <div>
+              <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                <BookOpen size={16} className="text-blue-600" />
+                {t('notebook.explanation')}
+              </h3>
+              <div
+                className="prose prose-slate max-w-none text-sm bg-blue-50 p-4 rounded-xl border-2 border-blue-200"
+                dangerouslySetInnerHTML={{ __html: mistake.Explanation }}
+              />
+            </div>
+          )}
+
+          {/* Error Type Tagging */}
+          <div>
+            <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3">
+              {t('notebook.tagErrorType')}
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {ERROR_TYPES.map((type) => (
+                <button
+                  key={type.value}
+                  onClick={() => handleTagSelect(type.value)}
+                  className={`p-3 rounded-lg text-sm font-bold border-2 transition-all ${
+                    selectedTag === type.value
+                      ? `border-${type.color}-500 bg-${type.color}-50 text-${type.color}-700`
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full bg-${type.color}-500`} />
+                    <span>{type.label}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200">
+            <div className="text-center">
+              <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                {t('notebook.attempts')}
+              </div>
+              <div className="text-2xl font-black text-slate-700">{mistake.attemptCount || 1}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                {t('notebook.masteryLevel')}
+              </div>
+              <div className="text-2xl font-black text-amber-600">{mistake.improvementCount || 0}/3</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                {t('notebook.lastAttempted')}
+              </div>
+              <div className="text-sm font-bold text-slate-700">
+                {new Date(mistake.lastAttempted).toLocaleDateString('en-GB', {
+                  day: '2-digit',
+                  month: 'short'
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/**
+ * ProgressSegments: 3-segment progress bar
+ */
+function ProgressSegments({ current, target = 3, size = 'sm' }) {
+  const sizeClasses = {
+    sm: 'h-2',
+    md: 'h-3',
+    lg: 'h-4',
+  };
+  
+  return (
+    <div className={`flex gap-1 ${sizeClasses[size]}`}>
+      {Array.from({ length: target }).map((_, i) => (
+        <div
+          key={i}
+          className={`flex-1 rounded-full transition-all duration-300 ${
+            i < current
+              ? 'bg-green-500 shadow-lg'
+              : i === current
+              ? 'bg-amber-400'
+              : 'bg-slate-200'
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * TooltipWithPortal: Floating tooltip
  */
 function TooltipWithPortal({ trigger, content, placement = 'top' }) {
   const [open, setOpen] = useState(false);
@@ -189,11 +331,7 @@ function TooltipWithPortal({ trigger, content, placement = 'top' }) {
     placement,
     open,
     onOpenChange: setOpen,
-    middleware: [
-      offset(10),
-      flip(),
-      shift({ padding: 8 })
-    ],
+    middleware: [offset(10), flip(), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate
   });
   
@@ -223,7 +361,93 @@ function TooltipWithPortal({ trigger, content, placement = 'top' }) {
 }
 
 /**
- * CalendarHeatmap: 30-day mistake-clearing activity visualization
+ * InteractiveTopicHeatmap: Clickable topic density chart with multi-select
+ */
+function InteractiveTopicHeatmap({ mistakes, selectedTopics, onTopicToggle }) {
+  const { t } = useLanguage();
+  
+  const errorDensity = useMemo(() => {
+    const topicMap = {};
+    mistakes.forEach(m => {
+      if (!topicMap[m.Topic]) {
+        topicMap[m.Topic] = { attempted: 0, wrong: 0 };
+      }
+      topicMap[m.Topic].wrong++;
+      topicMap[m.Topic].attempted += Math.max(m.attemptCount, 1);
+    });
+    
+    return Object.entries(topicMap).map(([topic, data]) => ({
+      topic,
+      errorDensity: Math.min(1.0, data.wrong / Math.max(data.attempted, 1)),
+      wrongCount: data.wrong,
+      attemptedCount: data.attempted
+    })).sort((a, b) => b.errorDensity - a.errorDensity);
+  }, [mistakes]);
+  
+  const getColor = (density, isSelected) => {
+    const base = density < 0.2 ? 'yellow' 
+      : density < 0.4 ? 'orange' 
+      : density < 0.6 ? 'orange' 
+      : density < 0.8 ? 'red'
+      : 'red';
+    
+    if (isSelected) {
+      return `from-${base}-600 to-${base}-700 text-white ring-2 ring-${base}-400 ring-offset-2`;
+    }
+    
+    if (density < 0.2) return 'from-yellow-100 to-yellow-200 text-yellow-900 hover:from-yellow-200 hover:to-yellow-300';
+    if (density < 0.4) return 'from-orange-200 to-orange-300 text-orange-900 hover:from-orange-300 hover:to-orange-400';
+    if (density < 0.6) return 'from-orange-400 to-orange-500 text-white hover:from-orange-500 hover:to-orange-600';
+    if (density < 0.8) return 'from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700';
+    return 'from-red-700 to-red-800 text-white hover:from-red-800 hover:to-red-900';
+  };
+  
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+      <h3 className="font-bold text-lg text-slate-800 mb-2 flex items-center gap-2">
+        <BarChart2 size={20} className="text-orange-600" />
+        {t('notebook.errorDensityByTopic')}
+      </h3>
+      <p className="text-xs text-slate-500 mb-4">
+        {t('notebook.clickTopicsToFilter')} • {selectedTopics.length > 0 && `${selectedTopics.length} selected`}
+      </p>
+      
+      <div className="space-y-3">
+        {errorDensity.map(({ topic, errorDensity: density, wrongCount, attemptedCount }) => {
+          const isSelected = selectedTopics.includes(topic);
+          return (
+            <button
+              key={topic}
+              onClick={() => onTopicToggle(topic)}
+              className={`w-full flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r transition-all transform hover:scale-105 active:scale-95 cursor-pointer ${getColor(density, isSelected)}`}
+            >
+              <div className="w-32 font-semibold text-sm text-left truncate flex items-center gap-2">
+                {isSelected && <Check size={14} />}
+                {topic}
+              </div>
+              <div className="flex-1 text-right font-bold text-sm">
+                {(density * 100).toFixed(0)}% ({wrongCount}/{attemptedCount})
+              </div>
+              <ChevronRight size={16} />
+            </button>
+          );
+        })}
+      </div>
+      
+      {selectedTopics.length > 0 && (
+        <button
+          onClick={() => selectedTopics.forEach(onTopicToggle)}
+          className="mt-4 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-all"
+        >
+          {t('notebook.clearSelection')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * CalendarHeatmap: 30-day activity visualization
  */
 function CalendarHeatmap({ improvements }) {
   const { t } = useLanguage();
@@ -261,27 +485,31 @@ function CalendarHeatmap({ improvements }) {
   };
   
   return (
-    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
       <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
         <Calendar size={20} className="text-blue-600" />
         {t('notebook.mistakeClearingActivity')}
       </h3>
       
       <div className="grid grid-cols-7 gap-1">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => (
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
           <div key={`header-${idx}`} className="text-center text-xs font-bold text-slate-400 h-6">
-            {day.slice(0, 1)}
+            {day}
           </div>
         ))}
         
         {days.map(([dateStr, count]) => (
-          <div
+          <TooltipWithPortal
             key={dateStr}
-            className={`w-8 h-8 rounded ${getColor(count)} flex items-center justify-center text-xs font-bold text-slate-700 hover:ring-2 ring-blue-400 transition-all cursor-pointer`}
-            title={`${dateStr}: ${count} cleared`}
-          >
-            {count > 0 && count}
-          </div>
+            trigger={
+              <div
+                className={`w-8 h-8 rounded ${getColor(count)} flex items-center justify-center text-xs font-bold text-slate-700 hover:ring-2 ring-blue-400 transition-all cursor-pointer`}
+              >
+                {count > 0 && count}
+              </div>
+            }
+            content={`${dateStr}: ${count} cleared`}
+          />
         ))}
       </div>
       
@@ -299,63 +527,7 @@ function CalendarHeatmap({ improvements }) {
 }
 
 /**
- * TopicHeatmap: Error density visualization by topic
- */
-function TopicHeatmap({ mistakes }) {
-  const { t } = useLanguage();
-  
-  const errorDensity = useMemo(() => {
-    const topicMap = {};
-    
-    mistakes.forEach(m => {
-      if (!topicMap[m.Topic]) {
-        topicMap[m.Topic] = { attempted: 0, wrong: 0 };
-      }
-      topicMap[m.Topic].wrong++;
-      topicMap[m.Topic].attempted += Math.max(m.attemptCount, 1);
-    });
-    
-    return Object.entries(topicMap).map(([topic, data]) => ({
-      topic,
-      errorDensity: Math.min(1.0, data.wrong / Math.max(data.attempted, 1)),
-      wrongCount: data.wrong,
-      attemptedCount: data.attempted
-    })).sort((a, b) => b.errorDensity - a.errorDensity);
-  }, [mistakes]);
-  
-  const getColor = (density) => {
-    if (density < 0.2) return 'bg-yellow-100 text-yellow-900';
-    if (density < 0.4) return 'bg-orange-200 text-orange-900';
-    if (density < 0.6) return 'bg-orange-400 text-orange-900';
-    if (density < 0.8) return 'bg-red-500 text-white';
-    return 'bg-red-700 text-white';
-  };
-  
-  return (
-    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6">
-      <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-        <BarChart2 size={20} className="text-orange-600" />
-        {t('notebook.errorDensityByTopic')}
-      </h3>
-      
-      <div className="space-y-3">
-        {errorDensity.map(({ topic, errorDensity: density, wrongCount, attemptedCount }) => (
-          <div key={topic} className="flex items-center gap-4">
-            <div className="w-32 font-semibold text-sm text-slate-700 truncate">
-              {topic}
-            </div>
-            <div className={`flex-1 h-8 rounded-lg flex items-center justify-center font-bold text-sm transition-all ${getColor(density)}`}>
-              {(density * 100).toFixed(0)}% ({wrongCount}/{attemptedCount})
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/**
- * ImprovementTrendChart: Stacked area chart of mastery state progression
+ * ImprovementTrendChart: 14-day mastery progression
  */
 function ImprovementTrendChart({ improvements }) {
   const { t } = useLanguage();
@@ -378,11 +550,11 @@ function ImprovementTrendChart({ improvements }) {
     return Object.entries(stateHistory)
       .sort((a, b) => new Date(a[0]) - new Date(b[0]))
       .map(([date, states]) => ({ date, ...states }))
-      .slice(-14); // Last 14 days
+      .slice(-14);
   }, [improvements]);
   
   return (
-    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
       <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
         <TrendingUp size={20} className="text-purple-600" />
         {t('notebook.improvementTrend')}
@@ -406,55 +578,11 @@ function ImprovementTrendChart({ improvements }) {
 }
 
 /**
- * ErrorTagSelector: Dropdown for metacognitive error tagging
- */
-function ErrorTagSelector({ questionId, currentTag, onTag }) {
-  const { t } = useLanguage();
-  const [open, setOpen] = useState(false);
-  
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className={`px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-300 flex items-center gap-1 ${
-          currentTag
-            ? `bg-slate-100 text-slate-700`
-            : 'bg-white text-slate-500 hover:border-slate-400'
-        }`}
-      >
-        {currentTag ? ERROR_TYPES.find(e => e.value === currentTag)?.label : t('notebook.tagError')}
-        <ChevronDown size={12} />
-      </button>
-      
-      {open && (
-        <div className="absolute top-full mt-1 left-0 bg-white border border-slate-200 rounded-lg shadow-lg z-10 min-w-max">
-          {ERROR_TYPES.map(type => (
-            <button
-              key={type.value}
-              onClick={() => {
-                onTag(questionId, type.value);
-                setOpen(false);
-              }}
-              className={`block w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0 ${
-                currentTag === type.value ? 'bg-blue-50 text-blue-700 font-bold' : ''
-              }`}
-            >
-              <span className={`inline-block w-2 h-2 rounded-full mr-2 bg-${type.color}-500`} />
-              {type.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * RetentionDashboard: Overview of learning progress
+ * RetentionDashboard: Learning metrics overview
  */
 function RetentionDashboard({ mistakes, improvements }) {
-  const { t } = useLanguage();
-  const [open, setOpen] = useState(false);
+  const { t, tf } = useLanguage();
+  const [open, setOpen] = useState(true);
   
   const stats = useMemo(() => {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -492,13 +620,13 @@ function RetentionDashboard({ mistakes, improvements }) {
       : t('notebook.decayGrowing');
   
   return (
-    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-all"
       >
         <div className="flex items-center gap-2">
-          <BarChart2 className="text-purple-600" size={20} />
+          <Activity className="text-purple-600" size={20} />
           <span className="font-bold text-slate-800 text-lg">{t('notebook.retentionDashboard')}</span>
         </div>
         <ChevronDown
@@ -507,157 +635,78 @@ function RetentionDashboard({ mistakes, improvements }) {
         />
       </button>
       
-      {open && (
-        <div className="border-t border-slate-200 p-6 space-y-6 bg-slate-50">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl p-4 border-2 border-slate-200 text-center">
-              <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
-                {t('notebook.addedThisWeek')}
-              </div>
-              <div className="text-3xl font-black text-red-500">{stats.addedThisWeek}</div>
-            </div>
-            <div className="bg-white rounded-xl p-4 border-2 border-slate-200 text-center">
-              <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
-                {t('notebook.masteredThisWeek')}
-              </div>
-              <div className="text-3xl font-black text-green-600">{stats.masteredThisWeek}</div>
-            </div>
-            <div className="bg-white rounded-xl p-4 border-2 border-purple-200 text-center">
-              <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
-                {t('notebook.decayRate')}
-              </div>
-              <div className="text-lg font-black text-purple-700 mt-1">{decayLabel}</div>
-            </div>
-          </div>
-          
-          <div>
-            <h3 className="text-sm font-black text-slate-600 uppercase tracking-widest mb-3 flex items-center gap-2">
-              <Flame size={14} className="text-red-500" />
-              {t('notebook.weakestSubtopics')}
-            </h3>
-            <div className="space-y-2">
-              {stats.weakest.map(([subtopic, data]) => {
-                const max = stats.weakest[0][1].count + stats.weakest[0][1].repeats * 2;
-                const score = data.count + data.repeats * 2;
-                const pct = max > 0 ? (score / max) * 100 : 0;
-                return (
-                  <div key={subtopic} className="flex items-center gap-3">
-                    <div className="w-32 text-xs text-slate-600 font-semibold truncate shrink-0">
-                      {subtopic}
-                    </div>
-                    <div className="flex-1 bg-slate-200 rounded-full h-2">
-                      <div
-                        className="bg-gradient-to-r from-red-400 to-orange-400 h-2 rounded-full transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <div className="text-xs text-slate-500 shrink-0 w-8 text-right">
-                      {data.count}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// DYNAMIC PROGRESS BAR COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════════
-function ProgressSegments({ current, target = 3, size = 'sm' }) {
-  const sizeClasses = {
-    sm: 'h-2',
-    md: 'h-3',
-    lg: 'h-4',
-  };
-  
-  return (
-    <div className={`flex gap-1 ${sizeClasses[size]}`}>
-      {Array.from({ length: target }).map((_, i) => (
-        <div
-          key={i}
-          className={`flex-1 rounded-full transition-all ${
-            i < current
-              ? 'bg-green-500 shadow-lg'
-              : i === current
-              ? 'bg-amber-400'
-              : 'bg-slate-200'
-          }`}
-        />
-      ))}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// INTERACTIVE TOPIC HEATMAP WITH FILTER SYNC
-// ═══════════════════════════════════════════════════════════════════════════════
-function InteractiveTopicHeatmap({ mistakes, onTopicClick }) {
-  const { t } = useLanguage();
-  
-  const errorDensity = useMemo(() => {
-    const topicMap = {};
-    mistakes.forEach(m => {
-      if (!topicMap[m.Topic]) {
-        topicMap[m.Topic] = { attempted: 0, wrong: 0 };
-      }
-      topicMap[m.Topic].wrong++;
-      topicMap[m.Topic].attempted += Math.max(m.attemptCount, 1);
-    });
-    
-    return Object.entries(topicMap).map(([topic, data]) => ({
-      topic,
-      errorDensity: Math.min(1.0, data.wrong / Math.max(data.attempted, 1)),
-      wrongCount: data.wrong,
-      attemptedCount: data.attempted
-    })).sort((a, b) => b.errorDensity - a.errorDensity);
-  }, [mistakes]);
-  
-  const getColor = (density) => {
-    if (density < 0.2) return 'from-yellow-100 to-yellow-200 text-yellow-900 hover:from-yellow-200 hover:to-yellow-300 cursor-pointer';
-    if (density < 0.4) return 'from-orange-200 to-orange-300 text-orange-900 hover:from-orange-300 hover:to-orange-400 cursor-pointer';
-    if (density < 0.6) return 'from-orange-400 to-orange-500 text-white hover:from-orange-500 hover:to-orange-600 cursor-pointer';
-    if (density < 0.8) return 'from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 cursor-pointer';
-    return 'from-red-700 to-red-800 text-white hover:from-red-800 hover:to-red-900 cursor-pointer';
-  };
-  
-  return (
-    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6">
-      <h3 className="font-bold text-lg text-slate-800 mb-2 flex items-center gap-2">
-        <BarChart2 size={20} className="text-orange-600" />
-        {t('notebook.errorDensityByTopic')}
-      </h3>
-      <p className="text-xs text-slate-500 mb-4">Click a topic to filter →</p>
-      
-      <div className="space-y-3">
-        {errorDensity.map(({ topic, errorDensity: density, wrongCount, attemptedCount }) => (
-          <button
-            key={topic}
-            onClick={() => onTopicClick(topic)}
-            className={`w-full flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r transition-all transform hover:scale-105 active:scale-95 ${getColor(density)}`}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="border-t border-slate-200 overflow-hidden"
           >
-            <div className="w-32 font-semibold text-sm text-left truncate">
-              {topic}
+            <div className="p-6 space-y-6 bg-slate-50">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-white rounded-xl p-4 border-2 border-slate-200 text-center">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                    {t('notebook.addedThisWeek')}
+                  </div>
+                  <div className="text-3xl font-black text-red-500">{stats.addedThisWeek}</div>
+                </div>
+                <div className="bg-white rounded-xl p-4 border-2 border-slate-200 text-center">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                    {t('notebook.masteredThisWeek')}
+                  </div>
+                  <div className="text-3xl font-black text-green-600">{stats.masteredThisWeek}</div>
+                </div>
+                <div className="bg-white rounded-xl p-4 border-2 border-purple-200 text-center">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                    {t('notebook.decayRate')}
+                  </div>
+                  <div className="text-lg font-black text-purple-700 mt-1">{decayLabel}</div>
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="text-sm font-black text-slate-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Flame size={14} className="text-red-500" />
+                  {t('notebook.weakestSubtopics')}
+                </h3>
+                <div className="space-y-2">
+                  {stats.weakest.map(([subtopic, data]) => {
+                    const max = stats.weakest[0][1].count + stats.weakest[0][1].repeats * 2;
+                    const score = data.count + data.repeats * 2;
+                    const pct = max > 0 ? (score / max) * 100 : 0;
+                    return (
+                      <div key={subtopic} className="flex items-center gap-3">
+                        <div className="w-32 text-xs text-slate-600 font-semibold truncate shrink-0">
+                          {subtopic}
+                        </div>
+                        <div className="flex-1 bg-slate-200 rounded-full h-2">
+                          <div
+                            className="bg-gradient-to-r from-red-400 to-orange-400 h-2 rounded-full transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <div className="text-xs text-slate-500 shrink-0 w-8 text-right">
+                          {data.count}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-            <div className="flex-1 text-right font-bold text-sm">
-              {(density * 100).toFixed(0)}% ({wrongCount}/{attemptedCount})
-            </div>
-            <ChevronRight size={16} />
-          </button>
-        ))}
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// LIST VIEW: Compact expandable list of mistakes
-// ═══════════════════════════════════════════════════════════════════════════════
-function ListViewDeck({ mistakes, errorTags, onTag, masteryStyle, calcPriority, formatDate, selectedIds, onToggleSelect, onToggleSelectAll, allSelected }) {
+/**
+ * LIST VIEW: Compact expandable rows
+ */
+function ListViewDeck({ mistakes, errorTags, onTag, selectedIds, onToggleSelect, onToggleSelectAll, allSelected, onViewFull }) {
   const { t } = useLanguage();
   const [expandedId, setExpandedId] = useState(null);
   
@@ -672,131 +721,138 @@ function ListViewDeck({ mistakes, errorTags, onTag, masteryStyle, calcPriority, 
           className="w-4 h-4 rounded cursor-pointer"
         />
         <span className="text-sm font-bold text-slate-700">
-          Select All ({selectedIds.size}/{mistakes.length})
+          {t('notebook.selectAll')} ({selectedIds.size}/{mistakes.length})
         </span>
       </div>
       
       {/* Mistake Rows */}
-      {mistakes.map((mistake) => {
-        const style = masteryStyle(mistake.improvementCount ?? 0);
-        const priority = calcPriority(mistake);
-        const isExpanded = expandedId === mistake.ID;
-        const isSelected = selectedIds.has(mistake.ID);
-        
-        return (
-          <div
-            key={mistake.ID}
-            className={`rounded-lg border-2 transition-all ${style.border} ${style.bg}`}
-          >
-            {/* Row Header (Always Visible) */}
-            <div className="flex items-center gap-3 p-4">
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => onToggleSelect(mistake.ID)}
-                className="w-4 h-4 rounded cursor-pointer"
-              />
-              <button
-                onClick={() => setExpandedId(isExpanded ? null : mistake.ID)}
-                className="flex-1 flex items-center justify-between hover:bg-white/50 p-2 rounded-lg transition-all"
-              >
-                <div className="flex items-center gap-3 flex-1">
-                  <div className="w-10 h-10 rounded bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-                    {mistake.Topic.slice(0, 2)}
-                  </div>
-                  <div className="text-left min-w-0 flex-1">
-                    <div className="text-xs font-bold text-slate-600">
-                      {mistake.Topic} → {mistake.Subtopic}
+      <AnimatePresence>
+        {mistakes.map((mistake) => {
+          const style = masteryStyle(mistake.improvementCount ?? 0);
+          const priority = calcPriority(mistake);
+          const isExpanded = expandedId === mistake.ID;
+          const isSelected = selectedIds.has(mistake.ID);
+          const isUrgent = priority > 15;
+          
+          return (
+            <motion.div
+              key={mistake.ID}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className={`rounded-lg border-2 transition-all ${style.border} ${style.bg} ${
+                isUrgent ? 'ring-2 ring-red-400' : ''
+              }`}
+            >
+              {/* Row Header */}
+              <div className="flex items-center gap-3 p-4">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleSelect(mistake.ID)}
+                  className="w-4 h-4 rounded cursor-pointer"
+                />
+                <button
+                  onClick={() => setExpandedId(isExpanded ? null : mistake.ID)}
+                  className="flex-1 flex items-center justify-between hover:bg-white/50 p-2 rounded-lg transition-all"
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="w-10 h-10 rounded bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                      {mistake.Topic.slice(0, 2)}
                     </div>
-                    <div className="text-sm text-slate-800 font-semibold truncate">
-                      {mistake.Question?.substring(0, 60)}...
+                    <div className="text-left min-w-0 flex-1">
+                      <div className="text-xs font-bold text-slate-600">
+                        {mistake.Topic} → {mistake.Subtopic}
+                      </div>
+                      <div className="text-sm text-slate-800 font-semibold truncate">
+                        {mistake.Question?.replace(/<[^>]*>/g, '').substring(0, 60)}...
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <ProgressSegments current={mistake.improvementCount ?? 0} target={3} size="sm" />
-                  <span className={`text-xs font-black px-2 py-1 rounded-full ${
-                    priority > 15 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {priority.toFixed(1)}
-                  </span>
-                  <ChevronRight size={16} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                </div>
-              </button>
-            </div>
-            
-            {/* Expanded Content */}
-            {isExpanded && (
-              <div className="p-4 border-t border-slate-300 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-red-50 border border-red-200">
-                    <div className="text-xs font-bold text-red-700 mb-1">{t('notebook.yourAnswer')}</div>
-                    <div className="text-sm font-semibold text-red-900">{mistake.userAnswer}</div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="w-24">
+                      <ProgressSegments current={mistake.improvementCount ?? 0} target={3} size="sm" />
+                    </div>
+                    <span className={`text-xs font-black px-2 py-1 rounded-full ${
+                      isUrgent ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {priority.toFixed(1)}
+                    </span>
+                    <ChevronRight size={16} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                   </div>
-                  <div className="p-3 rounded-lg bg-green-50 border border-green-200">
-                    <div className="text-xs font-bold text-green-700 mb-1">{t('notebook.correctAnswer')}</div>
-                    <div className="text-sm font-semibold text-green-900">{mistake.CorrectOption}</div>
-                  </div>
-                </div>
-                {mistake.Explanation && (
-                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
-                    <div className="text-xs font-bold text-blue-700 mb-2">{t('notebook.explanation')}</div>
-                    <div
-                      className="text-sm text-blue-900 line-clamp-3"
-                      dangerouslySetInnerHTML={{ __html: mistake.Explanation }}
-                    />
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-black text-slate-500 uppercase">Tag:</span>
-                  <ErrorTagSelector
-                    questionId={mistake.ID}
-                    currentTag={errorTags[mistake.ID]}
-                    onTag={onTag}
-                  />
-                </div>
+                </button>
+                <button
+                  onClick={() => onViewFull(mistake)}
+                  className="p-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-all"
+                  title={t('notebook.viewFullQuestion')}
+                >
+                  <Maximize2 size={18} />
+                </button>
               </div>
-            )}
-          </div>
-        );
-      })}
+              
+              {/* Expanded Content */}
+              <AnimatePresence>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-4 border-t border-slate-300 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+                          <div className="text-xs font-bold text-red-700 mb-1">{t('notebook.yourAnswer')}</div>
+                          <div className="text-sm font-semibold text-red-900">{mistake.userAnswer}</div>
+                        </div>
+                        <div className="p-3 rounded-lg bg-green-50 border border-green-200">
+                          <div className="text-xs font-bold text-green-700 mb-1">{t('notebook.correctAnswer')}</div>
+                          <div className="text-sm font-semibold text-green-900">{mistake.CorrectOption}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// KANBAN VIEW: Drag-friendly column-based layout
-// ═══════════════════════════════════════════════════════════════════════════════
-function KanbanViewDeck({ columns, errorTags, onTag, masteryStyle, calcPriority, formatDate }) {
+/**
+ * KANBAN VIEW: 3-column layout (New, Developing, Near-Mastery)
+ */
+function KanbanViewDeck({ columns, errorTags, onTag, onViewFull }) {
   const { t } = useLanguage();
   const [expandedId, setExpandedId] = useState(null);
   
-  const columnLabels = {
-    new: { label: 'New', color: 'red', icon: AlertTriangle },
-    progressing: { label: 'Developing', color: 'amber', icon: Flame },
-    near: { label: 'Near-Mastery', color: 'green', icon: Star },
+  const columnConfig = {
+    new: { label: t('notebook.masteryNew'), color: 'red', icon: AlertTriangle, gradient: 'from-red-50 to-red-100', border: 'border-red-300' },
+    progressing: { label: t('notebook.masteryDeveloping'), color: 'amber', icon: Flame, gradient: 'from-amber-50 to-amber-100', border: 'border-amber-300' },
+    near: { label: t('notebook.masteryNear'), color: 'green', icon: Star, gradient: 'from-green-50 to-green-100', border: 'border-green-300' },
   };
   
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-full">
       {Object.entries(columns).map(([key, mistakes]) => {
-        const config = columnLabels[key];
-        const colorMap = { red: 'from-red-50 to-red-100', amber: 'from-amber-50 to-amber-100', green: 'from-green-50 to-green-100' };
-        const borderMap = { red: 'border-red-300', amber: 'border-amber-300', green: 'border-green-300' };
+        const config = columnConfig[key];
         
         return (
-          <div
+          <motion.div
             key={key}
-            className={`rounded-2xl border-2 ${borderMap[config.color]} bg-gradient-to-b ${colorMap[config.color]} p-4 flex flex-col`}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3 }}
+            className={`rounded-2xl border-2 ${config.border} bg-gradient-to-b ${config.gradient} p-4 flex flex-col`}
           >
             {/* Column Header */}
             <div className="mb-4 pb-3 border-b-2 border-slate-300">
               <h3 className="font-black text-lg text-slate-800 flex items-center gap-2">
-                <config.icon size={20} className={`${
-                  config.color === 'red' ? 'text-red-600' :
-                  config.color === 'amber' ? 'text-amber-600' :
-                  'text-green-600'
-                }`} />
+                <config.icon size={20} className={`text-${config.color}-600`} />
                 {config.label} ({mistakes.length})
               </h3>
             </div>
@@ -805,84 +861,68 @@ function KanbanViewDeck({ columns, errorTags, onTag, masteryStyle, calcPriority,
             <div className="flex-1 overflow-y-auto space-y-3 pr-2">
               {mistakes.length === 0 ? (
                 <div className="text-center py-8">
-                  <CheckCircle size={32} className={`${
-                    config.color === 'red' ? 'text-red-300' :
-                    config.color === 'amber' ? 'text-amber-300' :
-                    'text-green-300'
-                  } mx-auto mb-2`} />
-                  <p className={`text-xs font-bold ${
-                    config.color === 'red' ? 'text-red-700' :
-                    config.color === 'amber' ? 'text-amber-700' :
-                    'text-green-700'
-                  }`}>
-                    All caught up!
+                  <CheckCircle size={32} className={`text-${config.color}-300 mx-auto mb-2`} />
+                  <p className={`text-xs font-bold text-${config.color}-700`}>
+                    {t('notebook.allCaughtUp')}
                   </p>
                 </div>
               ) : (
-                mistakes.map((mistake) => {
-                  const style = masteryStyle(mistake.improvementCount ?? 0);
-                  const priority = calcPriority(mistake);
-                  const isExpanded = expandedId === mistake.ID;
-                  
-                  return (
-                    <div
-                      key={mistake.ID}
-                      className="bg-white rounded-xl p-4 shadow-md border-2 border-slate-200 hover:shadow-lg transition-all cursor-pointer"
-                      onClick={() => setExpandedId(isExpanded ? null : mistake.ID)}
-                    >
-                      {/* Card Header */}
-                      <div className="mb-3">
-                        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
-                          {mistake.Topic}
-                        </div>
-                        <div className="text-sm font-bold text-slate-800 line-clamp-2">
-                          {mistake.Question?.substring(0, 80)}...
-                        </div>
-                      </div>
-                      
-                      {/* Progress Bar */}
-                      <div className="mb-3">
-                        <ProgressSegments current={mistake.improvementCount ?? 0} target={3} size="sm" />
-                      </div>
-                      
-                      {/* Priority Badge */}
-                      <div className={`inline-block text-xs font-black px-2 py-1 rounded-full mb-3 ${
-                        priority > 15
-                          ? 'bg-red-100 text-red-700 animate-pulse'
-                          : priority > 7
-                          ? 'bg-amber-100 text-amber-700'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        Priority: {priority.toFixed(1)}
-                      </div>
-                      
-                      {/* Expanded Details */}
-                      {isExpanded && (
-                        <div className="pt-3 border-t border-slate-200 space-y-3">
-                          <div className="grid grid-cols-1 gap-2">
-                            <div className="p-2 rounded bg-red-50 border border-red-200">
-                              <div className="text-xs font-bold text-red-700 mb-1">Your Answer</div>
-                              <div className="text-xs font-semibold text-red-900">{mistake.userAnswer}</div>
-                            </div>
-                            <div className="p-2 rounded bg-green-50 border border-green-200">
-                              <div className="text-xs font-bold text-green-700 mb-1">Correct</div>
-                              <div className="text-xs font-semibold text-green-900">{mistake.CorrectOption}</div>
-                            </div>
+                <AnimatePresence>
+                  {mistakes.map((mistake) => {
+                    const priority = calcPriority(mistake);
+                    const isUrgent = priority > 15;
+                    
+                    return (
+                      <motion.div
+                        key={mistake.ID}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        className={`bg-white rounded-xl p-4 shadow-md border-2 border-slate-200 hover:shadow-lg transition-all ${
+                          isUrgent ? 'ring-2 ring-red-400' : ''
+                        }`}
+                      >
+                        {/* Card Header */}
+                        <div className="mb-3">
+                          <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+                            {mistake.Topic}
                           </div>
-                          {mistake.Explanation && (
-                            <div 
-                              className="text-xs text-slate-700 bg-blue-50 p-2 rounded border border-blue-200 max-h-20 overflow-y-auto"
-                              dangerouslySetInnerHTML={{ __html: mistake.Explanation.substring(0, 150) + '...' }}
-                            />
-                          )}
+                          <div className="text-sm font-bold text-slate-800 line-clamp-2">
+                            {mistake.Question?.replace(/<[^>]*>/g, '').substring(0, 80)}...
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  );
-                })
+                        
+                        {/* Progress Bar */}
+                        <div className="mb-3">
+                          <ProgressSegments current={mistake.improvementCount ?? 0} target={3} size="md" />
+                        </div>
+                        
+                        {/* Priority Badge */}
+                        <div className={`inline-block text-xs font-black px-2 py-1 rounded-full mb-3 ${
+                          isUrgent
+                            ? 'bg-red-100 text-red-700'
+                            : priority > 7
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {t('notebook.priority')}: {priority.toFixed(1)}
+                        </div>
+                        
+                        {/* View Full Button */}
+                        <button
+                          onClick={() => onViewFull(mistake)}
+                          className="w-full py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                        >
+                          <Maximize2 size={14} />
+                          {t('notebook.viewFull')}
+                        </button>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               )}
             </div>
-          </div>
+          </motion.div>
         );
       })}
     </div>
@@ -904,19 +944,15 @@ export default function MistakeNotebookPage() {
   const [errorTags, setErrorTags] = useState(() =>
     JSON.parse(localStorage.getItem('mistake_error_tags') || '{}')
   );
-  
-  // New ISRS state
   const [recentQuizTopics, setRecentQuizTopics] = useState(() =>
     JSON.parse(localStorage.getItem('recent_quiz_topics') || '[]')
   );
   const [archivedMistakes, setArchivedMistakes] = useState(() =>
     JSON.parse(localStorage.getItem('mistake_archive') || '{}')
   );
-  const [showAnalytics, setShowAnalytics] = useState(true);
   
   // Filter state
-  const [showFilters, setShowFilters] = useState(true);
-  const [questionCount, setQuestionCount] = useState('5');
+  const [questionCount, setQuestionCount] = useState('10');
   const [datePeriod, setDatePeriod] = useState('all');
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedSubtopics, setSelectedSubtopics] = useState([]);
@@ -926,12 +962,13 @@ export default function MistakeNotebookPage() {
   const [timerEnabled, setTimerEnabled] = useState(true);
   const [isTimedMode, setIsTimedMode] = useState(false);
   
-  // Dashboard features
-  const [activeTab, setActiveTab] = useState('deck'); // 'deck', 'analytics', 'archive'
-  const [viewMode, setViewMode] = useState('list'); // 'list', 'kanban'
+  // UI state
+  const [activeTab, setActiveTab] = useState('deck');
+  const [viewMode, setViewMode] = useState('list');
   const [selectedMistakeIds, setSelectedMistakeIds] = useState(new Set());
+  const [fullViewMistake, setFullViewMistake] = useState(null);
   
-  // ── Load data ──
+  // Load data
   useEffect(() => { loadMistakes(); }, [currentUser]);
   
   async function loadMistakes() {
@@ -995,28 +1032,17 @@ export default function MistakeNotebookPage() {
     }
   }
   
-  // ── Effects for persistence ──
+  // Persistence effects
   useEffect(() => {
     localStorage.setItem('mistake_error_tags', JSON.stringify(errorTags));
   }, [errorTags]);
   
   useEffect(() => {
-    localStorage.setItem('recent_quiz_topics', JSON.stringify(recentQuizTopics));
-  }, [recentQuizTopics]);
+    const updated = applyRuleOfThree(improvements);
+    setArchivedMistakes(JSON.parse(localStorage.getItem('mistake_archive') || '{}'));
+  }, [improvements]);
   
-  
-  // ── ISRS Calculations (Memoized) ──
-  const prioritizedMistakes = useMemo(() => {
-    return mistakes
-      .map(m => ({
-        ...m,
-        masteryPriority: calculateMasteryPriority(m, recentQuizTopics),
-        masteryState: getMasteryState(m.improvementCount ?? 0)
-      }))
-      .sort((a, b) => b.masteryPriority - a.masteryPriority);
-  }, [mistakes, recentQuizTopics]);
-  
-  // ── Filter helpers ──
+  // Computed values
   const allTopics = useMemo(
     () => [...new Set(mistakes.map((m) => m.Topic).filter(Boolean))].sort(),
     [mistakes]
@@ -1034,16 +1060,6 @@ export default function MistakeNotebookPage() {
       prev.filter((s) => availableSubtopics.includes(s))
     );
   }, [availableSubtopics]);
-  
-  const topicBreakdown = useMemo(() => {
-    const bd = {};
-    mistakes.forEach((m) => {
-      if (!bd[m.Topic]) bd[m.Topic] = { count: 0, repeated: 0 };
-      bd[m.Topic].count++;
-      if (m.attemptCount > 1) bd[m.Topic].repeated++;
-    });
-    return bd;
-  }, [mistakes]);
   
   const filteredMistakes = useMemo(() => {
     let result = [...mistakes];
@@ -1082,7 +1098,14 @@ export default function MistakeNotebookPage() {
       ? filteredMistakes.length
       : Math.min(parseInt(questionCount), filteredMistakes.length);
   
-  // ── Handlers ──
+  // Kanban columns
+  const kanbanColumns = useMemo(() => ({
+    new: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 0),
+    progressing: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 1),
+    near: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 2),
+  }), [filteredMistakes]);
+  
+  // Handlers
   const handleTag = useCallback((questionId, tag) => {
     setErrorTags((prev) => {
       const next = { ...prev };
@@ -1112,62 +1135,19 @@ export default function MistakeNotebookPage() {
   
   const handlePracticeMistakes = () => {
     if (filteredMistakes.length === 0) return;
-    const selected = [...filteredMistakes]
-      .sort((a, b) => calcPriority(b) - calcPriority(a))
-      .slice(0, practiceCount);
+    
+    const selected = selectedMistakeIds.size > 0
+      ? filteredMistakes.filter(m => selectedMistakeIds.has(m.ID))
+      : [...filteredMistakes]
+          .sort((a, b) => calcPriority(b) - calcPriority(a))
+          .slice(0, practiceCount);
+    
     quizStorage.clearQuizData();
     quizStorage.saveSelectedQuestions(selected);
     localStorage.setItem('quiz_mode', 'mistakes');
     localStorage.setItem('quiz_timer_enabled', timerEnabled.toString());
     localStorage.setItem('quiz_is_timed_mode', isTimedMode.toString());
     navigate('/quiz');
-  };
-  
-  const handleAIDailyMission = () => {
-    const selected = selectAIDailyMission(mistakes, recentQuizTopics);
-    quizStorage.clearQuizData();
-    quizStorage.saveSelectedQuestions(selected);
-    localStorage.setItem('quiz_mode', 'mistakes');
-    localStorage.setItem('quiz_timer_enabled', 'true');
-    localStorage.setItem('quiz_is_timed_mode', 'true');
-    navigate('/quiz');
-  };
-  
-  const formatDate = (iso) =>
-    new Date(iso).toLocaleDateString('en-GB', {
-      day: '2-digit', month: 'short', year: 'numeric',
-    });
-  
-  // ── Derived stats ──
-  const repeatedMistakes = useMemo(
-    () => mistakes.filter((m) => m.attemptCount > 1).length,
-    [mistakes]
-  );
-  
-  const topicsToFocus = useMemo(
-    () => new Set(mistakes.map((m) => m.Topic)).size,
-    [mistakes]
-  );
-  
-  // ── Loading state ──
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lab-blue mx-auto mb-4" />
-          <p className="text-slate-600">{t('notebook.loadingMistakes')}</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // RENDER - NEW DASHBOARD LAYOUT
-  // ═══════════════════════════════════════════════════════════════════════════════
-  
-  const handleTopicFilterClick = (topic) => {
-    setSelectedTopics([topic]);
-    setActiveTab('deck');
   };
   
   const toggleMistakeSelection = (questionId) => {
@@ -1187,21 +1167,47 @@ export default function MistakeNotebookPage() {
     }
   };
   
-  // Organize mistakes by mastery state for Kanban
-  const kanbanColumns = useMemo(() => ({
-    new: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 0),
-    progressing: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 1),
-    near: filteredMistakes.filter(m => (m.improvementCount ?? 0) === 2),
-  }), [filteredMistakes]);
+  const formatDate = (iso) =>
+    new Date(iso).toLocaleDateString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    });
+  
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4" />
+          <p className="text-slate-600 font-semibold">{t('notebook.loadingMistakes')}</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════════════
   
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
+      {/* Full Question Modal */}
+      <AnimatePresence>
+        {fullViewMistake && (
+          <FullQuestionModal
+            mistake={fullViewMistake}
+            errorTag={errorTags[fullViewMistake.ID]}
+            onTag={handleTag}
+            onClose={() => setFullViewMistake(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ═══════════════════════════════════════════════════════════════════════════════
-          PERSIST SIDEBAR: Practice Configurator + AI Daily Mission
+          SIDEBAR: Practice Configurator
           ═══════════════════════════════════════════════════════════════════════════════ */}
       
       <div className="w-80 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
-        {/* Header with back button */}
+        {/* Header */}
         <div className="p-4 border-b border-slate-200 flex items-center gap-2">
           <button
             onClick={() => navigate('/dashboard')}
@@ -1212,26 +1218,11 @@ export default function MistakeNotebookPage() {
           </button>
           <h1 className="font-black text-lg text-slate-800 flex items-center gap-2">
             <Command size={20} className="text-indigo-600"/>
+            {t('notebook.commandCenter')}
           </h1>
         </div>
         
-        {/* AI Daily Mission Hero Button */}
-        <div className="p-4 border-b border-slate-200">
-          <button
-            onClick={handleAIDailyMission}
-            disabled={mistakes.length < 20}
-            className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl font-black text-sm shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 active:scale-95"
-            title={mistakes.length < 20 ? t('notebook.needMoreQuestions') : t('notebook.aiDailyMission')}
-          >
-            <Sparkles size={18} />
-            {t('notebook.aiDailyMission')}
-          </button>
-          <p className="text-xs text-slate-500 mt-2 text-center">
-            {mistakes.length < 20 ? t('notebook.needMoreQuestions') : '20 Questions • Interleaved'}
-          </p>
-        </div>
-        
-        {/* Practice Configurator */}
+        {/* Configurator */}
         <div className="flex-1 p-4 space-y-4 overflow-y-auto">
           {/* Question Count */}
           <div>
@@ -1291,31 +1282,23 @@ export default function MistakeNotebookPage() {
             </label>
             <div className="space-y-1">
               {Object.entries(MASTERY_LEVELS).map(([key, lvl]) => {
-                const colors = {
-                  new:         'bg-red-500 border-red-500 text-white',
-                  progressing: 'bg-amber-500 border-amber-500 text-white',
-                  near:        'bg-green-500 border-green-500 text-white',
-                };
-                const inactive = {
-                  new:         'bg-white border-red-200 text-red-700',
-                  progressing: 'bg-white border-amber-200 text-amber-700',
-                  near:        'bg-white border-green-200 text-green-700',
-                };
+                const count = mistakes.filter((m) => {
+                  const ic = m.improvementCount ?? 0;
+                  return ic >= lvl.min && ic <= lvl.max;
+                }).length;
+                
                 return (
                   <button
                     key={key}
                     onClick={() => toggleMasteryLevel(key)}
                     className={`w-full px-3 py-2 rounded-lg text-xs font-bold border text-left transition-all ${
-                      selectedMasteryLevels.includes(key) ? colors[key] : inactive[key]
+                      selectedMasteryLevels.includes(key)
+                        ? `bg-${lvl.color}-500 border-${lvl.color}-500 text-white`
+                        : `bg-white border-${lvl.color}-200 text-${lvl.color}-700`
                     }`}
                   >
-                    {t(`notebook.mastery${key.charAt(0).toUpperCase() + key.slice(1)}`)}
-                    <span className="ml-1 opacity-70">
-                      ({mistakes.filter((m) => {
-                        const ic = m.improvementCount ?? 0;
-                        return ic >= lvl.min && ic <= lvl.max;
-                      }).length})
-                    </span>
+                    {lvl.label}
+                    <span className="ml-1 opacity-70">({count})</span>
                   </button>
                 );
               })}
@@ -1328,7 +1311,7 @@ export default function MistakeNotebookPage() {
               <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2">
                 {t('notebook.topics')}
               </label>
-              <div className="space-y-1">
+              <div className="space-y-1 max-h-48 overflow-y-auto">
                 {allTopics.map((topic) => (
                   <button
                     key={topic}
@@ -1355,8 +1338,8 @@ export default function MistakeNotebookPage() {
               <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2">
                 {t('notebook.subtopics')}
               </label>
-              <div className="space-y-1">
-                {availableSubtopics.slice(0, 8).map((sub) => (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {availableSubtopics.slice(0, 12).map((sub) => (
                   <button
                     key={sub}
                     onClick={() => toggleSubtopic(sub)}
@@ -1379,15 +1362,15 @@ export default function MistakeNotebookPage() {
               onClick={() => setTimerEnabled(!timerEnabled)}
               className={`w-full px-3 py-2 rounded-lg text-xs font-bold border transition-all text-left flex items-center justify-between ${
                 timerEnabled
-                  ? 'bg-chemistry-green border-chemistry-green text-white'
+                  ? 'bg-green-600 border-green-600 text-white'
                   : 'bg-white border-slate-200 text-slate-600'
               }`}
             >
               <span className="flex items-center gap-1">
                 <Clock size={12} />
-                {t('quiz.enableTimer')}
+                {t('notebook.timerEnabled')}
               </span>
-              <Check size={14} />
+              {timerEnabled && <Check size={14} />}
             </button>
             {timerEnabled && (
               <button
@@ -1400,15 +1383,15 @@ export default function MistakeNotebookPage() {
               >
                 <span className="flex items-center gap-1">
                   <Zap size={12} />
-                  {t('quiz.timedMode')}
+                  {t('notebook.timedMode')}
                 </span>
-                <Check size={14} />
+                {isTimedMode && <Check size={14} />}
               </button>
             )}
           </div>
         </div>
         
-        {/* Start Practice Button */}
+        {/* Practice Button */}
         <div className="p-4 border-t border-slate-200">
           <button
             onClick={handlePracticeMistakes}
@@ -1416,10 +1399,12 @@ export default function MistakeNotebookPage() {
             className="w-full py-3 bg-orange-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-orange-700 disabled:bg-slate-300 transition-all flex items-center justify-center gap-2 active:scale-95"
           >
             <Play fill="currentColor" size={16} />
-            {tf('notebook.practiceMistakesCount', {
-              count: practiceCount,
-              plural: practiceCount !== 1 ? 's' : '',
-            })}
+            {selectedMistakeIds.size > 0 
+              ? tf('notebook.practiceSelected', { count: selectedMistakeIds.size })
+              : tf('notebook.practiceMistakesCount', { 
+                  count: practiceCount,
+                  plural: practiceCount !== 1 ? 's' : ''
+                })}
           </button>
           <p className="text-xs text-slate-500 mt-2 text-center">
             {filteredMistakes.length} {t('notebook.questionsAvailable')}
@@ -1432,10 +1417,21 @@ export default function MistakeNotebookPage() {
           ═══════════════════════════════════════════════════════════════════════════════ */}
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header with Tabs and View Toggle */}
+        {/* Tab Navigation */}
         <div className="bg-white border-b border-slate-200 p-4">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-1">
+              <button
+                onClick={() => setActiveTab('analytics')}
+                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
+                  activeTab === 'analytics'
+                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500'
+                    : 'bg-slate-100 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <Brain size={16} className="inline mr-2" />
+                {t('notebook.learningInsights')}
+              </button>
               <button
                 onClick={() => setActiveTab('deck')}
                 className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
@@ -1448,17 +1444,6 @@ export default function MistakeNotebookPage() {
                 {t('notebook.mistakeDeck')} ({filteredMistakes.length})
               </button>
               <button
-                onClick={() => setActiveTab('analytics')}
-                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
-                  activeTab === 'analytics'
-                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500'
-                    : 'bg-slate-100 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <Brain size={16} className="inline mr-2" />
-                {t('notebook.learningAnalytics')}
-              </button>
-              <button
                 onClick={() => setActiveTab('archive')}
                 className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${
                   activeTab === 'archive'
@@ -1467,7 +1452,7 @@ export default function MistakeNotebookPage() {
                 }`}
               >
                 <Archive size={16} className="inline mr-2" />
-                Mastery Archive ({Object.keys(archivedMistakes).length})
+                {t('notebook.masteryArchive')} ({Object.keys(archivedMistakes).length})
               </button>
             </div>
             
@@ -1480,7 +1465,7 @@ export default function MistakeNotebookPage() {
                       ? 'bg-indigo-500 text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
-                  title="List View"
+                  title={t('notebook.listView')}
                 >
                   <ListIcon size={18} />
                 </button>
@@ -1491,7 +1476,7 @@ export default function MistakeNotebookPage() {
                       ? 'bg-indigo-500 text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
-                  title="Kanban View"
+                  title={t('notebook.kanbanView')}
                 >
                   <Grid3x3 size={18} />
                 </button>
@@ -1504,7 +1489,7 @@ export default function MistakeNotebookPage() {
             <div className="flex flex-wrap gap-2 text-xs">
               {selectedTopics.map(t => (
                 <span key={t} className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
-                  Topic: {t}
+                  {tf('notebook.topicFilter', { topic: t })}
                   <button onClick={() => toggleTopic(t)} className="ml-1">✕</button>
                 </span>
               ))}
@@ -1526,141 +1511,166 @@ export default function MistakeNotebookPage() {
         
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Tab 1: Mistake Deck */}
-          {activeTab === 'deck' && (
-            <div>
-              {mistakes.length === 0 ? (
-                <div className="text-center py-12">
-                  <CheckCircle className="w-16 h-16 text-green-300 mx-auto mb-4" />
-                  <p className="text-slate-400 text-lg mb-2 font-semibold">
-                    {t('notebook.noMistakesYet')}
-                  </p>
-                  <p className="text-slate-500 text-sm mb-4">
-                    {t('notebook.keepPracticing')}
-                  </p>
-                  <button
-                    onClick={() => navigate('/')}
-                    className="px-6 py-3 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-800 transition-all"
-                  >
-                    {t('notebook.startPracticing')}
-                  </button>
-                </div>
-              ) : filteredMistakes.length === 0 ? (
-                <div className="text-center py-12">
-                  <AlertCircle className="w-16 h-16 text-amber-300 mx-auto mb-4" />
-                  <p className="text-slate-400 text-lg mb-2 font-semibold">
-                    No questions match your filters
-                  </p>
-                  <p className="text-slate-500 text-sm">
-                    Try adjusting your filter settings
-                  </p>
-                </div>
-              ) : viewMode === 'list' ? (
-                <ListViewDeck
-                  mistakes={filteredMistakes}
-                  errorTags={errorTags}
-                  onTag={handleTag}
-                  masteryStyle={masteryStyle}
-                  calcPriority={calcPriority}
-                  formatDate={formatDate}
-                  selectedIds={selectedMistakeIds}
-                  onToggleSelect={toggleMistakeSelection}
-                  onToggleSelectAll={toggleSelectAll}
-                  allSelected={selectedMistakeIds.size === filteredMistakes.length}
-                />
-              ) : (
-                <KanbanViewDeck
-                  columns={kanbanColumns}
-                  errorTags={errorTags}
-                  onTag={handleTag}
-                  masteryStyle={masteryStyle}
-                  calcPriority={calcPriority}
-                  formatDate={formatDate}
-                />
-              )}
-            </div>
-          )}
-          
-          {/* Tab 2: Learning Analytics */}
-          {activeTab === 'analytics' && mistakes.length > 0 && (
-            <div className="space-y-6">
-              {/* Quick Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    {t('notebook.totalMistakes')}
-                  </div>
-                  <div className="text-3xl font-black text-red-600">{mistakes.length}</div>
-                </div>
-                <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    {t('notebook.topicsToFocus')}
-                  </div>
-                  <div className="text-3xl font-black text-amber-600">{topicsToFocus}</div>
-                </div>
-                <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                    {t('notebook.repeatedMistakes')}
-                  </div>
-                  <div className="text-3xl font-black text-chemistry-green">{repeatedMistakes}</div>
-                </div>
-              </div>
-              
-              {/* Interactive Heatmap */}
-              <InteractiveTopicHeatmap mistakes={mistakes} onTopicClick={handleTopicFilterClick} />
-              
-              {/* Detailed Analytics */}
-              <RetentionDashboard mistakes={mistakes} improvements={improvements} />
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <TopicHeatmap mistakes={mistakes} />
-                <CalendarHeatmap improvements={improvements} />
-              </div>
-              
-              <ImprovementTrendChart improvements={improvements} />
-            </div>
-          )}
-          
-          {/* Tab 3: Mastery Archive */}
-          {activeTab === 'archive' && (
-            <div>
-              {Object.keys(archivedMistakes).length === 0 ? (
-                <div className="text-center py-12">
-                  <Archive className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                  <p className="text-slate-400 text-lg mb-2 font-semibold">
-                    No archived questions yet
-                  </p>
-                  <p className="text-slate-500 text-sm">
-                    Answer 3 questions correctly to archive them
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {Object.values(archivedMistakes).map((question) => (
-                    <div
-                      key={question.ID}
-                      className="p-4 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <div className="text-xs font-bold text-green-700 uppercase">
-                            {question.Topic}
-                          </div>
-                          <div className="text-xs text-green-600">{question.Subtopic}</div>
-                        </div>
-                        <div className="text-xs text-green-600 font-bold">
-                          ✓ Mastered on {formatDate(question.archivedAt)}
-                        </div>
-                      </div>
-                      <div className="text-sm text-green-900 font-medium prose max-w-none">
-                        {question.Question?.substring(0, 100)}...
-                      </div>
+          <AnimatePresence mode="wait">
+            {/* Tab 1: Learning Insights */}
+            {activeTab === 'analytics' && mistakes.length > 0 && (
+              <motion.div
+                key="analytics"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="space-y-6"
+              >
+                {/* Quick Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                    <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                      {t('notebook.totalMistakes')}
                     </div>
-                  ))}
+                    <div className="text-3xl font-black text-red-600">{mistakes.length}</div>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                    <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                      {t('notebook.topicsToFocus')}
+                    </div>
+                    <div className="text-3xl font-black text-amber-600">
+                      {new Set(mistakes.map((m) => m.Topic)).size}
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                    <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                      {t('notebook.repeatedMistakes')}
+                    </div>
+                    <div className="text-3xl font-black text-green-600">
+                      {mistakes.filter((m) => m.attemptCount > 1).length}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-          )}
+                
+                {/* Interactive Heatmap */}
+                <InteractiveTopicHeatmap 
+                  mistakes={mistakes} 
+                  selectedTopics={selectedTopics}
+                  onTopicToggle={toggleTopic}
+                />
+                
+                {/* Retention Dashboard */}
+                <RetentionDashboard mistakes={mistakes} improvements={improvements} />
+                
+                {/* Charts */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <CalendarHeatmap improvements={improvements} />
+                </div>
+                
+                <ImprovementTrendChart improvements={improvements} />
+              </motion.div>
+            )}
+            
+            {/* Tab 2: Mistake Deck */}
+            {activeTab === 'deck' && (
+              <motion.div
+                key="deck"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+              >
+                {mistakes.length === 0 ? (
+                  <div className="text-center py-12">
+                    <CheckCircle className="w-16 h-16 text-green-300 mx-auto mb-4" />
+                    <p className="text-slate-400 text-lg mb-2 font-semibold">
+                      {t('notebook.noMistakesYet')}
+                    </p>
+                    <p className="text-slate-500 text-sm mb-4">
+                      {t('notebook.keepPracticing')}
+                    </p>
+                    <button
+                      onClick={() => navigate('/')}
+                      className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-all"
+                    >
+                      {t('notebook.startPracticing')}
+                    </button>
+                  </div>
+                ) : filteredMistakes.length === 0 ? (
+                  <div className="text-center py-12">
+                    <AlertCircle className="w-16 h-16 text-amber-300 mx-auto mb-4" />
+                    <p className="text-slate-400 text-lg mb-2 font-semibold">
+                      {t('notebook.noQuestionsFound')}
+                    </p>
+                    <p className="text-slate-500 text-sm">
+                      {t('notebook.tryAdjustFilters')}
+                    </p>
+                  </div>
+                ) : viewMode === 'list' ? (
+                  <ListViewDeck
+                    mistakes={filteredMistakes}
+                    errorTags={errorTags}
+                    onTag={handleTag}
+                    selectedIds={selectedMistakeIds}
+                    onToggleSelect={toggleMistakeSelection}
+                    onToggleSelectAll={toggleSelectAll}
+                    allSelected={selectedMistakeIds.size === filteredMistakes.length}
+                    onViewFull={setFullViewMistake}
+                  />
+                ) : (
+                  <KanbanViewDeck
+                    columns={kanbanColumns}
+                    errorTags={errorTags}
+                    onTag={handleTag}
+                    onViewFull={setFullViewMistake}
+                  />
+                )}
+              </motion.div>
+            )}
+            
+            {/* Tab 3: Mastery Archive */}
+            {activeTab === 'archive' && (
+              <motion.div
+                key="archive"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+              >
+                {Object.keys(archivedMistakes).length === 0 ? (
+                  <div className="text-center py-12">
+                    <Archive className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                    <p className="text-slate-400 text-lg mb-2 font-semibold">
+                      {t('notebook.noArchivedYet')}
+                    </p>
+                    <p className="text-slate-500 text-sm">
+                      {t('notebook.archiveInstructions')}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {Object.values(archivedMistakes).map((question) => (
+                      <motion.div
+                        key={question.ID}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="p-4 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <div className="text-xs font-bold text-green-700 uppercase">
+                              {question.Topic}
+                            </div>
+                            <div className="text-xs text-green-600">{question.Subtopic}</div>
+                          </div>
+                          <div className="text-xs text-green-600 font-bold flex items-center gap-1">
+                            <CheckCircle size={14} />
+                            {tf('notebook.masteredOn', { date: formatDate(question.archivedAt) })}
+                          </div>
+                        </div>
+                        <div className="text-sm text-green-900 font-medium">
+                          {question.Question?.replace(/<[^>]*>/g, '').substring(0, 100)}...
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>

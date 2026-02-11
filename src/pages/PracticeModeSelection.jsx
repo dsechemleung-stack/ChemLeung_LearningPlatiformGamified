@@ -1,11 +1,56 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, Infinity, Settings, Play, Zap, BookOpen, Lock, Check, AlertCircle, Heart } from 'lucide-react';
+import { Clock, Infinity, Settings, Play, Zap, BookOpen, Lock, Check, AlertCircle, Heart, Sparkles, Brain } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { quizService } from '../services/quizService';
+
+// Helper function for AI Daily Mission selection
+function calculateMasteryPriority(mistake, recentTopics = []) {
+  const now = Date.now();
+  const lastAttemptTime = new Date(mistake.lastAttempted).getTime();
+  const daysSinceLastAttempt = Math.max(0, (now - lastAttemptTime) / (1000 * 60 * 60 * 24));
+  const U = Math.pow(2, daysSinceLastAttempt / 7);
+  const D = Math.min(1.0, (mistake.attemptCount || 1) / 3);
+  let R = 0.5;
+  if (recentTopics.length > 0 && recentTopics.includes(mistake.Topic)) {
+    R = 1.5;
+  }
+  return (U * 0.4) + (D * 0.4) + (R * 0.2);
+}
+
+function selectAIDailyMission(mistakes, recentTopics = []) {
+  const prioritized = mistakes
+    .map(m => ({
+      ...m,
+      masteryPriority: calculateMasteryPriority(m, recentTopics)
+    }))
+    .sort((a, b) => b.masteryPriority - a.masteryPriority);
+  
+  const byTopic = {};
+  prioritized.forEach(m => {
+    if (!byTopic[m.Topic]) byTopic[m.Topic] = [];
+    byTopic[m.Topic].push(m);
+  });
+  
+  const selected = [];
+  const topicList = Object.keys(byTopic);
+  const indices = Object.fromEntries(topicList.map(t => [t, 0]));
+  
+  while (selected.length < 10 && topicList.some(t => indices[t] < byTopic[t].length)) {
+    for (const topic of topicList) {
+      if (selected.length >= 10) break;
+      if (indices[topic] < byTopic[topic].length) {
+        selected.push(byTopic[topic][indices[topic]++]);
+      }
+    }
+  }
+  
+  return selected.slice(0, 10);
+}
 
 export default function PracticeModeSelection({ questions }) {
   const navigate = useNavigate();
@@ -15,6 +60,7 @@ export default function PracticeModeSelection({ questions }) {
   const [questionCount, setQuestionCount] = useState(10);
   const [showCustom, setShowCustom] = useState(false);
   const [showUpdateTopics, setShowUpdateTopics] = useState(false);
+  const [loadingMistakes, setLoadingMistakes] = useState(false);
 
   // Timer settings for each mode
   const [timedModeTimer, setTimedModeTimer] = useState(true);
@@ -114,6 +160,11 @@ export default function PracticeModeSelection({ questions }) {
       return;
     }
 
+    if (mode === 'ai-daily') {
+      handleAIDailyMission();
+      return;
+    }
+
     if (availableTopics.length === 0) {
       alert(t('practice.pleaseSetTopics'));
       navigate('/profile');
@@ -132,6 +183,73 @@ export default function PracticeModeSelection({ questions }) {
       
       startQuiz(finalSelection, mode, timerEnabled, isTimed);
     }
+  };
+
+  const handleAIDailyMission = async () => {
+    setLoadingMistakes(true);
+    try {
+      // Load user's mistakes
+      const attempts = await quizService.getUserAttempts(currentUser.uid, 100);
+      const incorrectMap = new Map();
+      const improvementData = JSON.parse(
+        localStorage.getItem('mistake_improvements') || '{}'
+      );
+      const recentTopics = JSON.parse(localStorage.getItem('recent_quiz_topics') || '[]');
+      const MASTERY_THRESHOLD = 3;
+      
+      attempts.forEach((attempt) => {
+        if (!attempt.answers || !attempt.questions) return;
+        attempt.questions.forEach((question) => {
+          const userAnswer = attempt.answers[question.ID];
+          const isCorrect = userAnswer && userAnswer === question.CorrectOption;
+          
+          if (isCorrect && improvementData[question.ID]) {
+            improvementData[question.ID].correctCount =
+              (improvementData[question.ID].correctCount || 0) + 1;
+            improvementData[question.ID].lastCorrect = attempt.timestamp;
+          }
+          
+          if (userAnswer && userAnswer !== question.CorrectOption) {
+            const improveCount = improvementData[question.ID]?.correctCount || 0;
+            if (improveCount >= MASTERY_THRESHOLD) return;
+            
+            if (!incorrectMap.has(question.ID)) {
+              incorrectMap.set(question.ID, {
+                ...question,
+                attemptCount: 1,
+                lastAttempted: attempt.timestamp,
+                userAnswer,
+                improvementCount: improveCount,
+              });
+            } else {
+              const existing = incorrectMap.get(question.ID);
+              existing.attemptCount += 1;
+              existing.improvementCount = improveCount;
+              if (new Date(attempt.timestamp) > new Date(existing.lastAttempted)) {
+                existing.lastAttempted = attempt.timestamp;
+                existing.userAnswer = userAnswer;
+              }
+            }
+          }
+        });
+      });
+
+      const mistakes = Array.from(incorrectMap.values());
+      
+      if (mistakes.length < 10) {
+        alert(tf('notebook.needMoreQuestions', { count: mistakes.length }));
+        setLoadingMistakes(false);
+        return;
+      }
+
+      // Use AI selection
+      const selected = selectAIDailyMission(mistakes, recentTopics);
+      startQuiz(selected, 'ai-daily', true, true);
+    } catch (error) {
+      console.error('Error loading mistakes for AI Daily Mission:', error);
+      alert('Failed to load mistakes. Please try again.');
+    }
+    setLoadingMistakes(false);
   };
 
   const handleCustomStart = () => {
@@ -489,7 +607,72 @@ export default function PracticeModeSelection({ questions }) {
       )}
 
       {/* Mode Selection Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* AI DAILY MISSION */}
+        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden lg:col-span-3">
+          <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 p-6 text-white">
+            <div className="flex items-center gap-3 mb-2">
+              <Sparkles size={32} strokeWidth={3} />
+              <h3 className="text-2xl font-black">
+                {t('notebook.aiDailyMission')}
+              </h3>
+              <div className="ml-auto">
+                <div className="bg-white/20 rounded-full px-3 py-1 text-xs font-bold">
+                  10 {t('practice.questions')}
+                </div>
+              </div>
+            </div>
+            <p className="text-purple-100 text-sm">
+              {t('notebook.interleavedPractice')}
+            </p>
+          </div>
+          
+          <div className="p-6">
+            <div className="mb-4">
+              <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+                <Brain size={18} className="text-purple-600" />
+                How AI Optimizes Your Learning
+              </h4>
+              <div className="space-y-2 text-sm text-slate-600">
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 bg-purple-500 rounded-full mt-1.5 flex-shrink-0" />
+                  <p><strong>Spaced Repetition:</strong> Questions you haven't seen in a while are prioritized to strengthen long-term retention</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full mt-1.5 flex-shrink-0" />
+                  <p><strong>Difficulty Balancing:</strong> Mixes questions at your current mastery level with challenging ones to optimize learning</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5 flex-shrink-0" />
+                  <p><strong>Topic Interleaving:</strong> Alternates between topics to improve concept retention and prevent cramming</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 bg-purple-500 rounded-full mt-1.5 flex-shrink-0" />
+                  <p><strong>Adaptive Focus:</strong> Emphasizes topics from your recent quizzes while maintaining a balanced review</p>
+                </div>
+              </div>
+            </div>
+            
+            <button
+              onClick={() => handleModeSelect('ai-daily', 10)}
+              disabled={loadingMistakes}
+              className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-black text-lg hover:from-purple-700 hover:to-indigo-700 disabled:from-slate-300 disabled:to-slate-400 transition-all flex items-center justify-center gap-2 shadow-lg"
+            >
+              {loadingMistakes ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                  Loading...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={20} />
+                  Start AI Daily Mission
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* TIMED MODE */}
         <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
           <div className="bg-red-500 p-6 text-white">
@@ -642,7 +825,7 @@ export default function PracticeModeSelection({ questions }) {
         </div>
 
         {/* MISTAKE NOTEBOOK MODE */}
-        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden lg:col-span-3">
           <div className="bg-rose-500 p-6 text-white">
             <div className="flex items-center gap-3 mb-2">
               <Heart size={32} strokeWidth={3} />
@@ -655,8 +838,8 @@ export default function PracticeModeSelection({ questions }) {
             </p>
           </div>
           
-          <div className="p-6 space-y-4">
-            <p className="text-sm text-slate-600">
+          <div className="p-6">
+            <p className="text-sm text-slate-600 mb-4">
               {t('notebook.practiceUntilMaster')}
             </p>
             
