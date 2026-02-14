@@ -1,0 +1,19 @@
+ai_recommendations	userId, dismissed, priority, __name__	Enabled	CICAgLiIjZIK
+attempts	userId, timestamp, __name__	Enabled	CICAgOjXh4EK
+calendar_events	userId, parentId, __name__	Enabled	CICAgLjRyYIJ
+calendar_events	userId, date, type, __name__	Enabled	CICAgLjy8IAK
+calendar_events	userId, linkedEventId, __name__	Enabled	CICAgLjRyYIK
+calendar_events	userId, date, __name__	Enabled	CICAgOi3kJAK
+calendar_events	userId, type, QuestionId, date, __name__	Enabled	CICAgNi4-ZIK
+comment_replies	parentCommentId, CreatedAt, __name__	Enabled	CICAgNjpgYIK
+comments	questionId, createdAt, __name__	Enabled	CICAgJiUpoMK
+forum_posts	category, createdAt, __name__	Enabled	CICAgJim14AK
+forum_replies	postId, createdAt, __name__	Enabled	CICAgJjF9oIK
+notifications	recipientId, createdAt, __name__	Enabled	CICAgJj7z4EK
+notifications	userId, createdAt, __name__	Enabled	CICAgNi47oMK
+performance	userId, timestamp, __name__	Enabled	CICAgJjFqZMK
+question_comments	questionId, createdAt, __name__	Enabled	CICAgNiav4AK
+quiz_attempts	userId, timestamp, __name__	Enabled	CICAgLiIjZIJ
+review_attempts	cardId, attemptedAt, __name__	Enabled	CICAgJjm-pkK
+spaced_repetition_cards	userId, isActive, nextReviewDate, __name__	Enabled	CICAgJjmnIgK
+spaced_repetition_cards	userId, status, __name__	Enabled	CICAgOi36pgK

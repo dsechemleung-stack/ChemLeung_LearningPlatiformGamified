@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import ChemistryLoading from '../components/ChemistryLoading';
 import { quizService } from '../services/quizService';
 import AttemptDetailModal from '../components/AttemptDetailModal';
 import {
@@ -18,7 +19,7 @@ import {
  */
 export default function HistoryPage() {
   const { currentUser } = useAuth();
-  const { t } = useLanguage();
+  const { t, tf, isEnglish } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
@@ -66,17 +67,17 @@ export default function HistoryPage() {
   }
 
   const formatDate = (iso) =>
-    new Date(iso).toLocaleDateString('en-GB', {
+    new Date(iso).toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
 
   const formatTime = (ms) => {
-    if (!ms) return 'N/A';
+    if (!ms) return t('common.notAvailable');
     const s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
-    if (h > 0) return `${h}h ${m % 60}m`;
-    if (m > 0) return `${m}m ${s % 60}s`;
-    return `${s}s`;
+    if (h > 0) return tf('history.timeHrsMins', { h, m: m % 60 });
+    if (m > 0) return tf('history.timeMinsSecs', { m, s: s % 60 });
+    return tf('history.timeSecs', { s });
   };
 
   const getFilteredAttempts = () => {
@@ -106,10 +107,7 @@ export default function HistoryPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lab-blue mx-auto mb-4"></div>
-          <p className="text-slate-600">{t('history.loadingHistory')}</p>
-        </div>
+        <ChemistryLoading />
       </div>
     );
   }
@@ -121,16 +119,20 @@ export default function HistoryPage() {
         <button onClick={() => navigate('/dashboard')} className="p-3 bg-white rounded-lg border-2 border-slate-200 hover:border-lab-blue transition-all">
           <ArrowLeft size={20} />
         </button>
-        <div className="flex-1 bg-gradient-to-r from-purple-600 to-purple-800 rounded-2xl shadow-xl p-6 text-white">
-          <h1 className="text-3xl font-black flex items-center gap-3">
-            <History size={32} />
-            {t('history.title')}
-          </h1>
-          <p className="text-purple-100 mt-1">
-            {searchParams.get('attempt') 
-              ? 'Viewing attempt from calendar'
-              : t('history.clickToSeeAnalysis')}
-          </p>
+        <div className="flex-1 flex justify-center">
+          <div className="paper-island paper-island-md paper-blue">
+            <div className="paper-island-content">
+              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-indigo">
+                <History size={32} className="text-indigo-700" />
+                {t('history.title')}
+              </h1>
+              <p className="text-slate-700 mt-1 font-semibold">
+              {searchParams.get('attempt') 
+                ? t('history.viewingAttemptFromCalendar')
+                : t('history.clickToSeeAnalysis')}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

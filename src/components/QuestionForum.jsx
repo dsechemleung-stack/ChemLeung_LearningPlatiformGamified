@@ -6,6 +6,7 @@ import { MessageSquare, Send, Edit2, Trash2, ThumbsUp, X, AlertCircle, Clock, Lo
 import Avatar from './Avatar';
 
 function EditTimer({ createdAt, onExpire }) {
+  const { t, tf } = useLanguage();
   const [remaining, setRemaining] = useState(() => editTimeRemaining(createdAt));
 
   useEffect(() => {
@@ -19,23 +20,27 @@ function EditTimer({ createdAt, onExpire }) {
 
   if (!remaining) return (
     <span className="flex items-center gap-1 text-xs text-red-500 font-semibold">
-      <Lock size={11} /> Edit locked
+      <Lock size={11} /> {t('forum.editLocked')}
     </span>
   );
   return (
     <span className="flex items-center gap-1 text-xs text-amber-500 font-semibold">
-      <Clock size={11} /> Edit in {remaining}
+      <Clock size={11} /> {tf('forum.editIn', { remaining })}
     </span>
   );
 }
 
 export default function QuestionForum({ question, onClose }) {
   const { currentUser } = useAuth();
-  const { isEnglish } = useLanguage();
+  const { isEnglish, t, tf } = useLanguage();
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState('');
+  const [openRepliesFor, setOpenRepliesFor] = useState(null);
+  const [repliesByComment, setRepliesByComment] = useState({});
+  const [replyDraftByComment, setReplyDraftByComment] = useState({});
+  const [replySubmittingFor, setReplySubmittingFor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [, forceUpdate] = useState(0); // for timer re-render
@@ -61,11 +66,11 @@ export default function QuestionForum({ question, onClose }) {
     if (!newComment.trim() || !currentUser) return;
     setSubmitting(true);
     try {
-      await forumService.addComment(question.ID, currentUser.uid, currentUser.displayName || 'Anonymous', newComment.trim());
+      await forumService.addComment(question.ID, currentUser.uid, currentUser.displayName || t('common.anonymous'), newComment.trim());
       setNewComment('');
       await loadComments();
     } catch (error) {
-      alert(isEnglish ? `Failed to add comment: ${error.message}` : `新增評論失敗: ${error.message}`);
+      alert(tf('forum.failedAddCommentWithReason', { reason: error.message }));
     }
     setSubmitting(false);
   }
@@ -79,28 +84,116 @@ export default function QuestionForum({ question, onClose }) {
       await loadComments();
     } catch (error) {
       if (error.message === 'EDIT_EXPIRED') {
-        alert(isEnglish ? 'Edit window has expired (15 minutes). You can no longer edit this comment.' : '編輯時間已過（15分鐘）。您無法再編輯此評論。');
+        alert(t('forum.editExpiredLong'));
         setEditingId(null);
       } else {
-        alert(isEnglish ? 'Failed to update comment' : '更新評論失敗');
+        alert(t('forum.failedUpdateComment'));
       }
     }
   }
 
   async function handleDeleteComment(commentId) {
-    if (!window.confirm(isEnglish ? 'Are you sure you want to delete this comment?' : '確定要刪除此評論嗎？')) return;
+    if (!window.confirm(t('forum.confirmDeleteComment'))) return;
     try {
       await forumService.deleteComment(commentId);
       await loadComments();
-    } catch { alert(isEnglish ? 'Failed to delete comment' : '刪除評論失敗'); }
+    } catch { alert(t('forum.failedDeleteComment')); }
   }
 
   async function handleToggleLike(commentId) {
-    if (!currentUser) { alert(isEnglish ? 'Please log in to like comments' : '請登入以按讚評論'); return; }
+    if (!currentUser) { alert(t('forum.pleaseLoginToLikeComments')); return; }
+    const uid = currentUser.uid;
+    const senderName = currentUser.displayName || t('common.anonymous');
+
+    let prevComment = null;
+    setComments((prev) => {
+      const next = prev.map((c) => {
+        if (c.id !== commentId) return c;
+        prevComment = c;
+        const prevLikedBy = Array.isArray(c.likedBy) ? c.likedBy : [];
+        const hasLiked = prevLikedBy.includes(uid);
+        const nextLikedBy = hasLiked ? prevLikedBy.filter(id => id !== uid) : [...prevLikedBy, uid];
+        const nextLikes = Math.max(0, Number(c.likes || 0) + (hasLiked ? -1 : 1));
+        return { ...c, likedBy: nextLikedBy, likes: nextLikes };
+      });
+      return next;
+    });
+
     try {
-      await forumService.toggleLike(commentId, currentUser.uid);
-      await loadComments();
-    } catch { /* ignore */ }
+      await forumService.toggleLike(commentId, uid, senderName);
+    } catch {
+      if (prevComment) {
+        setComments((prev) => prev.map((c) => (c.id === commentId ? prevComment : c)));
+      }
+    }
+  }
+
+  async function handleToggleReplies(commentId) {
+    if (openRepliesFor === commentId) {
+      setOpenRepliesFor(null);
+      return;
+    }
+
+    setOpenRepliesFor(commentId);
+    if (!repliesByComment[commentId]) {
+      try {
+        const replies = await forumService.getCommentReplies(commentId);
+        setRepliesByComment(prev => ({ ...prev, [commentId]: replies }));
+      } catch { /* ignore */ }
+    }
+  }
+
+  async function handleSubmitReply(commentId) {
+    if (!currentUser) return;
+    const text = (replyDraftByComment[commentId] || '').trim();
+    if (!text) return;
+    setReplySubmittingFor(commentId);
+    try {
+      await forumService.addCommentReply(commentId, currentUser.uid, currentUser.displayName || t('common.anonymous'), text);
+      setReplyDraftByComment(prev => ({ ...prev, [commentId]: '' }));
+      const replies = await forumService.getCommentReplies(commentId);
+      setRepliesByComment(prev => ({ ...prev, [commentId]: replies }));
+    } catch (error) {
+      alert(tf('forum.failedReplyWithReason', { reason: error.message }));
+    }
+    setReplySubmittingFor(null);
+  }
+
+  async function handleToggleReplyLike(replyId) {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const senderName = currentUser.displayName || t('common.anonymous');
+    const parentId = openRepliesFor;
+    if (!parentId) {
+      try { await forumService.toggleCommentReplyLike(replyId, uid, senderName); } catch { /* ignore */ }
+      return;
+    }
+
+    let prevReply = null;
+    setRepliesByComment((prev) => {
+      const list = Array.isArray(prev[parentId]) ? prev[parentId] : [];
+      const nextList = list.map((r) => {
+        if (r.id !== replyId) return r;
+        prevReply = r;
+        const prevLikedBy = Array.isArray(r.likedBy) ? r.likedBy : [];
+        const hasLiked = prevLikedBy.includes(uid);
+        const nextLikedBy = hasLiked ? prevLikedBy.filter(id => id !== uid) : [...prevLikedBy, uid];
+        const nextLikes = Math.max(0, Number(r.likes || 0) + (hasLiked ? -1 : 1));
+        return { ...r, likedBy: nextLikedBy, likes: nextLikes };
+      });
+      return { ...prev, [parentId]: nextList };
+    });
+
+    try {
+      await forumService.toggleCommentReplyLike(replyId, uid, senderName);
+    } catch {
+      if (prevReply) {
+        setRepliesByComment((prev) => {
+          const list = Array.isArray(prev[parentId]) ? prev[parentId] : [];
+          return { ...prev, [parentId]: list.map((r) => (r.id === replyId ? prevReply : r)) };
+        });
+      }
+    }
   }
 
   const formatDate = (isoString) => {
@@ -110,10 +203,10 @@ export default function QuestionForum({ question, onClose }) {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    if (diffMins < 1) return isEnglish ? 'Just now' : '剛剛';
-    if (diffMins < 60) return `${diffMins} ${isEnglish ? 'min ago' : '分鐘前'}`;
-    if (diffHours < 24) return `${diffHours} ${isEnglish ? 'hr ago' : '小時前'}`;
-    if (diffDays < 7) return `${diffDays} ${isEnglish ? 'days ago' : '天前'}`;
+    if (diffMins < 1) return t('forum.justNow');
+    if (diffMins < 60) return tf('forum.timeAgoMinutes', { count: diffMins });
+    if (diffHours < 24) return tf('forum.timeAgoHours', { count: diffHours });
+    if (diffDays < 7) return tf('forum.timeAgoDays', { count: diffDays });
     return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
@@ -126,7 +219,7 @@ export default function QuestionForum({ question, onClose }) {
             <div className="flex-1 pr-4">
               <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2 mb-2">
                 <MessageSquare className="text-lab-blue" size={24} />
-                {isEnglish ? 'Discussion' : '討論區'}
+                {t('forum.discussion')}
               </h2>
               <div className="flex items-center gap-2 text-sm">
                 <span className="bg-blue-100 text-lab-blue px-2 py-1 rounded font-bold">{question.Topic}</span>
@@ -155,13 +248,13 @@ export default function QuestionForum({ question, onClose }) {
               <Avatar userId={currentUser.uid} displayName={currentUser.displayName} size="md" />
               <div className="flex-1">
                 <textarea value={newComment} onChange={e => setNewComment(e.target.value)}
-                  placeholder={isEnglish ? 'Share your thoughts...' : '分享您的想法...'}
+                  placeholder={t('forum.shareYourThoughts')}
                   className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-lab-blue focus:ring-2 focus:ring-blue-100 outline-none transition-all resize-none" rows="3" />
                 <div className="flex justify-end mt-2">
                   <button onClick={handleSubmitComment} disabled={!newComment.trim() || submitting}
                     className="flex items-center gap-2 px-6 py-2 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all">
                     {submitting ? <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" /> : <Send size={16} />}
-                    {isEnglish ? 'Post' : '發表'}
+                    {t('forum.post')}
                   </button>
                 </div>
               </div>
@@ -171,7 +264,7 @@ export default function QuestionForum({ question, onClose }) {
           <div className="p-6 border-b-2 border-slate-200 bg-amber-50">
             <div className="flex items-center gap-3 text-amber-800">
               <AlertCircle size={20} />
-              <p className="font-semibold">{isEnglish ? 'Please log in to join the discussion' : '請登入以參與討論'}</p>
+              <p className="font-semibold">{t('forum.pleaseLoginJoinDiscussion')}</p>
             </div>
           </div>
         )}
@@ -185,12 +278,12 @@ export default function QuestionForum({ question, onClose }) {
           ) : comments.length === 0 ? (
             <div className="text-center py-12">
               <MessageSquare className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-400 text-lg mb-2">{isEnglish ? 'No comments yet' : '尚無評論'}</p>
-              <p className="text-slate-500 text-sm">{isEnglish ? 'Be the first to share your thoughts!' : '成為第一個分享想法的人！'}</p>
+              <p className="text-slate-400 text-lg mb-2">{t('forum.noCommentsYet')}</p>
+              <p className="text-slate-500 text-sm">{t('forum.beFirstToShareThoughts')}</p>
             </div>
           ) : (
             <div className="space-y-4">
-              <h3 className="text-lg font-bold text-slate-700 mb-4">{comments.length} {isEnglish ? 'Comments' : '則評論'}</h3>
+              <h3 className="text-lg font-bold text-slate-700 mb-4">{tf('forum.commentsCount', { count: comments.length })}</h3>
               {comments.map(comment => {
                 const isOwner = currentUser && comment.userId === currentUser.uid;
                 const editable = isOwner && canEditComment(comment.createdAt);
@@ -200,10 +293,10 @@ export default function QuestionForum({ question, onClose }) {
                       <div className="flex items-center gap-3">
                         <Avatar userId={comment.userId} displayName={comment.userDisplayName} size="sm" />
                         <div>
-                          <div className="font-bold text-slate-800">{comment.userDisplayName || 'Anonymous'}</div>
+                          <div className="font-bold text-slate-800">{comment.userDisplayName || t('common.anonymous')}</div>
                           <div className="text-xs text-slate-500 flex items-center gap-2">
                             {formatDate(comment.createdAt)}
-                            {comment.edited && <span className="text-slate-400 italic">({isEnglish ? 'edited' : '已編輯'})</span>}
+                            {comment.edited && <span className="text-slate-400 italic">({t('forum.edited')})</span>}
                           </div>
                         </div>
                       </div>
@@ -215,18 +308,18 @@ export default function QuestionForum({ question, onClose }) {
                           )}
                           {editable && (
                             <button onClick={() => { setEditingId(comment.id); setEditText(comment.text); }}
-                              className="p-2 hover:bg-blue-100 rounded-lg transition-all" title={isEnglish ? 'Edit' : '編輯'}>
+                              className="p-2 hover:bg-blue-100 rounded-lg transition-all" title={t('common.edit')}>
                               <Edit2 size={16} className="text-lab-blue" />
                             </button>
                           )}
                           {!editable && editingId !== comment.id && (
-                            <button disabled title={isEnglish ? 'Edit window expired' : '編輯時間已過'}
+                            <button disabled title={t('forum.editWindowExpired')}
                               className="p-2 opacity-30 cursor-not-allowed rounded-lg">
                               <Lock size={16} className="text-slate-400" />
                             </button>
                           )}
                           <button onClick={() => handleDeleteComment(comment.id)}
-                            className="p-2 hover:bg-red-100 rounded-lg transition-all" title={isEnglish ? 'Delete' : '刪除'}>
+                            className="p-2 hover:bg-red-100 rounded-lg transition-all" title={t('common.delete')}>
                             <Trash2 size={16} className="text-red-500" />
                           </button>
                         </div>
@@ -237,7 +330,7 @@ export default function QuestionForum({ question, onClose }) {
                       <div className="mt-3">
                         <div className="flex items-center gap-2 mb-2 text-xs text-amber-600 font-semibold">
                           <Clock size={12} />
-                          {isEnglish ? 'Edit window: ' : '編輯時限：'}
+                          {t('forum.editWindowLabel')}
                           <EditTimer createdAt={comment.createdAt} onExpire={() => { setEditingId(null); forceUpdate(n => n + 1); }} />
                         </div>
                         <textarea value={editText} onChange={e => setEditText(e.target.value)}
@@ -245,11 +338,11 @@ export default function QuestionForum({ question, onClose }) {
                         <div className="flex gap-2 mt-2">
                           <button onClick={() => handleEditComment(comment.id)}
                             className="px-4 py-2 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-700 transition-all text-sm">
-                            {isEnglish ? 'Save' : '儲存'}
+                            {t('common.save')}
                           </button>
                           <button onClick={() => { setEditingId(null); setEditText(''); }}
                             className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold hover:bg-slate-300 transition-all text-sm">
-                            {isEnglish ? 'Cancel' : '取消'}
+                            {t('common.cancel')}
                           </button>
                         </div>
                       </div>
@@ -257,11 +350,72 @@ export default function QuestionForum({ question, onClose }) {
                       <>
                         <p className="text-slate-700 leading-relaxed mt-2 whitespace-pre-wrap">{comment.text}</p>
                         <div className="mt-3 pt-3 border-t border-slate-300">
-                          <button onClick={() => handleToggleLike(comment.id)} disabled={!currentUser}
-                            className={`flex items-center gap-2 px-3 py-1 rounded-lg font-semibold text-sm transition-all ${comment.likedBy?.includes(currentUser?.uid) ? 'bg-blue-100 text-lab-blue' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'} ${!currentUser ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                            <ThumbsUp size={14} fill={comment.likedBy?.includes(currentUser?.uid) ? 'currentColor' : 'none'} />
-                            {comment.likes || 0}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => handleToggleLike(comment.id)} disabled={!currentUser}
+                              className={`flex items-center gap-2 px-3 py-1 rounded-lg font-semibold text-sm transition-all ${comment.likedBy?.includes(currentUser?.uid) ? 'bg-blue-100 text-lab-blue' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'} ${!currentUser ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                              <ThumbsUp size={14} fill={comment.likedBy?.includes(currentUser?.uid) ? 'currentColor' : 'none'} />
+                              {comment.likes || 0}
+                            </button>
+                            <button onClick={() => handleToggleReplies(comment.id)}
+                              className="px-3 py-1 rounded-lg font-semibold text-sm bg-slate-200 text-slate-600 hover:bg-slate-300 transition-all">
+                              {openRepliesFor === comment.id ? t('forum.hideReplies') : t('forum.reply')}
+                            </button>
+                          </div>
+
+                          {openRepliesFor === comment.id && (
+                            <div className="mt-4 space-y-3">
+                              <div className="space-y-2">
+                                {(repliesByComment[comment.id] || []).map(r => (
+                                  <div key={r.id} className="bg-white rounded-lg border-2 border-slate-200 p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex items-center gap-2">
+                                        <Avatar userId={r.userId} displayName={r.userDisplayName} size="xs" />
+                                        <div>
+                                          <div className="font-bold text-slate-800 text-sm">{r.userDisplayName || t('common.anonymous')}</div>
+                                          <div className="text-xs text-slate-500">{r.CreatedAt ? formatDate(r.CreatedAt) : ''}</div>
+                                        </div>
+                                      </div>
+                                      <button onClick={() => handleToggleReplyLike(r.id)} disabled={!currentUser}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold transition-all flex-shrink-0 ${r.likedBy?.includes(currentUser?.uid) ? 'bg-blue-100 text-lab-blue' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'} ${!currentUser ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                        <ThumbsUp size={12} fill={r.likedBy?.includes(currentUser?.uid) ? 'currentColor' : 'none'} />
+                                        {r.likes || 0}
+                                      </button>
+                                    </div>
+                                    <p className="text-slate-700 text-sm mt-2 whitespace-pre-wrap">{r.text}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              {currentUser ? (
+                                <div className="bg-white rounded-lg border-2 border-slate-200 p-3">
+                                  <div className="flex gap-2">
+                                    <Avatar userId={currentUser.uid} displayName={currentUser.displayName} size="xs" />
+                                    <div className="flex-1">
+                                      <textarea
+                                        value={replyDraftByComment[comment.id] || ''}
+                                        onChange={(e) => setReplyDraftByComment(prev => ({ ...prev, [comment.id]: e.target.value }))}
+                                        rows="2"
+                                        placeholder={t('forum.writeReply')}
+                                        className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:border-lab-blue outline-none resize-none text-sm"
+                                      />
+                                      <div className="flex justify-end mt-2">
+                                        <button onClick={() => handleSubmitReply(comment.id)}
+                                          disabled={replySubmittingFor === comment.id || !(replyDraftByComment[comment.id] || '').trim()}
+                                          className="flex items-center gap-2 px-4 py-1.5 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all text-sm">
+                                          {replySubmittingFor === comment.id ? <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white" /> : <Send size={14} />}
+                                          {t('forum.reply')}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-sm font-semibold text-amber-800 bg-amber-50 border-2 border-amber-200 rounded-lg p-3">
+                                  {t('forum.pleaseLoginReply')}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </>
                     )}

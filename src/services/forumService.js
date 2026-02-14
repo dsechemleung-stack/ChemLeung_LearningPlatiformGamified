@@ -45,6 +45,91 @@ export const forumService = {
     }
   },
 
+  // ── Comment Replies ──────────────────────────────────────────────────────
+  async addCommentReply(parentCommentId, userId, userDisplayName, text) {
+    if (!parentCommentId || !userId || !text?.trim()) throw new Error('Missing required fields');
+
+    const data = {
+      parentCommentId: String(parentCommentId),
+      userId: String(userId),
+      userDisplayName: userDisplayName || 'Anonymous',
+      text: text.trim(),
+      CreatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      edited: false,
+      likes: 0,
+      likedBy: []
+    };
+
+    const ref = await addDoc(collection(db, 'comment_replies'), data);
+
+    // Notify parent comment author
+    const parentSnap = await getDoc(doc(db, 'comments', String(parentCommentId)));
+    if (parentSnap.exists()) {
+      const parent = parentSnap.data();
+      if (parent.userId && parent.userId !== userId) {
+        await forumService.createNotification({
+          recipientId: parent.userId,
+          senderId: userId,
+          senderDisplayName: userDisplayName || 'Anonymous',
+          type: 'comment_reply',
+          commentId: String(parentCommentId),
+          questionId: parent.questionId || null,
+          previewText: text.substring(0, 80)
+        });
+      }
+    }
+
+    return ref.id;
+  },
+
+  async getCommentReplies(parentCommentId) {
+    try {
+      const q = query(
+        collection(db, 'comment_replies'),
+        where('parentCommentId', '==', String(parentCommentId)),
+        orderBy('CreatedAt', 'asc')
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (error) {
+      if (error.code === 'failed-precondition') {
+        const snapshot = await getDocs(collection(db, 'comment_replies'));
+        return snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(r => r.parentCommentId === String(parentCommentId))
+          .sort((a, b) => new Date(a.CreatedAt) - new Date(b.CreatedAt));
+      }
+      throw error;
+    }
+  },
+
+  async toggleCommentReplyLike(replyId, userId, senderDisplayName = '') {
+    const ref = doc(db, 'comment_replies', replyId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Reply not found');
+    const data = snap.data();
+    const likedBy = data.likedBy || [];
+    const hasLiked = likedBy.includes(userId);
+
+    if (hasLiked) {
+      await updateDoc(ref, { likes: increment(-1), likedBy: likedBy.filter(id => id !== userId) });
+    } else {
+      await updateDoc(ref, { likes: increment(1), likedBy: [...likedBy, userId] });
+      if (data.userId && data.userId !== userId) {
+        await forumService.createNotification({
+          recipientId: data.userId,
+          senderId: userId,
+          senderDisplayName,
+          type: 'comment_reply_like',
+          replyId,
+          commentId: data.parentCommentId || null,
+          previewText: data.text?.substring(0, 80) || ''
+        });
+      }
+    }
+  },
+
   async getQuestionComments(questionId) {
     try {
       const q = query(
@@ -90,7 +175,7 @@ export const forumService = {
     }
   },
 
-  async toggleLike(commentId, userId) {
+  async toggleLike(commentId, userId, senderDisplayName = '') {
     try {
       const ref = doc(db, 'comments', commentId);
       const snap = await getDoc(ref);
@@ -108,6 +193,7 @@ export const forumService = {
           await forumService.createNotification({
             recipientId: data.userId,
             senderId: userId,
+            senderDisplayName,
             type: 'like',
             commentId,
             questionId: data.questionId,
@@ -199,7 +285,7 @@ export const forumService = {
     await deleteDoc(doc(db, 'forum_posts', postId));
   },
 
-  async togglePostLike(postId, userId) {
+  async togglePostLike(postId, userId, senderDisplayName = '') {
     const ref = doc(db, 'forum_posts', postId);
     const snap = await getDoc(ref);
     if (!snap.exists()) throw new Error('Post not found');
@@ -213,6 +299,7 @@ export const forumService = {
       if (data.userId && data.userId !== userId) {
         await forumService.createNotification({
           recipientId: data.userId, senderId: userId,
+          senderDisplayName,
           type: 'post_like', postId,
           previewText: data.title?.substring(0, 80) || '',
         });
@@ -236,6 +323,7 @@ export const forumService = {
     if (postSnap.exists() && postSnap.data().userId !== userId) {
       await forumService.createNotification({
         recipientId: postSnap.data().userId, senderId: userId,
+        senderDisplayName: userDisplayName || 'Anonymous',
         type: 'reply', postId,
         previewText: text.substring(0, 80),
         postTitle: postSnap.data().title?.substring(0, 60) || '',
@@ -282,7 +370,7 @@ export const forumService = {
     }
   },
 
-  async toggleReplyLike(replyId, userId) {
+  async toggleReplyLike(replyId, userId, senderDisplayName = '') {
     const ref = doc(db, 'forum_replies', replyId);
     const snap = await getDoc(ref);
     if (!snap.exists()) throw new Error('Reply not found');
@@ -296,6 +384,7 @@ export const forumService = {
       if (data.userId && data.userId !== userId) {
         await forumService.createNotification({
           recipientId: data.userId, senderId: userId,
+          senderDisplayName,
           type: 'reply_like', replyId, postId: data.postId,
           previewText: data.text?.substring(0, 80) || '',
         });
@@ -304,10 +393,11 @@ export const forumService = {
   },
 
   // ── Notifications ─────────────────────────────────────────────────────────
-  async createNotification({ recipientId, senderId, type, commentId, postId, replyId, questionId, previewText, postTitle }) {
+  async createNotification({ recipientId, senderId, senderDisplayName, type, commentId, postId, replyId, questionId, previewText, postTitle }) {
     if (!recipientId || recipientId === senderId) return;
     await addDoc(collection(db, 'notifications'), {
       recipientId, senderId, type,
+      senderDisplayName: senderDisplayName || '',
       commentId: commentId || null,
       postId: postId || null,
       replyId: replyId || null,

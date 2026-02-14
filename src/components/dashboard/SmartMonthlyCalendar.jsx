@@ -6,6 +6,7 @@ import { performanceService } from '../../services/performanceService';
 import { quizStorage } from '../../utils/quizStorage';
 import { motion, AnimatePresence } from 'framer-motion';
 import SpacedRepetitionModal from './SpacedRepetitionModal';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 /**
  * SmartMonthlyCalendar - COMPLETE FIX
@@ -16,8 +17,9 @@ import SpacedRepetitionModal from './SpacedRepetitionModal';
  * 3. ✅ Separate completion section always visible
  * 4. ✅ Better visual hierarchy
  */
-export default function SmartMonthlyCalendar({ userId, questions = [], onAddEvent }) {
+export default function SmartMonthlyCalendar({ userId, questions = [], onAddEvent, embedded = false }) {
   const navigate = useNavigate();
+  const { t, tf, isEnglish } = useLanguage();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarData, setCalendarData] = useState({});
   const [loading, setLoading] = useState(true);
@@ -64,10 +66,10 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
   }
 
   const formatTime = (seconds) => {
-    if (!seconds) return '0s';
+    if (!seconds) return tf('calendar.timeSecs', { s: 0 });
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    return mins > 0 ? tf('calendar.timeMinsSecs', { m: mins, s: secs }) : tf('calendar.timeSecs', { s: secs });
   };
 
   const getScoreColor = (percentage) => {
@@ -109,7 +111,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
     return grid;
   }, [year, month]);
 
-  const monthName = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthName = new Date(year, month, 1).toLocaleDateString(isEnglish ? 'en-US' : 'zh-HK', { month: 'long', year: 'numeric' });
   const today = new Date().toISOString().split('T')[0];
 
   function prevMonth() {
@@ -176,10 +178,10 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
       await calendarService.createAIRecommendationEvent(userId, recommendation);
       await loadCalendarData();
       await loadAIRecommendations();
-      alert('✅ AI recommendation added to your calendar!');
+      alert(t('calendar.aiRecommendationAddedSuccess'));
     } catch (error) {
       console.error('❌ Error accepting recommendation:', error);
-      alert('Failed to add recommendation to calendar:\n\n' + error.message);
+      alert(tf('calendar.failedAddRecommendationWithReason', { reason: error.message }));
     }
   }
 
@@ -211,7 +213,10 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
         .slice(0, Math.min(aiRec.questionCount, filteredQuestions.length));
 
       if (selectedQuestions.length === 0) {
-        alert(`No questions available for ${aiRec.topic || 'this topic'}${aiRec.subtopic ? ' - ' + aiRec.subtopic : ''}.`);
+        alert(tf('calendar.noQuestionsAvailableForTopicSubtopic', {
+          topic: aiRec.topic || t('calendar.thisTopic'),
+          subtopic: aiRec.subtopic || ''
+        }));
         return;
       }
 
@@ -223,14 +228,14 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
       navigate('/quiz');
     } catch (error) {
       console.error('Error starting AI recommendation session:', error);
-      alert('Failed to start study session. Please try again.');
+      alert(t('calendar.failedStartStudySessionTryAgain'));
     }
   }
 
   async function handleStudySuggestionClick(suggestion) {
     try {
       if (!questions || questions.length === 0) {
-        alert('Questions are still loading. Please wait a moment and try again.');
+        alert(t('calendar.questionsStillLoading'));
         return;
       }
 
@@ -245,11 +250,10 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
       }
 
       if (filteredQuestions.length === 0) {
-        alert(
-          `No questions available for ${suggestion.topic || 'all topics'}${
-            suggestion.subtopic ? ' - ' + suggestion.subtopic : ''
-          }.\n\nPlease check that your question database includes this topic.`
-        );
+        alert(tf('calendar.noQuestionsAvailableForSuggestion', {
+          topic: suggestion.topic || t('calendar.allTopics'),
+          subtopic: suggestion.subtopic || ''
+        }));
         return;
       }
 
@@ -266,7 +270,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
       navigate('/quiz');
     } catch (error) {
       console.error('Error starting study session:', error);
-      alert('Failed to start study session. Please try again.');
+      alert(t('calendar.failedStartStudySessionTryAgain'));
     }
   }
 
@@ -283,13 +287,13 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
     });
     
     if (!questions || questions.length === 0) {
-      alert('Questions are still loading. Please wait a moment and try again.');
+      alert(t('calendar.questionsStillLoading'));
       return;
     }
     
     if (allRepsForDay.length === 0) {
       console.warn('⚠️ No repetitions found for date:', dateStr);
-      alert('No review sessions found for this day.');
+      alert(t('calendar.noReviewSessionsFoundForDay'));
       return;
     }
     
@@ -305,7 +309,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
       const reviewQuestions = questions.filter(q => questionIds.includes(q.ID));
       
       if (reviewQuestions.length === 0) {
-        alert('Questions not found in database.');
+        alert(t('calendar.questionsNotFound'));
         return;
       }
 
@@ -323,17 +327,20 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
       navigate('/quiz');
     } catch (error) {
       console.error('Error starting review:', error);
-      alert('Failed to start review. Please try again.');
+      alert(t('calendar.failedStartReviewTryAgain'));
     }
   }
 
   async function handleDeleteEvent(eventId, eventType, event) {
     event.stopPropagation();
-    
-    const eventTypeLabel = eventType === EVENT_TYPES.MAJOR_EXAM ? 'Major Exam' : 
-                          eventType === EVENT_TYPES.SMALL_QUIZ ? 'Small Quiz' : 'Event';
-    
-    if (!window.confirm(`Delete this ${eventTypeLabel}? This will also remove all linked study suggestions and reviews.`)) {
+
+    const eventTypeLabel = eventType === EVENT_TYPES.MAJOR_EXAM
+      ? t('calendar.eventTypeMajorExam')
+      : eventType === EVENT_TYPES.SMALL_QUIZ
+        ? t('calendar.eventTypeSmallQuiz')
+        : t('calendar.eventTypeEvent');
+
+    if (!window.confirm(tf('calendar.deleteEventConfirm', { eventType: eventTypeLabel }))) {
       return;
     }
     
@@ -341,10 +348,10 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
       await calendarService.deleteEvent(eventId, true);
       await loadCalendarData();
       setSelectedDate(null);
-      alert('Event deleted successfully!');
+      alert(t('calendar.eventDeletedSuccess'));
     } catch (error) {
       console.error('❌ Error deleting event:', error);
-      alert('Failed to delete event: ' + error.message);
+      alert(tf('calendar.failedDeleteEventWithReason', { reason: error.message }));
     }
   }
 
@@ -450,7 +457,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
               }`}
             >
               {suggestion.completed ? <CheckCircle size={10} className="text-green-600" /> : <CalendarIcon size={10} />}
-              <span className="truncate flex-1">{suggestion.questionCount} MCQs</span>
+              <span className="truncate flex-1">{tf('calendar.mcqCount', { count: suggestion.questionCount })}</span>
             </button>
           ))}
           
@@ -469,7 +476,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
               }`}
             >
               {rep.completed ? <CheckCircle size={10} className="text-green-600" /> : <Brain size={10} />}
-              <span className="truncate flex-1">Review</span>
+              <span className="truncate flex-1">{t('calendar.review')}</span>
             </button>
           ))}
 
@@ -488,7 +495,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
               }`}
             >
               {aiRec.completed ? <CheckCircle size={10} className="text-green-600" /> : <Sparkles size={10} />}
-              <span className="truncate flex-1">AI: {aiRec.questionCount}</span>
+              <span className="truncate flex-1">{t('calendar.aiLabel')}: {aiRec.questionCount}</span>
             </button>
           ))}
           
@@ -502,7 +509,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
               className="flex items-center gap-1 text-xs px-1.5 py-1 rounded-lg font-bold bg-green-500 text-white hover:bg-green-600 transition-all shadow-sm mt-auto"
             >
               <CheckCircle size={12} fill="white" />
-              <span className="flex-1">{completionCount} Done</span>
+              <span className="flex-1">{tf('calendar.doneCount', { count: completionCount })}</span>
             </button>
           )}
         </div>
@@ -511,7 +518,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border-2 border-slate-100 p-6">
+    <div className={embedded ? 'h-full' : 'bg-white rounded-2xl shadow-lg border-2 border-slate-100 p-6'}>
       {/* Header */}
       <div className="flex items-start justify-between mb-6 gap-4">
         <div className="flex items-center gap-4 min-w-0">
@@ -521,13 +528,13 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight special-calendar-title special-calendar-title-animate">
-                Smart Study Calendar
+                {t('calendar.smartStudyCalendar')}
               </h3>
               <button
                 type="button"
                 onClick={() => setShowInfo(true)}
                 className="w-9 h-9 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all flex items-center justify-center font-black text-indigo-700 hover:scale-110 active:scale-105"
-                title="How this works"
+                title={t('dashboard.howThisWorks')}
               >
                 ?
               </button>
@@ -551,7 +558,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
             className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-sm"
           >
             <Plus size={16} />
-            Add Event
+            {t('calendar.addEvent')}
           </button>
         </div>
       </div>
@@ -575,13 +582,13 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
               <div className="p-5 border-b-2 border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Info size={20} className="text-indigo-700" />
-                  <h3 className="text-lg sm:text-xl font-black text-slate-800">Smart Study Calendar features</h3>
+                  <h3 className="text-lg sm:text-xl font-black text-slate-800">{t('calendar.smartStudyCalendarFeatures')}</h3>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowInfo(false)}
                   className="p-2 hover:bg-slate-100 rounded-xl transition-all"
-                  aria-label="Close"
+                  aria-label={t('common.close')}
                 >
                   <X size={20} />
                 </button>
@@ -592,40 +599,40 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
                   <div className="p-4 rounded-xl border-2 border-slate-200 bg-slate-50">
                     <div className="flex items-center gap-2 mb-2">
                       <Brain size={18} className="text-blue-700" />
-                      <h4 className="font-black text-slate-800">SRS review system</h4>
+                      <h4 className="font-black text-slate-800">{t('calendar.srsReviewSystemTitle')}</h4>
                     </div>
                     <p className="text-sm text-slate-600 font-medium">
-                      Uses spaced repetition events to bring back questions/topics when you’re most likely to forget.
+                      {t('calendar.srsReviewSystemDesc')}
                     </p>
                   </div>
 
                   <div className="p-4 rounded-xl border-2 border-slate-200 bg-slate-50">
                     <div className="flex items-center gap-2 mb-2">
                       <Sparkles size={18} className="text-purple-700" />
-                      <h4 className="font-black text-slate-800">AI suggestions (by topic)</h4>
+                      <h4 className="font-black text-slate-800">{t('calendar.aiSuggestionsByTopicTitle')}</h4>
                     </div>
                     <p className="text-sm text-slate-600 font-medium">
-                      Suggestions are generated from your accuracy trends per topic/subtopic. Accepting one adds a study session into your calendar.
+                      {t('calendar.aiSuggestionsByTopicDesc')}
                     </p>
                   </div>
 
                   <div className="p-4 rounded-xl border-2 border-slate-200 bg-slate-50">
                     <div className="flex items-center gap-2 mb-2">
                       <Target size={18} className="text-emerald-700" />
-                      <h4 className="font-black text-slate-800">Exam / quiz / revision plan</h4>
+                      <h4 className="font-black text-slate-800">{t('calendar.examQuizRevisionPlanTitle')}</h4>
                     </div>
                     <p className="text-sm text-slate-600 font-medium">
-                      Add exams and quizzes, then follow a plan that spreads practice and revision across days for steady progress.
+                      {t('calendar.examQuizRevisionPlanDesc')}
                     </p>
                   </div>
 
                   <div className="p-4 rounded-xl border-2 border-slate-200 bg-slate-50">
                     <div className="flex items-center gap-2 mb-2">
                       <Eye size={18} className="text-amber-700" />
-                      <h4 className="font-black text-slate-800">Mechanics</h4>
+                      <h4 className="font-black text-slate-800">{t('calendar.mechanicsTitle')}</h4>
                     </div>
                     <p className="text-sm text-slate-600 font-medium">
-                      Tap a day to see planned items and completions. Completed sessions turn green and stay visible for tracking.
+                      {t('calendar.mechanicsDesc')}
                     </p>
                   </div>
                 </div>
@@ -635,100 +642,46 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
         )}
       </AnimatePresence>
 
-      {/* AI Recommendations (existing code - unchanged) */}
-      {aiRecommendations.length > 0 && (
-        <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="text-purple-600" size={24} />
-            <h4 className="text-lg font-black text-purple-900">AI Study Recommendations</h4>
-            <span className="ml-auto text-xs font-bold text-purple-600 bg-white px-2 py-1 rounded-full">
-              {aiRecommendations.length} suggestions
-            </span>
-          </div>
-          
-          <div className="space-y-2">
-            {aiRecommendations.slice(0, 3).map((rec) => (
-              <div
-                key={rec.id}
-                className="bg-white rounded-lg p-3 border border-purple-200"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                        rec.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
-                        rec.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
-                        'bg-blue-100 text-blue-700'
-                      }`}>
-                        {rec.priority}
-                      </span>
-                      <span className="font-bold text-sm text-slate-800">
-                        {rec.subtopic}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-600">{rec.reason}</p>
-                    <div className="flex gap-2 mt-2 text-xs text-slate-500">
-                      <span>📅 Suggested: {new Date(rec.suggestedDate).toLocaleDateString()}</span>
-                      <span>•</span>
-                      <span>📊 Current: {rec.currentAccuracy}%</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-1 ml-3">
-                    <button
-                      onClick={(e) => handleAcceptRecommendation(rec, e)}
-                      className="p-2 bg-purple-100 hover:bg-purple-200 rounded-lg transition-all"
-                      title="Add to calendar"
-                    >
-                      <ThumbsUp size={16} className="text-purple-600" />
-                    </button>
-                    <button
-                      onClick={(e) => handleDismissRecommendation(rec.id, e)}
-                      className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
-                      title="Dismiss"
-                    >
-                      <ThumbsDown size={16} className="text-slate-600" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Legend */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4 text-xs">
         <div className="flex items-center gap-1.5">
           <Flag size={12} className="text-red-600" />
-          <span className="text-slate-600 font-semibold">Major Exam</span>
+          <span className="text-slate-600 font-semibold">{t('calendar.eventTypeMajorExam')}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <BookOpen size={12} className="text-amber-600" />
-          <span className="text-slate-600 font-semibold">Quiz</span>
+          <span className="text-slate-600 font-semibold">{t('calendar.legendQuiz')}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <CalendarIcon size={12} className="text-blue-600" />
-          <span className="text-slate-600 font-semibold">Study Plan</span>
+          <span className="text-slate-600 font-semibold">{t('calendar.legendStudyPlan')}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <Brain size={12} className="text-purple-600" />
-          <span className="text-slate-600 font-semibold">Review</span>
+          <span className="text-slate-600 font-semibold">{t('calendar.review')}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <Sparkles size={12} className="text-purple-600" />
-          <span className="text-slate-600 font-semibold">AI Suggestion</span>
+          <span className="text-slate-600 font-semibold">{t('calendar.legendAiSuggestion')}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <CheckCircle size={12} className="text-green-600" fill="currentColor" />
-          <span className="text-slate-600 font-semibold">Completed</span>
+          <span className="text-slate-600 font-semibold">{t('calendar.eventTypeCompletedActivity')}</span>
         </div>
       </div>
 
       {/* Calendar Grid */}
       <div className="border-2 border-slate-200 rounded-lg overflow-hidden">
         <div className="grid grid-cols-7 bg-slate-50 border-b-2 border-slate-200">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+          {[
+            t('calendar.weekdaySunShort'),
+            t('calendar.weekdayMonShort'),
+            t('calendar.weekdayTueShort'),
+            t('calendar.weekdayWedShort'),
+            t('calendar.weekdayThuShort'),
+            t('calendar.weekdayFriShort'),
+            t('calendar.weekdaySatShort'),
+          ].map((day) => (
             <div
               key={day}
               className="p-2 text-center text-sm font-black text-slate-600 uppercase tracking-wider"
@@ -776,7 +729,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
               className="bg-white rounded-2xl shadow-2xl max-w-lg w-full"
             >
               <div className="p-6 border-b flex justify-between items-center">
-                <h3 className="text-lg font-black text-slate-800">Study Session Preview</h3>
+                <h3 className="text-lg font-black text-slate-800">{t('calendar.studySessionPreviewTitle')}</h3>
                 <button
                   onClick={() => setSuggestionPreview(null)}
                   className="p-2 hover:bg-slate-100 rounded-lg transition-all"
@@ -791,7 +744,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
                   <div className="space-y-1 text-sm text-blue-800">
                     <div className="flex items-center gap-2">
                       <CalendarIcon size={16} />
-                      <span>Phase: <strong>{suggestionPreview.phase}</strong></span>
+                      <span>{t('calendar.phaseLabel')}: <strong>{suggestionPreview.phase}</strong></span>
                     </div>
                     {suggestionPreview.topic && (
                       <div className="flex items-center gap-2">
@@ -985,7 +938,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
                 {(calendarData[selectedDate].exams || calendarData[selectedDate].quizzes || 
                   calendarData[selectedDate].suggestions || calendarData[selectedDate].repetitions) && (
                   <div className="space-y-3 pt-3 border-t-2">
-                    <h4 className="font-bold text-slate-700 text-sm">Scheduled Events</h4>
+                    <h4 className="font-bold text-slate-700 text-sm">{t('calendar.scheduledEvents')}</h4>
                     
                     {/* Rest of events... (exams, quizzes, suggestions, etc.) */}
                     {/* (existing modal code for these sections - unchanged) */}

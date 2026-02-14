@@ -8,6 +8,7 @@ import { quizService } from '../services/quizService';
 import { quizCompletionService } from '../services/quizCompletionService';
 import { calendarService } from '../services/calendarService';
 import { rewardMCQCompletion, rewardQuizQuestionTokens } from '../services/rewardLogic';
+import ChemistryLoading from '../components/ChemistryLoading';
 
 /**
  * ResultsPage - OPTIMIZED VERSION with SRS Review Support
@@ -44,7 +45,7 @@ export default function ResultsPage() {
     const handleBeforeUnload = (e) => {
       if (saving || !saved) {
         e.preventDefault();
-        e.returnValue = 'Your quiz results are still being saved. Are you sure you want to leave?';
+        e.returnValue = t('results.resultsSavingLeaveConfirm');
         return e.returnValue;
       }
     };
@@ -311,7 +312,7 @@ export default function ResultsPage() {
   if (!questions || questions.length === 0) return null;
 
   const handleRestart = () => {
-    if (!saved && !window.confirm('Your results may not be fully saved. Are you sure you want to leave?')) {
+    if (!saved && !window.confirm(t('results.resultsMayNotBeSavedLeaveConfirm'))) {
       return;
     }
 
@@ -335,23 +336,7 @@ export default function ResultsPage() {
       {saving && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
-            <h3 className="text-2xl font-black text-slate-800 mb-2">
-              Saving Your Results...
-            </h3>
-            <p className="text-slate-600 mb-4">
-              Please wait, this will only take a moment.
-            </p>
-            <div className="bg-blue-50 rounded-lg p-3 text-sm text-blue-800">
-              <div className="flex items-center justify-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-                <span className="font-semibold">
-                  {localStorage.getItem('quiz_mode') === 'spaced-repetition' 
-                    ? 'Updating spaced repetition schedule...' 
-                    : 'Processing...'}
-                </span>
-              </div>
-            </div>
+            <ChemistryLoading />
           </div>
         </div>
       )}
@@ -366,7 +351,7 @@ export default function ResultsPage() {
               </svg>
             </div>
             <h3 className="text-2xl font-black text-slate-800 mb-2">
-              Save Failed
+              {t('results.saveFailed')}
             </h3>
             <p className="text-slate-600 mb-6">
               {saveError}
@@ -376,11 +361,11 @@ export default function ResultsPage() {
                 onClick={handleRetry}
                 className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all"
               >
-                Retry
+                {t('common.retry')}
               </button>
               <button
                 onClick={() => {
-                  if (window.confirm('Your results were not saved. Continue anyway?')) {
+                  if (window.confirm(t('results.resultsNotSavedContinueAnywayConfirm'))) {
                     setSaveError(null);
                     setSaved(true);
                     
@@ -395,7 +380,7 @@ export default function ResultsPage() {
                 }}
                 className="flex-1 px-4 py-3 bg-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-300 transition-all"
               >
-                Continue Anyway
+                {t('results.continueAnyway')}
               </button>
             </div>
           </div>
@@ -410,8 +395,8 @@ export default function ResultsPage() {
           </svg>
           <span className="font-semibold">
             {localStorage.getItem('quiz_mode') === 'spaced-repetition' 
-              ? 'Reviews saved!' 
-              : 'Saved to profile!'}
+              ? t('results.reviewsSaved') 
+              : t('results.savedToProfile')}
           </span>
         </div>
       )}

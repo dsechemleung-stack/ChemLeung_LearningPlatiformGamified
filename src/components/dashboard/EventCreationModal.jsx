@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { X, Flag, BookOpen, Calendar, Tag, Layers, ArrowUpCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { calendarService } from '../../services/calendarService';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 /**
  * EventCreationModal - COMPLETE FIX
@@ -13,6 +14,7 @@ import { calendarService } from '../../services/calendarService';
  * ✅ YYYY/MM/DD or MM/DD date format
  */
 export default function EventCreationModal({ userId, questions = [], onClose, onEventCreated }) {
+  const { t, tf } = useLanguage();
   const [eventType, setEventType] = useState('major_exam');
   const [title, setTitle] = useState('');
   const [dateInput, setDateInput] = useState('');
@@ -165,15 +167,21 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
     
     if (eventType === 'major_exam') {
       if (selectedTopics.length === 0) {
-        return 'Comprehensive Exam';
+        return t('calendar.comprehensiveExam');
       } else {
-        return `${selectedTopics.slice(0, 2).join(', ')}${selectedTopics.length > 2 ? '...' : ''} Exam`;
+        return tf('calendar.topicsExamTitle', {
+          topics: selectedTopics.slice(0, 2).join(', '),
+          ellipsis: selectedTopics.length > 2 ? t('common.ellipsis') : ''
+        });
       }
     } else {
       if (selectedTopics.length === 0) {
-        return 'Comprehensive Quiz';
+        return t('calendar.comprehensiveQuiz');
       } else {
-        return `${selectedTopics.slice(0, 2).join(', ')}${selectedTopics.length > 2 ? '...' : ''} Quiz`;
+        return tf('calendar.topicsQuizTitle', {
+          topics: selectedTopics.slice(0, 2).join(', '),
+          ellipsis: selectedTopics.length > 2 ? t('common.ellipsis') : ''
+        });
       }
     }
   }
@@ -184,10 +192,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
     const parsedDate = parseDate(dateInput);
     
     if (!parsedDate) {
-      alert('Please enter a valid date:\n\n' +
-            '• MM/DD (uses current year)\n' +
-            '• YYYY/MM/DD (specific year)\n\n' +
-            'Examples: 12/25 or 2024/12/25');
+      alert(t('calendar.invalidDateHelp'));
       return;
     }
 
@@ -196,7 +201,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
     today.setHours(0, 0, 0, 0);
     
     if (selectedDate < today) {
-      const proceed = window.confirm('⚠️ Warning: This date is in the past.\n\nDo you want to continue anyway?');
+      const proceed = window.confirm(t('calendar.pastDateWarningConfirm'));
       if (!proceed) return;
     }
 
@@ -218,12 +223,12 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
         await calendarService.addSmallQuiz(userId, eventData);
       }
 
-      alert('✅ Event created successfully!');
+      alert(t('calendar.eventCreatedSuccess'));
       onEventCreated();
       onClose();
     } catch (error) {
       console.error('❌ Error creating event:', error);
-      alert('Failed to create event:\n\n' + error.message);
+      alert(tf('calendar.failedCreateEventWithReason', { reason: error.message }));
     } finally {
       setLoading(false);
     }
@@ -244,8 +249,8 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
         {/* Header */}
         <div className="border-b p-6 flex justify-between items-center sticky top-0 bg-white z-10 rounded-t-2xl">
           <div>
-            <h2 className="text-2xl font-black text-slate-800">Add Event</h2>
-            <p className="text-sm text-slate-500 mt-1">Schedule an exam or quiz and get a smart study plan</p>
+            <h2 className="text-2xl font-black text-slate-800">{t('calendar.addEvent')}</h2>
+            <p className="text-sm text-slate-500 mt-1">{t('calendar.addEventSubtitle')}</p>
           </div>
           <button
             onClick={onClose}
@@ -260,7 +265,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
           {/* Event Type Selector */}
           <div>
             <label className="block text-sm font-black text-slate-700 uppercase tracking-wider mb-3">
-              Event Type
+              {t('calendar.eventType')}
             </label>
             <div className="grid grid-cols-2 gap-3">
               <button
@@ -277,11 +282,11 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   <span className={`font-bold ${
                     eventType === 'major_exam' ? 'text-red-900' : 'text-slate-600'
                   }`}>
-                    Major Exam
+                    {t('calendar.majorExam')}
                   </span>
                 </div>
                 <div className="text-xs text-slate-500 text-left">
-                  10-day study plan with scaled intensity
+                  {t('calendar.majorExamDesc')}
                 </div>
               </button>
 
@@ -299,11 +304,11 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   <span className={`font-bold ${
                     eventType === 'small_quiz' ? 'text-amber-900' : 'text-slate-600'
                   }`}>
-                    Small Quiz
+                    {t('calendar.smallQuiz')}
                   </span>
                 </div>
                 <div className="text-xs text-slate-500 text-left">
-                  3-day focused review plan
+                  {t('calendar.smallQuizDesc')}
                 </div>
               </button>
             </div>
@@ -312,26 +317,26 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
           {/* Date Input */}
           <div>
             <label className="block text-sm font-black text-slate-700 uppercase tracking-wider mb-2">
-              Exam/Quiz Date <span className="text-red-500">*</span>
+              {t('calendar.examQuizDate')} <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={dateInput}
               onChange={(e) => handleDateInput(e.target.value)}
-              placeholder="MM/DD or YYYY/MM/DD (e.g., 12/25 or 2024/12/25)"
+              placeholder={t('calendar.dateInputPlaceholder')}
               maxLength={10}
               className="w-full px-4 py-3 rounded-lg border-2 border-slate-200 focus:border-indigo-500 focus:outline-none transition-all font-medium text-lg"
               required
             />
             <p className="text-xs text-slate-500 mt-2">
-              📅 Quick: <strong>12/25</strong> → {new Date().getFullYear()}/12/25 | Full: <strong>2024/12/25</strong>
+              {t('calendar.dateQuickLabel')} <strong>12/25</strong> → {new Date().getFullYear()}/12/25 | {t('calendar.dateFullLabel')} <strong>2024/12/25</strong>
             </p>
           </div>
 
           {/* Topic & Subtopic Filters - SIDE BY SIDE */}
           <div>
             <label className="block text-sm font-black text-slate-700 uppercase tracking-wider mb-3">
-              Filter Topics & Subtopics
+              {t('calendar.filterTopicsSubtopics')}
             </label>
 
             <div className="grid grid-cols-2 gap-4">
@@ -341,7 +346,11 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   <div className="flex items-center gap-2">
                     <Tag size={14} className="text-slate-600" />
                     <span className="text-sm font-bold text-slate-600">
-                      Topics ({selectedTopics.length}/{allTopics.length})
+                      {tf('calendar.topicsCountFull', {
+                        selected: selectedTopics.length,
+                        total: allTopics.length,
+                        plural: selectedTopics.length === 1 ? '' : 's'
+                      })}
                     </span>
                   </div>
                   <button
@@ -349,7 +358,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                     onClick={() => setSelectedTopics([])}
                     className="text-xs text-indigo-600 hover:text-indigo-700 font-bold"
                   >
-                    Clear
+                    {t('common.clear')}
                   </button>
                 </div>
 
@@ -383,7 +392,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                         <button
                           type="button"
                           onClick={() => selectTopicsUpTo(topic)}
-                          title={`Select all topics up to and including "${topic}"`}
+                          title={tf('calendar.selectAllTopicsUpToTitle', { topic })}
                           className="px-2 py-2 bg-purple-100 hover:bg-purple-200 rounded-lg transition-all flex items-center gap-1 text-xs font-bold text-purple-700 flex-shrink-0"
                         >
                           <ArrowUpCircle size={14} />
@@ -393,7 +402,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   </div>
                 </div>
                 <p className="text-xs text-slate-500 mt-2 italic">
-                  💡 Click "Up to" to select all topics up to that item
+                  {t('calendar.upToHint')}
                 </p>
               </div>
 
@@ -403,7 +412,11 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   <div className="flex items-center gap-2">
                     <Layers size={14} className="text-slate-600" />
                     <span className="text-sm font-bold text-slate-600">
-                      Subtopics ({selectedSubtopics.length}/{availableSubtopics.length})
+                      {tf('calendar.subtopicsCountFull', {
+                        selected: selectedSubtopics.length,
+                        total: availableSubtopics.length,
+                        plural: selectedSubtopics.length === 1 ? '' : 's'
+                      })}
                     </span>
                   </div>
                   <button
@@ -411,14 +424,14 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                     onClick={() => setSelectedSubtopics([])}
                     className="text-xs text-indigo-600 hover:text-indigo-700 font-bold"
                   >
-                    Clear
+                    {t('common.clear')}
                   </button>
                 </div>
 
                 <div className="border-2 border-slate-200 rounded-lg p-3 bg-white h-96 overflow-y-auto">
                   {availableSubtopics.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-slate-400 text-sm">
-                      {selectedTopics.length === 0 ? 'Select topics to filter subtopics' : 'No subtopics available'}
+                      {selectedTopics.length === 0 ? t('calendar.selectTopicsToFilterSubtopics') : t('calendar.noSubtopicsAvailable')}
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -450,7 +463,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                           <button
                             type="button"
                             onClick={() => selectSubtopicsUpTo(subtopic)}
-                            title={`Select all subtopics up to and including "${subtopic}"`}
+                            title={tf('calendar.selectAllSubtopicsUpToTitle', { subtopic })}
                             className="px-2 py-2 bg-purple-100 hover:bg-purple-200 rounded-lg transition-all flex items-center gap-1 text-xs font-bold text-purple-700 flex-shrink-0"
                           >
                             <ArrowUpCircle size={14} />
@@ -461,7 +474,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   )}
                 </div>
                 <p className="text-xs text-slate-500 mt-2 italic">
-                  💡 Subtopics auto-filter based on selected topics
+                  {t('calendar.subtopicsAutoFilterHint')}
                 </p>
               </div>
             </div>
@@ -470,13 +483,13 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
           {/* Custom Title */}
           <div>
             <label className="block text-sm font-black text-slate-700 uppercase tracking-wider mb-2">
-              Custom Title <span className="text-slate-400 text-xs font-normal">(Optional)</span>
+              {t('calendar.customTitle')} <span className="text-slate-400 text-xs font-normal">({t('common.optional')})</span>
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={`Auto: ${generateTitle()}`}
+              placeholder={tf('calendar.autoTitlePlaceholder', { title: generateTitle() })}
               className="w-full px-4 py-3 rounded-lg border-2 border-slate-200 focus:border-indigo-500 focus:outline-none transition-all font-medium"
             />
           </div>
@@ -492,27 +505,28 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
               <span className={`font-bold text-sm ${
                 eventType === 'major_exam' ? 'text-red-900' : 'text-amber-900'
               }`}>
-                Auto-Generated Study Plan
+                {t('calendar.autoGeneratedStudyPlan')}
               </span>
             </div>
             {eventType === 'major_exam' ? (
               <ul className="space-y-1 text-xs text-red-700">
-                <li>• <strong>10-7 days before:</strong> 10 MCQs/day (Warm-up)</li>
-                <li>• <strong>6-4 days before:</strong> 20 MCQs/day (Consolidation)</li>
-                <li>• <strong>3-1 days before:</strong> 40 MCQs/day (Sprint Intensity)</li>
+                <li>• <strong>{t('calendar.planMajor10to7Label')}</strong> {t('calendar.planMajor10to7Desc')}</li>
+                <li>• <strong>{t('calendar.planMajor6to4Label')}</strong> {t('calendar.planMajor6to4Desc')}</li>
+                <li>• <strong>{t('calendar.planMajor3to1Label')}</strong> {t('calendar.planMajor3to1Desc')}</li>
               </ul>
             ) : (
               <ul className="space-y-1 text-xs text-amber-700">
-                <li>• <strong>3 days before:</strong> 5 MCQs (Initial Review)</li>
-                <li>• <strong>2 days before:</strong> 10 MCQs (Topic Focus)</li>
-                <li>• <strong>1 day before:</strong> 15 MCQs (Final Polish)</li>
+                <li>• <strong>{t('calendar.planSmall3Label')}</strong> {t('calendar.planSmall3Desc')}</li>
+                <li>• <strong>{t('calendar.planSmall2Label')}</strong> {t('calendar.planSmall2Desc')}</li>
+                <li>• <strong>{t('calendar.planSmall1Label')}</strong> {t('calendar.planSmall1Desc')}</li>
               </ul>
             )}
             <p className="text-xs font-bold mt-2 text-slate-700">
-              📚 Focus: {
-                selectedTopics.length === 0 ? 'All Topics' : `${selectedTopics.length} topic${selectedTopics.length > 1 ? 's' : ''}`
-              }
-              {selectedSubtopics.length > 0 && ` • ${selectedSubtopics.length} subtopic${selectedSubtopics.length > 1 ? 's' : ''}`}
+              {t('calendar.focusLabel')}{' '}
+              {selectedTopics.length === 0
+                ? t('calendar.allTopics')
+                : tf('calendar.topicCountLabel', { count: selectedTopics.length })}
+              {selectedSubtopics.length > 0 && ` • ${tf('calendar.subtopicCountLabel', { count: selectedSubtopics.length })}`}
             </p>
           </div>
 
@@ -523,7 +537,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
               onClick={onClose}
               className="flex-1 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
@@ -534,7 +548,7 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   : 'bg-amber-600 hover:bg-amber-700'
               } disabled:opacity-50 disabled:cursor-not-allowed shadow-lg`}
             >
-              {loading ? 'Creating...' : `Create Event & Study Plan`}
+              {loading ? t('calendar.creating') : t('calendar.createEventAndStudyPlan')}
             </button>
           </div>
         </form>

@@ -146,6 +146,31 @@ export const quizService = {
     }
   },
 
+  // Get leaderboard for a specific timestamp range [fromIso, toIso)
+  async getLeaderboardByRange(fromIso, toIso, limitCount = 10) {
+    try {
+      if (!fromIso || !toIso) throw new Error('Missing range bounds');
+      const q = query(
+        collection(db, 'attempts'),
+        where('timestamp', '>=', fromIso),
+        where('timestamp', '<', toIso),
+        orderBy('timestamp', 'desc'),
+      );
+      return await this._buildLeaderboard(q, limitCount, 'averageScore');
+    } catch (error) {
+      console.error('Error getting ranged leaderboard:', error);
+      throw error;
+    }
+  },
+
+  // Convenience: last 7-day window BEFORE the current week window
+  async getLastWeekLeaderboard(limitCount = 10) {
+    const now = new Date();
+    const to = new Date(now); to.setDate(to.getDate() - 7);
+    const from = new Date(now); from.setDate(from.getDate() - 14);
+    return await this.getLeaderboardByRange(from.toISOString(), to.toISOString(), limitCount);
+  },
+
   // Get monthly leaderboard
   async getMonthlyLeaderboard(limitCount = 10) {
     try {
@@ -160,6 +185,14 @@ export const quizService = {
       console.error('Error getting monthly leaderboard:', error);
       throw error;
     }
+  },
+
+  // Convenience: last 30-day window BEFORE the current month window
+  async getLastMonthLeaderboard(limitCount = 10) {
+    const now = new Date();
+    const to = new Date(now); to.setMonth(to.getMonth() - 1);
+    const from = new Date(now); from.setMonth(from.getMonth() - 2);
+    return await this.getLeaderboardByRange(from.toISOString(), to.toISOString(), limitCount);
   },
 
   // Get all-time leaderboard

@@ -6,12 +6,12 @@ import { getMasteryState, findClosestToMastery } from '../../utils/masteryHelper
  * CurrentGoalWidget: Shows the user's next mastery milestone
  * "You are 5 questions away from mastering Organic Chemistry."
  */
-export default function CurrentGoalWidget({ mistakes }) {
+export default function CurrentGoalWidget({ mistakes, embedded = false }) {
   const goal = useMemo(() => findClosestToMastery(mistakes || []), [mistakes]);
 
   if (!goal) {
     return (
-      <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl shadow-lg border-2 border-indigo-200 p-6">
+      <div className={embedded ? 'h-full' : 'bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl shadow-lg border-2 border-indigo-200 p-6'}>
         <div className="flex items-center gap-3 mb-4">
           <div className="w-12 h-12 rounded-xl bg-indigo-200 flex items-center justify-center">
             <Target className="text-indigo-600" size={28} />
@@ -26,7 +26,7 @@ export default function CurrentGoalWidget({ mistakes }) {
   const progressPercentage = (goal.mastered / goal.total) * 100;
 
   return (
-    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl shadow-lg border-2 border-indigo-200 p-6">
+    <div className={embedded ? 'h-full' : 'bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl shadow-lg border-2 border-indigo-200 p-6'}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
         <div className="w-12 h-12 rounded-xl bg-indigo-200 flex items-center justify-center">

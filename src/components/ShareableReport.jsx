@@ -12,7 +12,7 @@ export default function ShareableReport({
   onClose 
 }) {
   const { currentUser } = useAuth();
-  const { isEnglish } = useLanguage();
+  const { isEnglish, t, tf } = useLanguage();
   const reportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState(null);
@@ -31,19 +31,19 @@ export default function ShareableReport({
     : null;
 
   const formatTime = (ms) => {
-    if (!ms) return 'N/A';
+    if (!ms) return t('report.na');
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
     const hrs = Math.floor(minutes / 60);
     if (hrs > 0) {
-      return `${hrs}h ${minutes % 60}m`;
+      return tf('report.timeHrsMins', { h: hrs, m: minutes % 60 });
     }
-    return `${minutes}m ${seconds % 60}s`;
+    return tf('report.timeMinsSecs', { m: minutes, s: seconds % 60 });
   };
 
   const formatDate = () => {
     const date = new Date();
-    return date.toLocaleDateString('en-GB', {
+    return date.toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', {
       day: '2-digit',
       month: 'short',
       year: 'numeric'
@@ -71,7 +71,7 @@ export default function ShareableReport({
   // IMPROVED: Export as Image with better error handling and proxy for CORS
   const exportAsImage = async () => {
     if (!reportRef.current) {
-      setError(isEnglish ? 'Report not ready. Please try again.' : '報告未準備好。請重試。');
+      setError(t('report.reportNotReady'));
       return;
     }
     
@@ -110,12 +110,12 @@ export default function ShareableReport({
       // Convert to blob and download
       canvas.toBlob((blob) => {
         if (!blob) {
-          throw new Error(isEnglish ? 'Failed to create image' : '無法創建圖片');
+          throw new Error(t('report.failedCreateImage'));
         }
         
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.download = `ChemLeung-Report-${formatDate().replace(/\s/g, '-')}.png`;
+        link.download = `${t('report.fileNamePrefix')}-${formatDate().replace(/\s/g, '-')}.png`;
         link.href = url;
         document.body.appendChild(link);
         link.click();
@@ -128,10 +128,7 @@ export default function ShareableReport({
       
     } catch (error) {
       console.error('❌ Error exporting image:', error);
-      setError(isEnglish 
-        ? 'Failed to export image. Try PDF export instead.' 
-        : '匯出圖片失敗。請嘗試 PDF 匯出。'
-      );
+      setError(t('report.failedExportImageTryPdf'));
       setExporting(false);
     }
   };
@@ -139,7 +136,7 @@ export default function ShareableReport({
   // IMPROVED: Export as PDF with better error handling
   const exportAsPDF = async () => {
     if (!reportRef.current) {
-      setError(isEnglish ? 'Report not ready. Please try again.' : '報告未準備好。請重試。');
+      setError(t('report.reportNotReady'));
       return;
     }
     
@@ -201,16 +198,13 @@ export default function ShareableReport({
         heightLeft -= pageHeight;
       }
       
-      pdf.save(`ChemLeung-Report-${formatDate().replace(/\s/g, '-')}.pdf`);
+      pdf.save(`${t('report.fileNamePrefix')}-${formatDate().replace(/\s/g, '-')}.pdf`);
       
       console.log('✅ PDF downloaded successfully');
       setExporting(false);
     } catch (error) {
       console.error('❌ Error exporting PDF:', error);
-      setError(isEnglish 
-        ? 'Failed to export PDF. Try image export instead.' 
-        : '匯出 PDF 失敗。請嘗試圖片匯出。'
-      );
+      setError(t('report.failedExportPdfTryImage'));
       setExporting(false);
     }
   };
@@ -238,7 +232,7 @@ export default function ShareableReport({
         <div className="sticky top-0 bg-white border-b-2 border-slate-200 p-4 flex justify-between items-center rounded-t-2xl z-10">
           <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
             <Share2 className="text-lab-blue" size={24} />
-            {isEnglish ? 'Share Report Card' : '分享成績單'}
+            {t('report.shareReportCard')}
           </h2>
           
           <div className="flex items-center gap-2">
@@ -246,26 +240,26 @@ export default function ShareableReport({
               onClick={exportAsImage}
               disabled={exporting}
               className="flex items-center gap-2 px-4 py-2 bg-lab-blue text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-slate-300 transition-all"
-              title={isEnglish ? 'Download as PNG image' : '下載為 PNG 圖片'}
+              title={t('report.downloadPngTitle')}
             >
               <Download size={18} />
-              {isEnglish ? 'Image' : '圖片'}
+              {t('report.image')}
             </button>
             
             <button
               onClick={exportAsPDF}
               disabled={exporting}
               className="flex items-center gap-2 px-4 py-2 bg-chemistry-green text-white rounded-lg font-bold hover:opacity-90 disabled:bg-slate-300 transition-all"
-              title={isEnglish ? 'Download as PDF' : '下載為 PDF'}
+              title={t('report.downloadPdfTitle')}
             >
               <Download size={18} />
-              PDF
+              {t('report.pdf')}
             </button>
             
             <button
               onClick={onClose}
               className="p-2 hover:bg-slate-100 rounded-lg transition-all"
-              title={isEnglish ? 'Close' : '關閉'}
+              title={t('common.close')}
             >
               <X size={24} />
             </button>
@@ -282,7 +276,7 @@ export default function ShareableReport({
                 onClick={() => setError(null)}
                 className="text-sm text-red-600 hover:underline mt-1"
               >
-                {isEnglish ? 'Dismiss' : '關閉'}
+                {t('report.dismiss')}
               </button>
             </div>
           </div>
@@ -296,7 +290,7 @@ export default function ShareableReport({
               <h1 className="text-3xl font-black text-white">ChemLeung</h1>
             </div>
             <h2 className="text-2xl font-bold text-slate-800 mb-2">
-              {isEnglish ? 'HKDSE Chemistry Practice Report' : 'HKDSE 化學練習報告'}
+              {t('report.hkDsePracticeReport')}
             </h2>
             <div className="flex items-center justify-center gap-4 text-slate-600">
               <div className="flex items-center gap-1">
@@ -311,18 +305,18 @@ export default function ShareableReport({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="text-sm text-slate-500 mb-1">
-                  {isEnglish ? 'Student Name' : '學生姓名'}
+                  {t('report.studentName')}
                 </div>
                 <div className="text-lg font-bold text-slate-800">
-                  {currentUser?.displayName || 'Student'}
+                  {currentUser?.displayName || t('report.student')}
                 </div>
               </div>
               <div>
                 <div className="text-sm text-slate-500 mb-1">
-                  {isEnglish ? 'Topics Covered' : '涵蓋主題'}
+                  {t('report.topicsCovered')}
                 </div>
                 <div className="text-lg font-bold text-slate-800">
-                  {topics.length} {isEnglish ? 'Topics' : '個主題'}
+                  {topics.length} {t('report.topicsUnit')}
                 </div>
               </div>
             </div>
@@ -334,7 +328,7 @@ export default function ShareableReport({
               <div className="text-6xl font-black mb-2">{percentage}%</div>
               <div className="text-3xl font-bold mb-4">{getGrade(percentage)}</div>
               <div className="text-xl opacity-90">
-                {correctAnswers} {isEnglish ? 'out of' : '/'} {totalQuestions} {isEnglish ? 'Correct' : '正確'}
+                {correctAnswers} {t('report.outOf')} {totalQuestions} {t('report.correctLabel')}
               </div>
             </div>
           </div>
@@ -346,7 +340,7 @@ export default function ShareableReport({
                 <Trophy size={20} className="text-white" />
               </div>
               <div className="text-2xl font-black text-slate-800">{correctAnswers}</div>
-              <div className="text-sm text-slate-600">{isEnglish ? 'Correct' : '正確'}</div>
+              <div className="text-sm text-slate-600">{t('report.correct')}</div>
             </div>
             
             <div className="bg-white rounded-xl shadow-lg p-4 border-2 border-red-200 text-center">
@@ -354,7 +348,7 @@ export default function ShareableReport({
                 <Target size={20} className="text-white" />
               </div>
               <div className="text-2xl font-black text-slate-800">{totalQuestions - correctAnswers}</div>
-              <div className="text-sm text-slate-600">{isEnglish ? 'Incorrect' : '錯誤'}</div>
+              <div className="text-sm text-slate-600">{t('report.incorrect')}</div>
             </div>
             
             {totalTime && (
@@ -363,7 +357,7 @@ export default function ShareableReport({
                   <Clock size={20} className="text-white" />
                 </div>
                 <div className="text-2xl font-black text-slate-800">{formatTime(totalTime)}</div>
-                <div className="text-sm text-slate-600">{isEnglish ? 'Time Used' : '用時'}</div>
+                <div className="text-sm text-slate-600">{t('report.timeUsed')}</div>
               </div>
             )}
           </div>
@@ -374,7 +368,7 @@ export default function ShareableReport({
               <div className="w-5 h-5 bg-lab-blue rounded-full flex items-center justify-center">
                 <CheckCircle size={14} className="text-white" />
               </div>
-              {isEnglish ? 'Topic Breakdown' : '主題分析'}
+              {t('report.topicBreakdown')}
             </h3>
             
             <div className="space-y-3">
@@ -396,7 +390,7 @@ export default function ShareableReport({
                       />
                     </div>
                     <div className="text-xs text-slate-500 mt-1">
-                      {result.correct}/{result.total} {isEnglish ? 'correct' : '正確'}
+                      {result.correct}/{result.total} {t('dashboard.correct')}
                     </div>
                   </div>
                 </div>
@@ -407,11 +401,9 @@ export default function ShareableReport({
           {/* Footer */}
           <div className="mt-8 pt-6 border-t-2 border-slate-200 text-center text-slate-500 text-sm">
             <p className="font-semibold">
-              {isEnglish 
-                ? 'Generated by ChemLeung HKDSE MCQ Practice Platform' 
-                : '由 ChemLeung HKDSE MCQ 練習平台生成'}
+              {t('report.generatedBy')}
             </p>
-            <p className="text-xs mt-1">www.chemleung.com</p>
+            <p className="text-xs mt-1">{t('report.website')}</p>
           </div>
         </div>
 
@@ -421,10 +413,10 @@ export default function ShareableReport({
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-lab-blue mx-auto mb-4"></div>
               <p className="text-slate-700 font-semibold">
-                {isEnglish ? 'Generating report...' : '生成報告中...'}
+                {t('report.generating')}
               </p>
               <p className="text-slate-500 text-sm mt-2">
-                {isEnglish ? 'This may take a few seconds' : '這可能需要幾秒鐘'}
+                {t('report.mayTakeSeconds')}
               </p>
             </div>
           </div>

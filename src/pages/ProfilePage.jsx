@@ -14,7 +14,7 @@ const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMC
 
 export default function ProfilePage() {
   const { currentUser, userProfile, loadUserProfile } = useAuth();
-  const { t } = useLanguage();
+  const { t, isEnglish } = useLanguage();
   const navigate = useNavigate();
   const { questions, loading: questionsLoading } = useQuizData(SHEET_URL);
   
@@ -124,9 +124,9 @@ export default function ProfilePage() {
   }
 
   const formatDate = (isoString) => {
-    if (!isoString) return 'N/A';
+    if (!isoString) return t('common.notAvailable');
     const date = new Date(isoString);
-    return date.toLocaleDateString('en-GB', { 
+    return date.toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', { 
       day: '2-digit', 
       month: 'short', 
       year: 'numeric'
@@ -148,14 +148,18 @@ export default function ProfilePage() {
           <ArrowLeft size={20} />
         </button>
         
-        <div className="flex-1 bg-gradient-to-r from-lab-blue to-blue-700 rounded-2xl shadow-xl p-6 text-white">
-          <h1 className="text-3xl font-black flex items-center gap-3">
-            <User size={32} />
-            {t('profile.profileSettings')}
-          </h1>
-          <p className="text-blue-100 mt-1">
-            {t('profile.manageAccount')}
-          </p>
+        <div className="flex-1 flex justify-center">
+          <div className="paper-island paper-island-md paper-amber">
+            <div className="paper-island-content">
+              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-emerald">
+                <User size={32} className="text-emerald-700" />
+                {t('profile.profileSettings')}
+              </h1>
+              <p className="text-slate-700 mt-1 font-semibold">
+                {t('profile.manageAccount')}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -246,7 +250,7 @@ export default function ProfilePage() {
           <div className="border-t-2 border-slate-100 pt-6">
             <label className="block text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
               <User size={16} />
-              Profile Picture
+              {t('profile.profilePicture')}
             </label>
 
             <div className="flex items-center gap-4 mb-4">
@@ -259,13 +263,13 @@ export default function ProfilePage() {
                 size="lg"
               />
               <div className="text-sm text-slate-600">
-                <div className="font-bold text-slate-800">Preview</div>
-                <div className="text-xs text-slate-500">Only items you own (or free items) can be used.</div>
+                <div className="font-bold text-slate-800">{t('profile.preview')}</div>
+                <div className="text-xs text-slate-500">{t('profile.onlyOwnedItems')}</div>
               </div>
             </div>
 
             <div className="mb-4">
-              <div className="text-xs font-black text-slate-500 uppercase tracking-wide mb-2">Icon</div>
+              <div className="text-xs font-black text-slate-500 uppercase tracking-wide mb-2">{t('profile.icon')}</div>
               <div className="grid grid-cols-5 sm:grid-cols-8 gap-2">
                 {ownedProfilePics.map(item => (
                   <button
@@ -286,7 +290,7 @@ export default function ProfilePage() {
             </div>
 
             <div>
-              <div className="text-xs font-black text-slate-500 uppercase tracking-wide mb-2">Background</div>
+              <div className="text-xs font-black text-slate-500 uppercase tracking-wide mb-2">{t('profile.background')}</div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {ownedThemes.map(theme => (
                   <button

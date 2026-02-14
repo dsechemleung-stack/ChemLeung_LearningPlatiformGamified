@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, Infinity, Settings, Play, Zap, BookOpen, Lock, Check, AlertCircle, Heart, Sparkles, Brain } from 'lucide-react';
+import { Clock, Settings, Play, Zap, BookOpen, Lock, Check, AlertCircle } from 'lucide-react';
+import FisheyeCarousel from '../components/FisheyeCarousel';
 import { quizStorage } from '../utils/quizStorage';
 import { useLanguage } from '../contexts/LanguageContext';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -185,6 +186,28 @@ export default function PracticeModeSelection({ questions }) {
     }
   };
 
+  const handleCarouselModeSelect = (mode) => {
+    switch (mode.id) {
+      case 'timed':
+        handleModeSelect('timed', 10, timedModeTimer, timedModeIsTimed);
+        break;
+      case 'marathon':
+        handleModeSelect('marathon', 10, marathonModeTimer, marathonModeIsTimed);
+        break;
+      case 'ai-daily':
+        handleAIDailyMission();
+        break;
+      case 'mistake-review':
+        navigate('/notebook');
+        break;
+      case 'custom':
+        handleModeSelect('custom', 10);
+        break;
+      default:
+        break;
+    }
+  };
+
   const handleAIDailyMission = async () => {
     setLoadingMistakes(true);
     try {
@@ -247,7 +270,7 @@ export default function PracticeModeSelection({ questions }) {
       startQuiz(selected, 'ai-daily', true, true);
     } catch (error) {
       console.error('Error loading mistakes for AI Daily Mission:', error);
-      alert('Failed to load mistakes. Please try again.');
+      alert(t('practiceMode.failedLoadMistakesTryAgain'));
     }
     setLoadingMistakes(false);
   };
@@ -544,33 +567,25 @@ export default function PracticeModeSelection({ questions }) {
 
   // Main mode selection screen
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-500">
-      <div className="text-center mb-8">
-        <h1 className="text-4xl font-black text-academic-charcoal mb-2">
-          {t('practice.selectMode')}
-        </h1>
-        <p className="text-academic-light-slate text-lg">
-          {t('practice.chooseHowPractice')}
-        </p>
-      </div>
-
+    <div className="max-w-6xl mx-auto space-y-4">
       {/* Available Topics Info + Update Button */}
       {availableTopics.length > 0 ? (
-        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
-          <div className="flex justify-between items-start mb-2">
+        <div className="sticky top-4 z-30 rounded-2xl p-4 border border-white/40 bg-white/55 backdrop-blur-xl shadow-lg">
+          <div className="absolute inset-0 rounded-2xl opacity-70 bg-[radial-gradient(circle_at_15%_20%,rgba(99,102,241,0.22),transparent_60%),radial-gradient(circle_at_80%_30%,rgba(236,72,153,0.18),transparent_60%),radial-gradient(circle_at_50%_85%,rgba(34,211,238,0.16),transparent_55%)]" />
+          <div className="relative flex justify-between items-start mb-2 gap-4">
             <div>
-              <h3 className="font-bold text-blue-900 flex items-center gap-2">
+              <h3 className="font-black text-slate-900 flex items-center gap-2">
                 <BookOpen size={16} />
                 {t('practice.yourAvailableTopics')} ({availableTopics.length})
               </h3>
               <div className="flex flex-wrap gap-2 mt-2">
                 {availableTopics.slice(0, 8).map((topic) => (
-                  <span key={topic} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-bold">
+                  <span key={topic} className="px-2 py-1 bg-white/70 border border-white/50 text-slate-800 rounded-lg text-xs font-bold shadow-sm">
                     {topic}
                   </span>
                 ))}
                 {availableTopics.length > 8 && (
-                  <span className="px-2 py-1 text-blue-700 text-xs font-bold">
+                  <span className="px-2 py-1 text-slate-700 text-xs font-bold">
                     +{availableTopics.length - 8} {t('practice.more')}
                   </span>
                 )}
@@ -578,7 +593,7 @@ export default function PracticeModeSelection({ questions }) {
             </div>
             <button
               onClick={() => setShowUpdateTopics(true)}
-              className="px-4 py-2 bg-lab-blue text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all whitespace-nowrap"
+              className="px-4 py-2 rounded-xl font-bold text-sm transition-all whitespace-nowrap border border-white/40 bg-white/40 backdrop-blur hover:bg-white/55 text-slate-900 shadow-sm"
             >
               {t('practice.updateTopics')}
             </button>
@@ -606,252 +621,7 @@ export default function PracticeModeSelection({ questions }) {
         </div>
       )}
 
-      {/* Mode Selection Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* AI DAILY MISSION */}
-        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden lg:col-span-3">
-          <div className="bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 p-6 text-white">
-            <div className="flex items-center gap-3 mb-2">
-              <Sparkles size={32} strokeWidth={3} />
-              <h3 className="text-2xl font-black">
-                {t('notebook.aiDailyMission')}
-              </h3>
-              <div className="ml-auto">
-                <div className="bg-white/20 rounded-full px-3 py-1 text-xs font-bold">
-                  10 {t('practice.questions')}
-                </div>
-              </div>
-            </div>
-            <p className="text-purple-100 text-sm">
-              {t('notebook.interleavedPractice')}
-            </p>
-          </div>
-          
-          <div className="p-6">
-            <div className="mb-4">
-              <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                <Brain size={18} className="text-purple-600" />
-                How AI Optimizes Your Learning
-              </h4>
-              <div className="space-y-2 text-sm text-slate-600">
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-purple-500 rounded-full mt-1.5 flex-shrink-0" />
-                  <p><strong>Spaced Repetition:</strong> Questions you haven't seen in a while are prioritized to strengthen long-term retention</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-indigo-500 rounded-full mt-1.5 flex-shrink-0" />
-                  <p><strong>Difficulty Balancing:</strong> Mixes questions at your current mastery level with challenging ones to optimize learning</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5 flex-shrink-0" />
-                  <p><strong>Topic Interleaving:</strong> Alternates between topics to improve concept retention and prevent cramming</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-purple-500 rounded-full mt-1.5 flex-shrink-0" />
-                  <p><strong>Adaptive Focus:</strong> Emphasizes topics from your recent quizzes while maintaining a balanced review</p>
-                </div>
-              </div>
-            </div>
-            
-            <button
-              onClick={() => handleModeSelect('ai-daily', 10)}
-              disabled={loadingMistakes}
-              className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-black text-lg hover:from-purple-700 hover:to-indigo-700 disabled:from-slate-300 disabled:to-slate-400 transition-all flex items-center justify-center gap-2 shadow-lg"
-            >
-              {loadingMistakes ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
-                  Loading...
-                </>
-              ) : (
-                <>
-                  <Sparkles size={20} />
-                  Start AI Daily Mission
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* TIMED MODE */}
-        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
-          <div className="bg-red-500 p-6 text-white">
-            <div className="flex items-center gap-3 mb-2">
-              <Clock size={32} strokeWidth={3} />
-              <h3 className="text-2xl font-black">
-                {t('practice.timed')}
-              </h3>
-            </div>
-            <p className="text-red-100 text-sm">
-              1.25 {t('practice.perQuestion')}
-            </p>
-          </div>
-          
-          <div className="p-6 space-y-4">
-            <p className="text-sm text-slate-600">
-              {t('practice.perfectForExam')}
-            </p>
-
-            {/* Timer Settings */}
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between p-2 bg-slate-50 rounded">
-                <span className="text-slate-700">{t('quiz.showTimer')}</span>
-                <button
-                  onClick={() => setTimedModeTimer(!timedModeTimer)}
-                  className={`w-10 h-5 rounded-full transition-all ${timedModeTimer ? 'bg-green-500' : 'bg-slate-300'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${timedModeTimer ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-slate-50 rounded">
-                <span className="text-slate-700">{t('quiz.countdown')}</span>
-                <button
-                  onClick={() => setTimedModeIsTimed(!timedModeIsTimed)}
-                  className={`w-10 h-5 rounded-full transition-all ${timedModeIsTimed ? 'bg-red-500' : 'bg-slate-300'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${timedModeIsTimed ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">
-                {t('practice.questions')}
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {[5, 10, 20, 36].map(num => (
-                  <button
-                    key={num}
-                    onClick={() => handleModeSelect('timed', num, timedModeTimer, timedModeIsTimed)}
-                    disabled={availableTopics.length === 0}
-                    className="py-2 bg-red-50 border-2 border-red-200 text-red-700 rounded-lg font-bold hover:bg-red-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 transition-all"
-                  >
-                    {num}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* MARATHON MODE */}
-        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
-          <div className="bg-purple-600 p-6 text-white">
-            <div className="flex items-center gap-3 mb-2">
-              <Infinity size={32} strokeWidth={3} />
-              <h3 className="text-2xl font-black">
-                {t('practice.marathon')}
-              </h3>
-            </div>
-            <p className="text-purple-100 text-sm">
-              {t('practice.marathonDesc').split(' - ')[0]}
-            </p>
-          </div>
-          
-          <div className="p-6 space-y-4">
-            <p className="text-sm text-slate-600">
-              {t('practice.takeYourTime')}
-            </p>
-
-            {/* Timer Settings */}
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between p-2 bg-slate-50 rounded">
-                <span className="text-slate-700">{t('quiz.showTimer')}</span>
-                <button
-                  onClick={() => setMarathonModeTimer(!marathonModeTimer)}
-                  className={`w-10 h-5 rounded-full transition-all ${marathonModeTimer ? 'bg-green-500' : 'bg-slate-300'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${marathonModeTimer ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-slate-50 rounded">
-                <span className="text-slate-700">{t('quiz.countdown')}</span>
-                <button
-                  onClick={() => setMarathonModeIsTimed(!marathonModeIsTimed)}
-                  className={`w-10 h-5 rounded-full transition-all ${marathonModeIsTimed ? 'bg-purple-500' : 'bg-slate-300'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${marathonModeIsTimed ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">
-                {t('practice.questions')}
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {[5, 10, 20, 36].map(num => (
-                  <button
-                    key={num}
-                    onClick={() => handleModeSelect('marathon', num, marathonModeTimer, marathonModeIsTimed)}
-                    disabled={availableTopics.length === 0}
-                    className="py-2 bg-purple-50 border-2 border-purple-200 text-purple-700 rounded-lg font-bold hover:bg-purple-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 transition-all"
-                  >
-                    {num}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* CUSTOM MODE */}
-        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
-          <div className="bg-lab-blue p-6 text-white">
-            <div className="flex items-center gap-3 mb-2">
-              <Settings size={32} strokeWidth={3} />
-              <h3 className="text-2xl font-black">
-                {t('practice.custom')}
-              </h3>
-            </div>
-            <p className="text-blue-100 text-sm">
-              {t('practice.customDesc').split(' - ')[0]}
-            </p>
-          </div>
-          
-          <div className="p-6 space-y-4">
-            <p className="text-sm text-slate-600">
-              {t('practice.chooseSpecificTopics')}
-            </p>
-            
-            <button
-              onClick={() => handleModeSelect('custom', 10)}
-              disabled={availableTopics.length === 0}
-              className="w-full py-3 bg-lab-blue text-white rounded-xl font-bold hover:bg-blue-700 disabled:bg-slate-300 transition-all"
-            >
-              {t('practice.configure')}
-            </button>
-          </div>
-        </div>
-
-        {/* MISTAKE NOTEBOOK MODE */}
-        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden lg:col-span-3">
-          <div className="bg-rose-500 p-6 text-white">
-            <div className="flex items-center gap-3 mb-2">
-              <Heart size={32} strokeWidth={3} />
-              <h3 className="text-2xl font-black">
-                {t('notebook.title')}
-              </h3>
-            </div>
-            <p className="text-rose-100 text-sm">
-              {t('notebook.reviewMaster')}
-            </p>
-          </div>
-          
-          <div className="p-6">
-            <p className="text-sm text-slate-600 mb-4">
-              {t('notebook.practiceUntilMaster')}
-            </p>
-            
-            <button
-              onClick={() => handleModeSelect('mistakes', 0)}
-              className="w-full py-3 bg-rose-500 text-white rounded-xl font-bold hover:bg-rose-600 transition-all"
-            >
-              {t('notebook.review')}
-            </button>
-          </div>
-        </div>
-      </div>
+      <FisheyeCarousel onModeSelect={handleCarouselModeSelect} showHeader={false} compact />
     </div>
   );
 }

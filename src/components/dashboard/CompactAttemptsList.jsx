@@ -6,11 +6,11 @@ import { useLanguage } from '../../contexts/LanguageContext';
  * CompactAttemptsList: More compact version of Recent Attempts
  * Adds Topic Badges and better visual hierarchy
  */
-export default function CompactAttemptsList({ attempts = [], onSelectAttempt = () => {}, loading = false }) {
-  const { t } = useLanguage();
+export default function CompactAttemptsList({ attempts = [], onSelectAttempt = () => {}, loading = false, embedded = false }) {
+  const { t, tf, isEnglish } = useLanguage();
 
   const formatDate = (iso) =>
-    new Date(iso).toLocaleDateString('en-GB', {
+    new Date(iso).toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', {
       day: '2-digit',
       month: 'short',
       hour: '2-digit',
@@ -18,7 +18,7 @@ export default function CompactAttemptsList({ attempts = [], onSelectAttempt = (
     });
 
   const formatTime = (ms) => {
-    if (!ms) return 'N/A';
+    if (!ms) return t('common.notAvailable');
     const s = Math.floor(ms / 1000),
       m = Math.floor(s / 60),
       h = Math.floor(m / 60);
@@ -45,14 +45,14 @@ export default function CompactAttemptsList({ attempts = [], onSelectAttempt = (
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-lg border-2 border-slate-100 overflow-hidden">
+    <div className={embedded ? 'h-full' : 'bg-white rounded-2xl shadow-lg border-2 border-slate-100 overflow-hidden'}>
       {/* Header */}
       <div className="bg-slate-50 p-5 border-b-2 border-slate-200 flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
           <Clock className="text-slate-600" size={24} />
-          Recent Attempts
+          {t('dashboard.recentAttempts')}
         </h2>
-        <span className="text-sm text-slate-500 font-medium">{attempts.length} Quiz Session(s)</span>
+        <span className="text-sm text-slate-500 font-medium">{tf('dashboard.quizSessionsCount', { count: attempts.length })}</span>
       </div>
 
       {/* Content */}
@@ -60,8 +60,8 @@ export default function CompactAttemptsList({ attempts = [], onSelectAttempt = (
         {attempts.length === 0 ? (
           <div className="text-center py-12">
             <AlertCircle className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600 text-lg font-semibold mb-2">No attempts yet</p>
-            <p className="text-slate-500 text-sm">Complete a quiz to see your results here</p>
+            <p className="text-slate-600 text-lg font-semibold mb-2">{t('dashboard.noAttempts')}</p>
+            <p className="text-slate-500 text-sm">{t('dashboard.completeQuizSeeResults')}</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -86,7 +86,7 @@ export default function CompactAttemptsList({ attempts = [], onSelectAttempt = (
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <div className="font-bold text-slate-800">
-                        {attempt.correctAnswers}/{attempt.totalQuestions} Correct
+                        {tf('dashboard.correctOutOfTotal', { correct: attempt.correctAnswers, total: attempt.totalQuestions })}
                       </div>
                       {attempt.timeSpent && (
                         <span className="text-xs text-slate-500">
@@ -135,7 +135,7 @@ export default function CompactAttemptsList({ attempts = [], onSelectAttempt = (
       {attempts.length > 0 && (
         <div className="border-t border-slate-200 p-4 bg-slate-50">
           <p className="text-xs text-center text-slate-500">
-            👆 <span className="font-semibold">Click any attempt</span> to see detailed analysis and insights
+            👆 <span className="font-semibold">{t('dashboard.clickAnyAttempt')}</span> {t('dashboard.toSeeDetailedAnalysis')}
           </p>
         </div>
       )}

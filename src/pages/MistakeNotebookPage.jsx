@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import ChemistryLoading from '../components/ChemistryLoading';
 import { quizService } from '../services/quizService';
 import { quizStorage } from '../utils/quizStorage';
 import { useFloating, offset, flip, shift, autoUpdate } from '@floating-ui/react';
@@ -29,17 +30,17 @@ import { srsService } from '../services/srsService';
 // ═══════════════════════════════════════════════════════════════════════════════
 const MASTERY_THRESHOLD = 3;
 const ERROR_TYPES = [
-  { value: 'misread', label: 'Misread Question', color: 'blue' },
-  { value: 'calculation', label: 'Calculation Error', color: 'red' },
-  { value: 'conceptual', label: 'Conceptual Gap', color: 'orange' },
-  { value: 'careless', label: 'Careless Mistake', color: 'yellow' },
-  { value: 'vocab', label: 'Vocabulary Gap', color: 'purple' },
-  { value: 'diagram', label: 'Diagram Misread', color: 'pink' },
+  { value: 'misread', labelKey: 'notebook.errorTypeMisread', color: 'blue' },
+  { value: 'calculation', labelKey: 'notebook.errorTypeCalculation', color: 'red' },
+  { value: 'conceptual', labelKey: 'notebook.errorTypeConceptual', color: 'orange' },
+  { value: 'careless', labelKey: 'notebook.errorTypeCareless', color: 'yellow' },
+  { value: 'vocab', labelKey: 'notebook.errorTypeVocab', color: 'purple' },
+  { value: 'diagram', labelKey: 'notebook.errorTypeDiagram', color: 'pink' },
 ];
 const MASTERY_LEVELS = {
-  new:        { label: 'New', color: 'red' },
-  progressing:{ label: 'Developing', color: 'amber' },
-  near:       { label: 'Near-Mastery', color: 'green' },
+  new:        { labelKey: 'notebook.masteryNew', color: 'red' },
+  progressing:{ labelKey: 'notebook.masteryDeveloping', color: 'amber' },
+  near:       { labelKey: 'notebook.masteryNear', color: 'green' },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -69,10 +70,10 @@ function getSrsBucket(card) {
 }
 
 function getSrsBucketState(bucket) {
-  if (bucket === 'new') return { state: 0, label: 'New', color: 'red' };
-  if (bucket === 'progressing') return { state: 1, label: 'Developing', color: 'amber' };
-  if (bucket === 'near') return { state: 2, label: 'Near-Mastery', color: 'yellow' };
-  return { state: 3, label: 'Mastered', color: 'green' };
+  if (bucket === 'new') return { state: 0, labelKey: 'notebook.masteryNew', color: 'red' };
+  if (bucket === 'progressing') return { state: 1, labelKey: 'notebook.masteryDeveloping', color: 'amber' };
+  if (bucket === 'near') return { state: 2, labelKey: 'notebook.masteryNear', color: 'yellow' };
+  return { state: 3, labelKey: 'notebook.masteryMastered', color: 'green' };
 }
 
 function getSrsContributionWeight(card) {
@@ -230,7 +231,7 @@ function FullQuestionModal({ mistake, errorTag, onTag, onClose }) {
             <div className="flex justify-center">
               <img 
                 src={mistake.Pictureurl} 
-                alt="Question diagram" 
+                alt={t('notebook.questionDiagramAlt')} 
                 className="max-h-96 object-contain rounded-lg border-2 border-slate-200 shadow-md" 
               />
             </div>
@@ -323,7 +324,7 @@ function FullQuestionModal({ mistake, errorTag, onTag, onClose }) {
                 >
                   <div className="flex items-center gap-2">
                     <div className={`w-3 h-3 rounded-full bg-${type.color}-500`} />
-                    <span>{type.label}</span>
+                    <span>{t(type.labelKey)}</span>
                   </div>
                 </button>
               ))}
@@ -433,7 +434,7 @@ function TooltipWithPortal({ trigger, content, placement = 'top' }) {
  * InteractiveTopicHeatmap: Clickable topic density chart with multi-select
  */
 function InteractiveTopicHeatmap({ mistakes, selectedTopics, onTopicToggle }) {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   
   const errorDensity = useMemo(() => {
     const topicMap = {};
@@ -478,7 +479,7 @@ function InteractiveTopicHeatmap({ mistakes, selectedTopics, onTopicToggle }) {
         {t('notebook.errorDensityByTopic')}
       </h3>
       <p className="text-xs text-slate-500 mb-4">
-        {t('notebook.clickTopicsToFilter')} • {selectedTopics.length > 0 && `${selectedTopics.length} selected`}
+        {t('notebook.clickTopicsToFilter')} • {selectedTopics.length > 0 && tf('notebook.selectedCount', { count: selectedTopics.length })}
       </p>
       
       <div className="space-y-3">
@@ -514,12 +515,11 @@ function InteractiveTopicHeatmap({ mistakes, selectedTopics, onTopicToggle }) {
     </div>
   );
 }
-
 /**
  * CalendarHeatmap: 30-day activity visualization
  */
 function CalendarHeatmap({ attempts }) {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   
   const activityMap = useMemo(() => {
     const map = {};
@@ -560,7 +560,15 @@ function CalendarHeatmap({ attempts }) {
       </h3>
       
       <div className="grid grid-cols-7 gap-1">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
+        {[
+          t('notebook.weekdaySunShort'),
+          t('notebook.weekdayMonShort'),
+          t('notebook.weekdayTueShort'),
+          t('notebook.weekdayWedShort'),
+          t('notebook.weekdayThuShort'),
+          t('notebook.weekdayFriShort'),
+          t('notebook.weekdaySatShort'),
+        ].map((day, idx) => (
           <div key={`header-${idx}`} className="text-center text-xs font-bold text-slate-400 h-6">
             {day}
           </div>
@@ -576,7 +584,7 @@ function CalendarHeatmap({ attempts }) {
                 {count > 0 && count}
               </div>
             }
-            content={`${dateStr}: ${count} cleared`}
+            content={tf('notebook.activityTooltipCleared', { date: dateStr, count })}
           />
         ))}
       </div>
@@ -649,10 +657,10 @@ function ImprovementTrendChart({ cards, attempts }) {
           <YAxis />
           <Tooltip />
           <Legend />
-          <Area type="monotone" dataKey="New" stackId="1" stroke="#ef4444" fill="#fecaca" />
-          <Area type="monotone" dataKey="Developing" stackId="1" stroke="#f59e0b" fill="#fed7aa" />
-          <Area type="monotone" dataKey="Near-Mastery" stackId="1" stroke="#eab308" fill="#fef08a" />
-          <Area type="monotone" dataKey="Mastered" stackId="1" stroke="#22c55e" fill="#bbf7d0" />
+          <Area type="monotone" dataKey="New" name={t('notebook.masteryNew')} stackId="1" stroke="#ef4444" fill="#fecaca" />
+          <Area type="monotone" dataKey="Developing" name={t('notebook.masteryDeveloping')} stackId="1" stroke="#f59e0b" fill="#fed7aa" />
+          <Area type="monotone" dataKey="Near-Mastery" name={t('notebook.masteryNear')} stackId="1" stroke="#eab308" fill="#fef08a" />
+          <Area type="monotone" dataKey="Mastered" name={t('notebook.masteryMastered')} stackId="1" stroke="#22c55e" fill="#bbf7d0" />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -1327,10 +1335,7 @@ export default function MistakeNotebookPage({ questions = [] }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4" />
-          <p className="text-slate-600 font-semibold">{t('notebook.loadingMistakes')}</p>
-        </div>
+        <ChemistryLoading />
       </div>
     );
   }
@@ -1453,13 +1458,13 @@ export default function MistakeNotebookPage({ questions = [] }) {
                   <button
                     key={key}
                     onClick={() => toggleMasteryLevel(key)}
-                    className={`w-full px-3 py-2 rounded-lg text-xs font-bold border text-left transition-all ${
+                    className={`w-full text-left px-3 py-2 rounded-lg border-2 font-bold text-sm transition-all flex items-center justify-between ${
                       selectedMasteryLevels.includes(key)
-                        ? `bg-${lvl.color}-500 border-${lvl.color}-500 text-white`
+                        ? `bg-${lvl.color}-50 border-${lvl.color}-400 text-${lvl.color}-800`
                         : `bg-white border-${lvl.color}-200 text-${lvl.color}-700`
                     }`}
                   >
-                    {lvl.label}
+                    {t(lvl.labelKey)}
                     <span className="ml-1 opacity-70">({count})</span>
                   </button>
                 );
@@ -1657,7 +1662,7 @@ export default function MistakeNotebookPage({ questions = [] }) {
               ))}
               {selectedMasteryLevels.map(l => (
                 <span key={l} className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
-                  {MASTERY_LEVELS[l].label}
+                  {t(MASTERY_LEVELS[l].labelKey)}
                   <button onClick={() => toggleMasteryLevel(l)} className="ml-1">✕</button>
                 </span>
               ))}

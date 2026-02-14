@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { quizService } from '../services/quizService';
 import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
 export default function FirebaseTestPage() {
   const { currentUser, userProfile } = useAuth();
+  const { t, tf } = useLanguage();
   const [testResults, setTestResults] = useState({});
   const [testing, setTesting] = useState(false);
 
@@ -16,16 +18,16 @@ export default function FirebaseTestPage() {
     results.auth = {
       status: currentUser ? 'success' : 'error',
       message: currentUser 
-        ? `✅ Authenticated as ${currentUser.email}` 
-        : '❌ Not authenticated'
+        ? tf('firebaseTest.authenticatedAs', { email: currentUser.email })
+        : t('firebaseTest.notAuthenticated')
     };
 
     // Test 2: Check if user profile exists
     results.profile = {
       status: userProfile ? 'success' : 'error',
       message: userProfile 
-        ? `✅ Profile loaded (${userProfile.totalAttempts} attempts)` 
-        : '❌ Profile not found'
+        ? tf('firebaseTest.profileLoadedWithAttempts', { count: userProfile.totalAttempts })
+        : t('firebaseTest.profileNotFound')
     };
 
     // Test 3: Try to save a test attempt
@@ -45,18 +47,18 @@ export default function FirebaseTestPage() {
         const attemptId = await quizService.saveAttempt(currentUser.uid, testAttempt);
         results.saveAttempt = {
           status: 'success',
-          message: `✅ Test attempt saved! ID: ${attemptId}`
+          message: tf('firebaseTest.testAttemptSavedWithId', { id: attemptId })
         };
       } catch (error) {
         results.saveAttempt = {
           status: 'error',
-          message: `❌ Failed to save attempt: ${error.message}`
+          message: tf('firebaseTest.failedSaveAttemptWithReason', { reason: error.message })
         };
       }
     } else {
       results.saveAttempt = {
         status: 'warning',
-        message: '⚠️ Skipped - not authenticated'
+        message: t('firebaseTest.skippedNotAuthenticated')
       };
     }
 
@@ -66,18 +68,18 @@ export default function FirebaseTestPage() {
         const attempts = await quizService.getUserAttempts(currentUser.uid, 5);
         results.fetchAttempts = {
           status: 'success',
-          message: `✅ Fetched ${attempts.length} attempts`
+          message: tf('firebaseTest.fetchedAttemptsCount', { count: attempts.length })
         };
       } catch (error) {
         results.fetchAttempts = {
           status: 'error',
-          message: `❌ Failed to fetch attempts: ${error.message}`
+          message: tf('firebaseTest.failedFetchAttemptsWithReason', { reason: error.message })
         };
       }
     } else {
       results.fetchAttempts = {
         status: 'warning',
-        message: '⚠️ Skipped - not authenticated'
+        message: t('firebaseTest.skippedNotAuthenticated')
       };
     }
 
@@ -86,12 +88,12 @@ export default function FirebaseTestPage() {
       const leaderboard = await quizService.getWeeklyLeaderboard(5);
       results.leaderboard = {
         status: 'success',
-        message: `✅ Leaderboard loaded (${leaderboard.length} users)`
+        message: tf('firebaseTest.leaderboardLoadedUsersCount', { count: leaderboard.length })
       };
     } catch (error) {
       results.leaderboard = {
         status: 'error',
-        message: `❌ Failed to load leaderboard: ${error.message}`
+        message: tf('firebaseTest.failedLoadLeaderboardWithReason', { reason: error.message })
       };
     }
 
@@ -115,9 +117,9 @@ export default function FirebaseTestPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl shadow-xl p-6 text-white">
-        <h1 className="text-3xl font-black">Firebase Connection Test</h1>
+        <h1 className="text-3xl font-black">{t('firebaseTest.title')}</h1>
         <p className="text-purple-100 mt-1">
-          Diagnose data saving issues
+          {t('firebaseTest.subtitle')}
         </p>
       </div>
 
@@ -131,17 +133,17 @@ export default function FirebaseTestPage() {
             {testing ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                Running Tests...
+                {t('firebaseTest.runningTests')}
               </>
             ) : (
-              'Run Firebase Tests'
+              t('firebaseTest.runFirebaseTests')
             )}
           </button>
         </div>
 
         {Object.keys(testResults).length > 0 && (
           <div className="border-t border-slate-200 p-6 space-y-4">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Test Results</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">{t('firebaseTest.testResults')}</h2>
             
             {Object.entries(testResults).map(([test, result]) => (
               <div
@@ -164,33 +166,33 @@ export default function FirebaseTestPage() {
       </div>
 
       <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
-        <h3 className="font-bold text-blue-900 mb-2">💡 How to interpret results:</h3>
+        <h3 className="font-bold text-blue-900 mb-2">{t('firebaseTest.howToInterpretResults')}</h3>
         <ul className="text-sm text-blue-800 space-y-1">
-          <li><strong>Auth:</strong> Should show your email if logged in</li>
-          <li><strong>Profile:</strong> Should load your user data from Firestore</li>
-          <li><strong>Save Attempt:</strong> Should successfully save a test quiz result</li>
-          <li><strong>Fetch Attempts:</strong> Should retrieve your quiz history</li>
-          <li><strong>Leaderboard:</strong> Should load ranking data</li>
+          <li><strong>{t('firebaseTest.authLabel')}:</strong> {t('firebaseTest.authInterpret')}</li>
+          <li><strong>{t('firebaseTest.profileLabel')}:</strong> {t('firebaseTest.profileInterpret')}</li>
+          <li><strong>{t('firebaseTest.saveAttemptLabel')}:</strong> {t('firebaseTest.saveAttemptInterpret')}</li>
+          <li><strong>{t('firebaseTest.fetchAttemptsLabel')}:</strong> {t('firebaseTest.fetchAttemptsInterpret')}</li>
+          <li><strong>{t('firebaseTest.leaderboardLabel')}:</strong> {t('firebaseTest.leaderboardInterpret')}</li>
         </ul>
       </div>
 
       <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4">
-        <h3 className="font-bold text-red-900 mb-2">🔧 Common Issues:</h3>
+        <h3 className="font-bold text-red-900 mb-2">{t('firebaseTest.commonIssues')}</h3>
         <ul className="text-sm text-red-800 space-y-2">
           <li>
-            <strong>❌ Not authenticated:</strong> Make sure you're logged in
+            <strong>{t('firebaseTest.issueNotAuthenticatedTitle')}:</strong> {t('firebaseTest.issueNotAuthenticatedDesc')}
           </li>
           <li>
-            <strong>❌ Failed to save/fetch:</strong> Check Firebase Firestore rules
+            <strong>{t('firebaseTest.issueFailedSaveFetchTitle')}:</strong> {t('firebaseTest.issueFailedSaveFetchDesc')}
           </li>
           <li>
-            <strong>❌ Permission denied:</strong> Update Firestore security rules to allow read/write
+            <strong>{t('firebaseTest.issuePermissionDeniedTitle')}:</strong> {t('firebaseTest.issuePermissionDeniedDesc')}
           </li>
         </ul>
       </div>
 
       <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4">
-        <h3 className="font-bold text-amber-900 mb-2">📋 Recommended Firestore Rules:</h3>
+        <h3 className="font-bold text-amber-900 mb-2">{t('firebaseTest.recommendedFirestoreRules')}</h3>
         <pre className="bg-slate-900 text-green-400 p-4 rounded-lg overflow-x-auto text-xs">
 {`rules_version = '2';
 service cloud.firestore {

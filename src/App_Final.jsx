@@ -19,7 +19,7 @@ import MistakeNotebookPage from './pages/MistakeNotebookPage';
 import FirebaseTestPage from './pages/FirebaseTestPage';
 import DebugDashboard from './pages/DebugDashboard';
 import { useQuizData } from './hooks/useQuizData';
-import { Beaker } from 'lucide-react';
+import ChemistryLoading from './components/ChemistryLoading';
 import ChemStore from './components/ChemStore';
 import TokenLog from './components/TokenLog';
 
@@ -29,14 +29,15 @@ function AppContent() {
   const location = useLocation();
   const { questions, loading, error } = useQuizData(SHEET_URL);
   const isNotebookRoute = location.pathname === '/notebook';
+  const noShellRoutes = new Set(['/dashboard', '/login', '/register']);
+  const useNoShell = noShellRoutes.has(location.pathname);
+  const hideHeaderRoutes = new Set(['/login', '/register']);
+  const showHeader = !hideHeaderRoutes.has(location.pathname);
 
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <Beaker className="animate-bounce text-academic-gold w-12 h-12 mx-auto mb-4" />
-          <p className="text-academic-slate font-semibold">Loading questions...</p>
-        </div>
+        <ChemistryLoading persistKey="startup" />
       </div>
     );
   }
@@ -54,8 +55,8 @@ function AppContent() {
 
   return (
     <>
-      <Header />
-      <div className={isNotebookRoute ? '' : 'container mx-auto px-4 py-6'}>
+      {showHeader && <Header />}
+      <div className={useNoShell ? '' : isNotebookRoute ? '' : 'container mx-auto px-4 py-6'}>
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
@@ -204,14 +205,24 @@ function AppContent() {
   );
 }
 
+function AppShell() {
+  const location = useLocation();
+  const noShellRoutes = new Set(['/dashboard', '/login', '/register']);
+  const useNoShell = noShellRoutes.has(location.pathname);
+
+  return (
+    <div className={useNoShell ? 'min-h-screen' : 'min-h-screen bg-gray-50'}>
+      <AppContent />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <LanguageProvider>
       <AuthProvider>
         <Router>
-          <div className="min-h-screen bg-gray-50">
-            <AppContent />
-          </div>
+          <AppShell />
         </Router>
       </AuthProvider>
     </LanguageProvider>

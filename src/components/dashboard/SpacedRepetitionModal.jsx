@@ -3,6 +3,7 @@ import { X, Play, Eye, CheckSquare, Filter, Tag, Layers, ArrowRight, Timer, Zap 
 import { motion } from 'framer-motion';
 import { srsService } from '../../services/srsService';
 import { quizStorage } from '../../utils/quizStorage';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 /**
  * SpacedRepetitionModal - COMPLETE ENHANCED VERSION with SRS Service
@@ -23,6 +24,7 @@ export default function SpacedRepetitionModal({
   onClose, 
   onStartReview 
 }) {
+  const { t, tf } = useLanguage();
   // Review modes: '5-mistake' (default), 'single', 'batch'
   const [reviewMode, setReviewMode] = useState('5-mistake');
   const [questionCount, setQuestionCount] = useState(5);
@@ -47,7 +49,7 @@ export default function SpacedRepetitionModal({
         setSelectedCardIds(new Set(cards.map(card => card.id)));
       } catch (err) {
         console.error('Error loading due cards:', err);
-        setError('Failed to load due cards. Please try again.');
+        setError(t('srs.failedLoadDueCardsTryAgain'));
       } finally {
         setIsLoading(false);
       }
@@ -191,7 +193,7 @@ export default function SpacedRepetitionModal({
     }
     
     if (selectedCards.length === 0) {
-      alert('Please select at least one question to review.');
+      alert(t('srs.pleaseSelectAtLeastOne'));
       return;
     }
 
@@ -208,14 +210,14 @@ export default function SpacedRepetitionModal({
     const selectedQuestions = questions.filter(q => questionIds.includes(q.ID));
 
     if (selectedQuestions.length === 0) {
-      alert('Questions are still loading. Please wait a moment and try again.');
+      alert(t('srs.questionsStillLoading'));
       return;
     }
 
     quizStorage.clearQuizData();
     quizStorage.saveSelectedQuestions(selectedQuestions);
     localStorage.setItem('quiz_timer_enabled', String(enableTimer));
-    localStorage.setItem('quiz_timed_mode', String(timedMode));
+    localStorage.setItem('quiz_is_timed_mode', String(timedMode));
     localStorage.setItem('quiz_review_mode', reviewMode);
     
     window.location.href = '/quiz';
@@ -232,7 +234,7 @@ export default function SpacedRepetitionModal({
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl p-8 shadow-2xl">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
-          <p className="text-center mt-4 text-slate-600">Loading due cards...</p>
+          <p className="text-center mt-4 text-slate-600">{t('srs.loadingDueCards')}</p>
         </div>
       </div>
     );
@@ -248,7 +250,7 @@ export default function SpacedRepetitionModal({
             onClick={onClose}
             className="mt-6 w-full px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg font-semibold transition-all"
           >
-            Close
+            {t('common.close')}
           </button>
         </div>
       </div>
@@ -270,9 +272,9 @@ export default function SpacedRepetitionModal({
         {/* Header */}
         <div className="border-b p-6 flex justify-between items-center flex-shrink-0 bg-gradient-to-r from-purple-50 to-pink-50">
           <div>
-            <h2 className="text-2xl font-black text-slate-800">Spaced Repetition Review</h2>
+            <h2 className="text-2xl font-black text-slate-800">{t('srs.title')}</h2>
             <p className="text-sm text-slate-600 mt-1">
-              {availableReviews.length} question{availableReviews.length !== 1 ? 's' : ''} need review
+              {tf('srs.questionsNeedReviewCount', { count: availableReviews.length })}
             </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg transition-all">
@@ -284,7 +286,7 @@ export default function SpacedRepetitionModal({
           {/* Review Mode Selector */}
           <div>
             <label className="block text-sm font-black text-slate-700 uppercase tracking-wider mb-3">
-              Review Mode
+              {t('srs.reviewMode')}
             </label>
             <div className="grid grid-cols-3 gap-3">
               {/* Quick Review (5-Mistake Default) */}
@@ -299,15 +301,15 @@ export default function SpacedRepetitionModal({
                 <div className="flex items-center gap-2 mb-2">
                   <Zap className={reviewMode === '5-mistake' ? 'text-purple-600' : 'text-slate-400'} size={20} />
                   <span className={`font-bold ${reviewMode === '5-mistake' ? 'text-purple-900' : 'text-slate-600'}`}>
-                    Quick Review
+                    {t('srs.quickReview')}
                   </span>
                 </div>
                 <div className="text-xs text-slate-500 text-left">
-                  AI selects random questions
+                  {t('srs.aiSelectsRandomQuestions')}
                 </div>
                 {reviewMode === '5-mistake' && (
                   <div className="mt-2 text-xs bg-purple-600 text-white px-2 py-1 rounded-full font-bold inline-block">
-                    ✓ DEFAULT
+                    {t('srs.defaultBadge')}
                   </div>
                 )}
               </button>
@@ -324,10 +326,10 @@ export default function SpacedRepetitionModal({
                 <div className="flex items-center gap-2 mb-2">
                   <Eye className={reviewMode === 'single' ? 'text-purple-600' : 'text-slate-400'} size={20} />
                   <span className={`font-bold ${reviewMode === 'single' ? 'text-purple-900' : 'text-slate-600'}`}>
-                    Single Question
+                    {t('srs.singleQuestion')}
                   </span>
                 </div>
-                <div className="text-xs text-slate-500 text-left">Review one mistake</div>
+                <div className="text-xs text-slate-500 text-left">{t('srs.reviewOneMistake')}</div>
               </button>
 
               {/* Custom Batch */}
@@ -342,10 +344,10 @@ export default function SpacedRepetitionModal({
                 <div className="flex items-center gap-2 mb-2">
                   <CheckSquare className={reviewMode === 'batch' ? 'text-purple-600' : 'text-slate-400'} size={20} />
                   <span className={`font-bold ${reviewMode === 'batch' ? 'text-purple-900' : 'text-slate-600'}`}>
-                    Custom Batch
+                    {t('srs.customBatch')}
                   </span>
                 </div>
-                <div className="text-xs text-slate-500 text-left">Select specific cards</div>
+                <div className="text-xs text-slate-500 text-left">{t('srs.selectSpecificCards')}</div>
               </button>
             </div>
           </div>
@@ -355,7 +357,7 @@ export default function SpacedRepetitionModal({
             <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-5 border-2 border-purple-200">
               <label className="block text-sm font-black text-purple-900 mb-3 flex items-center gap-2">
                 <CheckSquare size={16} />
-                Number of Questions
+                {t('srs.numberOfQuestions')}
               </label>
               <div className="flex items-center gap-4 mb-3">
                 <input
@@ -385,19 +387,19 @@ export default function SpacedRepetitionModal({
                   onClick={() => setQuestionCount(5)} 
                   className="px-3 py-1.5 bg-white hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold border border-purple-200 transition-all"
                 >
-                  5 Questions
+                  {tf('srs.nQuestions', { count: 5 })}
                 </button>
                 <button 
                   onClick={() => setQuestionCount(10)} 
                   className="px-3 py-1.5 bg-white hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold border border-purple-200 transition-all"
                 >
-                  10 Questions
+                  {tf('srs.nQuestions', { count: 10 })}
                 </button>
                 <button 
                   onClick={() => setQuestionCount(filteredReviews.length)} 
                   className="px-3 py-1.5 bg-white hover:bg-purple-100 text-purple-700 rounded-lg text-xs font-bold border border-purple-200 transition-all"
                 >
-                  All ({filteredReviews.length})
+                  {tf('srs.allCount', { count: filteredReviews.length })}
                 </button>
               </div>
             </div>
@@ -407,7 +409,7 @@ export default function SpacedRepetitionModal({
           <div className="bg-blue-50 rounded-xl p-5 border-2 border-blue-200">
             <div className="flex items-center gap-2 mb-4">
               <Timer className="text-blue-600" size={20} />
-              <h3 className="font-black text-blue-900">Timer Settings</h3>
+              <h3 className="font-black text-blue-900">{t('srs.timerSettings')}</h3>
             </div>
             
             <div className="space-y-3">
@@ -430,10 +432,10 @@ export default function SpacedRepetitionModal({
                   )}
                 </div>
                 <span className={`font-bold flex-1 text-left ${enableTimer ? 'text-blue-900' : 'text-slate-600'}`}>
-                  Enable Timer
+                  {t('srs.enableTimer')}
                 </span>
                 {enableTimer && (
-                  <span className="text-xs bg-white px-2 py-1 rounded font-bold text-blue-700">ON</span>
+                  <span className="text-xs bg-white px-2 py-1 rounded font-bold text-blue-700">{t('common.on')}</span>
                 )}
               </button>
 
@@ -457,19 +459,19 @@ export default function SpacedRepetitionModal({
                   )}
                 </div>
                 <span className={`font-bold flex-1 text-left ${timedMode && enableTimer ? 'text-amber-900' : 'text-slate-600'}`}>
-                  Timed Mode (60s per question)
+                  {t('srs.timedMode75sPerQuestion')}
                 </span>
                 {timedMode && enableTimer && (
-                  <span className="text-xs bg-white px-2 py-1 rounded font-bold text-amber-700">⏱️ ON</span>
+                  <span className="text-xs bg-white px-2 py-1 rounded font-bold text-amber-700">⏱️ {t('common.on')}</span>
                 )}
               </button>
 
               <p className="text-xs text-blue-700 italic pl-8">
                 💡 {timedMode && enableTimer 
-                  ? 'You must answer within 60 seconds per question' 
+                  ? t('srs.mustAnswerWithin75SecondsPerQuestion') 
                   : enableTimer 
-                  ? 'Timer tracks your speed but no time limit' 
-                  : 'No timer tracking'}
+                  ? t('srs.timerTracksSpeedNoLimit') 
+                  : t('srs.noTimerTracking')}
               </p>
             </div>
           </div>
@@ -479,9 +481,9 @@ export default function SpacedRepetitionModal({
             <div className="bg-slate-50 rounded-xl p-5 border-2 border-slate-200">
               <div className="flex items-center gap-2 mb-4">
                 <Filter size={18} className="text-slate-600" />
-                <h3 className="font-black text-slate-800">Select Cards to Review</h3>
+                <h3 className="font-black text-slate-800">{t('srs.selectCardsToReview')}</h3>
                 <span className="ml-auto text-xs bg-white px-3 py-1 rounded-full font-bold text-slate-600 border border-slate-200">
-                  {selectedCardIds.size} / {filteredReviews.length} selected
+                  {tf('srs.selectedCountOutOfTotal', { selected: selectedCardIds.size, total: filteredReviews.length })}
                 </span>
               </div>
               
@@ -492,7 +494,7 @@ export default function SpacedRepetitionModal({
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm transition-all flex items-center gap-2"
                 >
                   <CheckSquare size={16} />
-                  {selectedCardIds.size === filteredReviews.length ? 'Deselect All' : 'Select All'}
+                  {selectedCardIds.size === filteredReviews.length ? t('srs.deselectAll') : t('srs.selectAll')}
                 </button>
                 
                 {/* Topic/Subtopic Filters */}
@@ -530,7 +532,7 @@ export default function SpacedRepetitionModal({
                 {Object.entries(groupedByDate).map(([date, cards]) => (
                   <div key={date} className="border-2 border-slate-200 rounded-lg overflow-hidden">
                     <div className="bg-slate-100 px-4 py-2 font-bold text-sm text-slate-700">
-                      Due: {date}
+                      {t('srs.dueLabel')}: {date}
                     </div>
                     <div className="divide-y divide-slate-200">
                       {cards.map(card => (
@@ -556,7 +558,7 @@ export default function SpacedRepetitionModal({
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-bold">
-                                {card.topic || 'No Topic'}
+                                {card.topic || t('srs.noTopic')}
                               </span>
                               {card.subtopic && (
                                 <>
@@ -571,14 +573,14 @@ export default function SpacedRepetitionModal({
                             <div 
                               className="text-sm text-slate-600 line-clamp-2"
                               dangerouslySetInnerHTML={{ 
-                                __html: `Question ID: ${card.questionId}` 
+                                __html: `${t('srs.questionIdLabel')}: ${card.questionId}` 
                               }}
                             />
                             
                             <div className="flex gap-4 mt-2 text-xs text-slate-500">
-                              <span>📅 Interval: {card.interval}</span>
-                              <span>🔄 Attempt: {card.attemptNumber || 1}</span>
-                              <span>⭐ Ease: {card.easeFactor?.toFixed(2) || '2.50'}</span>
+                              <span>📅 {t('srs.intervalLabel')}: {card.interval}</span>
+                              <span>🔄 {t('srs.attemptLabel')}: {card.attemptNumber || 1}</span>
+                              <span>⭐ {t('srs.easeLabel')}: {card.easeFactor?.toFixed(2) || '2.50'}</span>
                             </div>
                           </div>
                         </div>
@@ -589,7 +591,7 @@ export default function SpacedRepetitionModal({
                 
                 {filteredReviews.length === 0 && (
                   <div className="text-center py-12">
-                    <p className="text-slate-500">No due cards match your filters</p>
+                    <p className="text-slate-500">{t('srs.noDueCardsMatchFilters')}</p>
                   </div>
                 )}
               </div>
@@ -606,10 +608,10 @@ export default function SpacedRepetitionModal({
           >
             <Play size={22} fill="currentColor" />
             {reviewMode === '5-mistake' 
-              ? `Start Quick Review (${effectiveQuestionCount} ${effectiveQuestionCount === 1 ? 'Question' : 'Questions'})` 
+              ? tf('srs.startQuickReviewCount', { count: effectiveQuestionCount })
               : reviewMode === 'single'
-              ? 'Start Single Review'
-              : `Start Batch Review (${effectiveQuestionCount} ${effectiveQuestionCount === 1 ? 'Question' : 'Questions'})`}
+              ? t('srs.startSingleReview')
+              : tf('srs.startBatchReviewCount', { count: effectiveQuestionCount })}
           </button>
           
           {/* Settings Summary */}
@@ -617,10 +619,10 @@ export default function SpacedRepetitionModal({
             {enableTimer && (
               <span className="flex items-center gap-1">
                 <Timer size={12} />
-                {timedMode ? 'Timed Mode: 60s/question' : 'Timer tracking enabled'}
+                {timedMode ? t('srs.timedModeSummary75') : t('srs.timerTrackingEnabled')}
               </span>
             )}
-            {!enableTimer && <span className="text-slate-400">No timer</span>}
+            {!enableTimer && <span className="text-slate-400">{t('srs.noTimer')}</span>}
           </div>
         </div>
       </motion.div>

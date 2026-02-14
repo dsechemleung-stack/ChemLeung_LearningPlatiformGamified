@@ -25,7 +25,7 @@ import {
  * - Real-time updates
  */
 export default function StudyPlannerCalendar({ mistakes = [] }) {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const navigate = useNavigate();
   
   // State management
@@ -72,7 +72,7 @@ export default function StudyPlannerCalendar({ mistakes = [] }) {
     month: currentDate.getMonth(),
   }), [currentDate]);
   
-  const monthName = useMemo(() => 
+  const monthName = useMemo(() =>
     currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   , [currentDate]);
   
@@ -186,8 +186,8 @@ export default function StudyPlannerCalendar({ mistakes = [] }) {
               <CalendarIcon className="text-white" size={28} />
             </div>
             <div>
-              <h3 className="text-2xl font-black text-white">Study Planner</h3>
-              <p className="text-sm text-indigo-100">Smart scheduling with spaced repetition</p>
+              <h3 className="text-2xl font-black text-white">{t('calendar.studyPlannerTitle')}</h3>
+              <p className="text-sm text-indigo-100">{t('calendar.studyPlannerSubtitle')}</p>
             </div>
           </div>
           <button
@@ -195,7 +195,7 @@ export default function StudyPlannerCalendar({ mistakes = [] }) {
             className="px-4 py-2 bg-white text-indigo-600 rounded-lg font-bold text-sm hover:bg-indigo-50 transition-all flex items-center gap-2"
           >
             <Plus size={18} />
-            Add Exam/Quiz
+            {t('calendar.addExamQuiz')}
           </button>
         </div>
         
@@ -214,7 +214,7 @@ export default function StudyPlannerCalendar({ mistakes = [] }) {
               onClick={goToToday}
               className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-bold text-white transition-all"
             >
-              Today
+              {t('calendar.today')}
             </button>
           </div>
           
@@ -231,7 +231,15 @@ export default function StudyPlannerCalendar({ mistakes = [] }) {
       <div className="p-6">
         {/* Day Headers */}
         <div className="grid grid-cols-7 gap-2 mb-2">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+          {[
+            t('calendar.weekdaySunShort'),
+            t('calendar.weekdayMonShort'),
+            t('calendar.weekdayTueShort'),
+            t('calendar.weekdayWedShort'),
+            t('calendar.weekdayThuShort'),
+            t('calendar.weekdayFriShort'),
+            t('calendar.weekdaySatShort'),
+          ].map((day) => (
             <div key={day} className="text-center text-xs font-black text-slate-500 py-2">
               {day}
             </div>
@@ -288,7 +296,7 @@ export default function StudyPlannerCalendar({ mistakes = [] }) {
                 {/* Hover Tooltip */}
                 {hoveredDate === dateStr && dayEvents.length > 0 && (
                   <div className="absolute left-0 top-full mt-2 z-50 bg-slate-900 text-white text-xs rounded-lg p-2 shadow-2xl min-w-[200px]">
-                    <div className="font-bold mb-1">{dayEvents.length} event{dayEvents.length > 1 ? 's' : ''}</div>
+                    <div className="font-bold mb-1">{tf('calendar.eventsCount', { count: dayEvents.length, plural: dayEvents.length > 1 ? 's' : '' })}</div>
                     {dayEvents.slice(0, 3).map((e, i) => (
                       <div key={i} className="truncate opacity-90">
                         {EVENT_ICONS[e.type]} {e.title}
@@ -304,14 +312,21 @@ export default function StudyPlannerCalendar({ mistakes = [] }) {
         {/* Legend */}
         <div className="mt-6 pt-6 border-t border-slate-200">
           <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3">
-            Event Types
+            {t('calendar.eventTypes')}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {Object.entries(EVENT_TYPES).map(([key, type]) => (
               <div key={key} className="flex items-center gap-2 text-sm">
                 <span className="text-xl">{EVENT_ICONS[type]}</span>
                 <span className="text-slate-600 font-semibold">
-                  {key.split('_').map(w => w[0] + w.slice(1).toLowerCase()).join(' ')}
+                  {(() => {
+                    if (type === EVENT_TYPES.MAJOR_EXAM) return t('calendar.eventTypeMajorExam');
+                    if (type === EVENT_TYPES.SMALL_QUIZ) return t('calendar.eventTypeSmallQuiz');
+                    if (type === EVENT_TYPES.STUDY_SUGGESTION) return t('calendar.eventTypeStudySuggestion');
+                    if (type === EVENT_TYPES.MISTAKE_REVIEW) return t('calendar.eventTypeMistakeReview');
+                    if (type === EVENT_TYPES.COMPLETED_ACTIVITY) return t('calendar.eventTypeCompletedActivity');
+                    return key.split('_').map(w => w[0] + w.slice(1).toLowerCase()).join(' ');
+                  })()}
                 </span>
               </div>
             ))}
@@ -357,7 +372,7 @@ export default function StudyPlannerCalendar({ mistakes = [] }) {
  * Date Detail Modal - Shows events for a selected date
  */
 function DateDetailModal({ dateStr, events, onClose, onEventClick, onAddEvent, onDeleteEvent }) {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   
   const formattedDate = useMemo(() => {
     const date = new Date(dateStr);
@@ -390,7 +405,7 @@ function DateDetailModal({ dateStr, events, onClose, onEventClick, onAddEvent, o
             </button>
           </div>
           <p className="text-indigo-100 text-sm">
-            {events.length} scheduled event{events.length !== 1 ? 's' : ''}
+            {tf('calendar.scheduledEventsCount', { count: events.length, plural: events.length !== 1 ? 's' : '' })}
           </p>
         </div>
         
@@ -399,13 +414,13 @@ function DateDetailModal({ dateStr, events, onClose, onEventClick, onAddEvent, o
           {events.length === 0 ? (
             <div className="text-center py-12">
               <CalendarIcon size={48} className="text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-400 font-semibold mb-4">No events scheduled</p>
+              <p className="text-slate-400 font-semibold mb-4">{t('calendar.noEventsScheduled')}</p>
               <button
                 onClick={onAddEvent}
                 className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-all"
               >
                 <Plus size={18} className="inline mr-2" />
-                Add Event
+                {t('calendar.addEvent')}
               </button>
             </div>
           ) : (
@@ -424,7 +439,7 @@ function DateDetailModal({ dateStr, events, onClose, onEventClick, onAddEvent, o
                 className="w-full py-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-600 font-bold hover:border-indigo-400 hover:text-indigo-600 transition-all flex items-center justify-center gap-2"
               >
                 <Plus size={18} />
-                Add Another Event
+                {t('calendar.addAnotherEvent')}
               </button>
             </div>
           )}
@@ -438,6 +453,7 @@ function DateDetailModal({ dateStr, events, onClose, onEventClick, onAddEvent, o
  * Event Card Component
  */
 function EventCard({ event, onClick, onDelete }) {
+  const { t, tf } = useLanguage();
   const getEventStyle = () => {
     switch (event.type) {
       case EVENT_TYPES.MAJOR_EXAM:
@@ -488,13 +504,13 @@ function EventCard({ event, onClick, onDelete }) {
       {event.mcqCount && (
         <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
           <Target size={14} />
-          {event.mcqCount} MCQs
+          {tf('calendar.mcqCount', { count: event.mcqCount })}
         </div>
       )}
       
       {isClickable && (
         <div className="mt-2 text-xs font-bold text-indigo-600">
-          Click to start practice →
+          {t('calendar.clickToStartPractice')}
         </div>
       )}
     </div>
@@ -505,6 +521,7 @@ function EventCard({ event, onClick, onDelete }) {
  * Add Event Modal
  */
 function AddEventModal({ initialDate, onClose, onSave }) {
+  const { t } = useLanguage();
   const [eventType, setEventType] = useState(EVENT_TYPES.MAJOR_EXAM);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(initialDate || new Date().toISOString().split('T')[0]);
@@ -515,7 +532,7 @@ function AddEventModal({ initialDate, onClose, onSave }) {
     e.preventDefault();
     
     if (!title || !date || !topic) {
-      alert('Please fill in all required fields');
+      alert(t('calendar.pleaseFillRequiredFields'));
       return;
     }
     
@@ -545,7 +562,7 @@ function AddEventModal({ initialDate, onClose, onSave }) {
           {/* Header */}
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white rounded-t-2xl">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-2xl font-black">Add Exam/Quiz</h3>
+              <h3 className="text-2xl font-black">{t('calendar.addExamQuiz')}</h3>
               <button
                 type="button"
                 onClick={onClose}
@@ -555,7 +572,7 @@ function AddEventModal({ initialDate, onClose, onSave }) {
               </button>
             </div>
             <p className="text-indigo-100 text-sm">
-              Automatic prep suggestions will be generated
+              {t('calendar.automaticPrepSuggestionsWillBeGenerated')}
             </p>
           </div>
           
@@ -564,7 +581,7 @@ function AddEventModal({ initialDate, onClose, onSave }) {
             {/* Event Type */}
             <div>
               <label className="block text-sm font-black text-slate-700 mb-2">
-                Event Type *
+                {t('calendar.eventTypeRequired')}
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -576,7 +593,7 @@ function AddEventModal({ initialDate, onClose, onSave }) {
                       : 'border-slate-200 text-slate-600 hover:border-slate-300'
                   }`}
                 >
-                  🚩 Major Exam
+                  🚩 {t('calendar.majorExam')}
                 </button>
                 <button
                   type="button"
@@ -587,7 +604,7 @@ function AddEventModal({ initialDate, onClose, onSave }) {
                       : 'border-slate-200 text-slate-600 hover:border-slate-300'
                   }`}
                 >
-                  ✏️ Small Quiz
+                  ✏️ {t('calendar.smallQuiz')}
                 </button>
               </div>
             </div>
@@ -595,13 +612,13 @@ function AddEventModal({ initialDate, onClose, onSave }) {
             {/* Title */}
             <div>
               <label className="block text-sm font-black text-slate-700 mb-2">
-                Title *
+                {t('calendar.titleRequired')}
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Chemistry Midterm Exam"
+                placeholder={t('calendar.titlePlaceholder')}
                 required
                 className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-indigo-500 focus:outline-none font-semibold"
               />
@@ -610,7 +627,7 @@ function AddEventModal({ initialDate, onClose, onSave }) {
             {/* Date */}
             <div>
               <label className="block text-sm font-black text-slate-700 mb-2">
-                Date *
+                {t('calendar.dateRequired')}
               </label>
               <input
                 type="date"
@@ -624,13 +641,13 @@ function AddEventModal({ initialDate, onClose, onSave }) {
             {/* Topic */}
             <div>
               <label className="block text-sm font-black text-slate-700 mb-2">
-                Topic *
+                {t('calendar.topicRequired')}
               </label>
               <input
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g., Organic Chemistry"
+                placeholder={t('calendar.topicPlaceholder')}
                 required
                 className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-indigo-500 focus:outline-none font-semibold"
               />
@@ -639,13 +656,13 @@ function AddEventModal({ initialDate, onClose, onSave }) {
             {/* Subtopic */}
             <div>
               <label className="block text-sm font-black text-slate-700 mb-2">
-                Subtopic (Optional)
+                {t('calendar.subtopicOptional')}
               </label>
               <input
                 type="text"
                 value={subtopic}
                 onChange={(e) => setSubtopic(e.target.value)}
-                placeholder="e.g., Reaction Mechanisms"
+                placeholder={t('calendar.subtopicPlaceholder')}
                 className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-indigo-500 focus:outline-none font-semibold"
               />
             </div>
@@ -655,11 +672,13 @@ function AddEventModal({ initialDate, onClose, onSave }) {
               <div className="flex items-start gap-2">
                 <Zap size={16} className="text-indigo-600 flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-indigo-800">
-                  <strong className="font-black">Automatic Suggestions:</strong>
+                  <strong className="font-black">{t('calendar.automaticSuggestions')}</strong>
                   {eventType === EVENT_TYPES.MAJOR_EXAM ? (
-                    <> Study plan with 10/20/40 MCQs (10-7, 6-4, 3-1 days before)</>
+                    <> {t('calendar.automaticSuggestionsMajor')}
+                    </>
                   ) : (
-                    <> Quick review with 5-15 MCQs (3-1 days before)</>
+                    <> {t('calendar.automaticSuggestionsSmall')}
+                    </>
                   )}
                 </div>
               </div>
@@ -673,14 +692,14 @@ function AddEventModal({ initialDate, onClose, onSave }) {
               onClick={onClose}
               className="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold transition-all"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-lg font-bold transition-all flex items-center justify-center gap-2"
             >
               <CheckCircle size={18} />
-              Create Event
+              {t('calendar.createEvent')}
             </button>
           </div>
         </form>

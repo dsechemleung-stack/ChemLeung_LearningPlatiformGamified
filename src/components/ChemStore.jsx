@@ -102,23 +102,38 @@ export default function ChemStore() {
           <ArrowLeft size={20} />
         </button>
         
-        <div className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl shadow-xl p-6 text-white">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-black flex items-center gap-3 mb-2">
-                <ShoppingBag size={32} strokeWidth={3} />
-                {t('store.title')}
-              </h1>
-              <p className="text-white/90 font-semibold">
-                {t('store.subtitle')}
-              </p>
-            </div>
+        <div className="flex-1 receipt-widget">
+          <div className="receipt-perforation" />
+          <div className="receipt-widget-content p-6">
+            <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-amber">
+              <ShoppingBag size={32} className="text-amber-700" />
+              {t('store.title')}
+            </h1>
+            <p className="text-slate-700 mt-1 font-semibold">
+              {t('store.subtitle')}
+            </p>
+            <div className="flex items-start justify-between gap-6">
+              <div className="min-w-0">
+                <div className="mt-3 receipt-rule" />
+                <p className="mt-3 text-sm text-slate-700 font-medium">
+                  {t('store.subtitle')}
+                </p>
+              </div>
 
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl px-6 py-4 border-2 border-white/40">
-              <div className="text-sm font-bold text-white/80 mb-1">{t('store.yourBalance')}</div>
-              <div className="text-4xl font-black flex items-center gap-2">
-                <Zap size={32} className="text-yellow-300" fill="currentColor" />
-                {tokens}
+              <div className="flex-shrink-0 text-right">
+                <div className="text-xs font-bold tracking-widest text-slate-500 uppercase">
+                  {t('store.yourBalance')}
+                </div>
+                <div className="mt-1 flex items-center justify-end gap-2">
+                  <Zap size={20} className="text-amber-600" fill="currentColor" />
+                  <span className="text-3xl font-black text-slate-900 tabular-nums">
+                    {tokens}
+                  </span>
+                </div>
+                <div className="mt-3 receipt-rule" />
+                <div className="mt-2 font-mono text-[11px] text-slate-500">
+                  #{String(currentUser?.uid || '').slice(0, 6).toUpperCase()} · {new Date().toLocaleDateString('en-GB')}
+                </div>
               </div>
             </div>
           </div>

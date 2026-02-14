@@ -25,3 +25,5 @@ git checkout -b restore-from-backup-v3 backup-2026-02-13-2203
 ______
 backup 4: new SRS Systems
 ____
+backup 5: Mistake Notebook SRS + Firestore index workaround
+____

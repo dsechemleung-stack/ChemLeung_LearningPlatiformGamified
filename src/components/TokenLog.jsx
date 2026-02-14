@@ -5,12 +5,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { getTokenHistory } from '../services/tokenService';
 import { ArrowLeft, TrendingUp, TrendingDown, Clock, Filter, Zap } from 'lucide-react';
 
 export default function TokenLog() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const { t, tf, isEnglish } = useLanguage();
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all | gains | spends
@@ -33,7 +35,7 @@ export default function TokenLog() {
   }
 
   const formatTimeAgo = (timestamp) => {
-    if (!timestamp) return 'Unknown';
+    if (!timestamp) return t('tokenLog.unknown');
     
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     const now = new Date();
@@ -42,12 +44,12 @@ export default function TokenLog() {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffMins < 1) return t('forum.justNow');
+    if (diffMins < 60) return tf('forum.timeAgoMinutesShort', { count: diffMins });
+    if (diffHours < 24) return tf('forum.timeAgoHoursShort', { count: diffHours });
+    if (diffDays < 7) return tf('forum.timeAgoDaysShort', { count: diffDays });
     
-    return date.toLocaleDateString('en-GB', { 
+    return date.toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', { 
       day: '2-digit', 
       month: 'short', 
       year: 'numeric' 
@@ -83,10 +85,10 @@ export default function TokenLog() {
         <div className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-2xl shadow-xl p-6 text-white">
           <h1 className="text-3xl font-black flex items-center gap-3">
             <Clock size={32} />
-            Token History
+            {t('tokenLog.title')}
           </h1>
           <p className="text-orange-100 mt-1">
-            Track your earnings and purchases
+            {t('tokenLog.subtitle')}
           </p>
         </div>
       </div>
@@ -99,7 +101,7 @@ export default function TokenLog() {
               <TrendingUp className="text-green-600" size={24} />
             </div>
             <div>
-              <div className="text-sm font-semibold text-slate-600">Total Earned</div>
+              <div className="text-sm font-semibold text-slate-600">{t('tokenLog.totalEarned')}</div>
               <div className="text-3xl font-black text-green-600 flex items-center gap-2">
                 <Zap size={24} fill="currentColor" />
                 {totalGained}
@@ -114,7 +116,7 @@ export default function TokenLog() {
               <TrendingDown className="text-red-600" size={24} />
             </div>
             <div>
-              <div className="text-sm font-semibold text-slate-600">Total Spent</div>
+              <div className="text-sm font-semibold text-slate-600">{t('tokenLog.totalSpent')}</div>
               <div className="text-3xl font-black text-red-600 flex items-center gap-2">
                 <Zap size={24} fill="currentColor" />
                 {totalSpent}
@@ -130,9 +132,9 @@ export default function TokenLog() {
           <Filter size={18} className="text-slate-600" />
           <div className="flex gap-2">
             {[
-              { value: 'all', label: 'All Transactions' },
-              { value: 'gains', label: 'Gains' },
-              { value: 'spends', label: 'Spends' }
+              { value: 'all', label: t('tokenLog.allTransactions') },
+              { value: 'gains', label: t('tokenLog.gains') },
+              { value: 'spends', label: t('tokenLog.spends') }
             ].map(opt => (
               <button
                 key={opt.value}
@@ -154,7 +156,7 @@ export default function TokenLog() {
       <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
         <div className="bg-slate-50 p-4 border-b-2 border-slate-200">
           <h2 className="text-lg font-bold text-slate-800">
-            Recent Transactions ({filteredHistory.length})
+            {tf('tokenLog.recentTransactionsCount', { count: filteredHistory.length })}
           </h2>
         </div>
 
@@ -168,12 +170,12 @@ export default function TokenLog() {
               <Clock className="w-16 h-16 text-slate-300 mx-auto mb-4" />
               <p className="text-slate-400 text-lg">
                 {filter === 'all' 
-                  ? 'No transactions yet' 
-                  : `No ${filter === 'gains' ? 'earnings' : 'purchases'} yet`
+                  ? t('tokenLog.noTransactionsYet')
+                  : (filter === 'gains' ? t('tokenLog.noEarningsYet') : t('tokenLog.noPurchasesYet'))
                 }
               </p>
               <p className="text-slate-500 text-sm mt-2">
-                Complete quizzes to start earning tokens!
+                {t('tokenLog.completeQuizzesToEarn')}
               </p>
             </div>
           ) : (
@@ -237,7 +239,7 @@ export default function TokenLog() {
                   {/* Balance After */}
                   {entry.balanceAfter !== undefined && (
                     <div className="mt-2 text-xs text-slate-400 text-right">
-                      Balance after: {entry.balanceAfter} tokens
+                      {tf('tokenLog.balanceAfterTokens', { balance: entry.balanceAfter })}
                     </div>
                   )}
                 </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import ChemistryLoading from '../components/ChemistryLoading';
 import { useQuizData } from '../hooks/useQuizData';
 import { forumService, canEditComment, editTimeRemaining } from '../services/forumService';
 import {
@@ -18,7 +19,7 @@ const CATEGORIES = ['general', 'question', 'announcement'];
 
 // ── Notification Panel ────────────────────────────────────────────────────────
 function NotificationPanel({ userId, onClose }) {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const [notifs, setNotifs] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -45,7 +46,9 @@ function NotificationPanel({ userId, onClose }) {
       case 'reply': return t('forum.repliedToPost');
       case 'post_like': return t('forum.likedYourPost');
       case 'reply_like': return t('forum.likedYourReply');
-      default: return 'interacted with your content';
+      case 'comment_reply': return t('forum.repliedToComment');
+      case 'comment_reply_like': return t('forum.likedYourReply');
+      default: return t('forum.interactedWithContent');
     }
   };
 
@@ -53,10 +56,10 @@ function NotificationPanel({ userId, onClose }) {
     const diffMs = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(diffMs / 60000);
     if (mins < 1) return t('forum.justNow');
-    if (mins < 60) return `${mins}m`;
+    if (mins < 60) return tf('forum.timeAgoMinutesShort', { count: mins });
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h`;
-    return `${Math.floor(hrs / 24)}d`;
+    if (hrs < 24) return tf('forum.timeAgoHoursShort', { count: hrs });
+    return tf('forum.timeAgoDaysShort', { count: Math.floor(hrs / 24) });
   };
 
   const unread = notifs.filter(n => !n.read).length;
@@ -90,9 +93,10 @@ function NotificationPanel({ userId, onClose }) {
               className={`p-4 border-b cursor-pointer hover:bg-slate-50 transition-all ${!n.read ? 'bg-blue-50' : ''}`}>
               <div className="flex items-start gap-3">
                 <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-lab-blue' : 'bg-transparent'}`} />
+                <Avatar userId={n.senderId} displayName={n.senderDisplayName || t('common.someone')} size="xs" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-slate-800 font-medium leading-snug">
-                    <span className="font-bold">Someone</span> {typeLabel(n)}
+                    <span className="font-bold">{n.senderDisplayName || t('common.someone')}</span> {typeLabel(n)}
                   </p>
                   {n.previewText && (
                     <p className="text-xs text-slate-500 mt-1 truncate">"{n.previewText}"</p>
@@ -113,7 +117,7 @@ function NotificationPanel({ userId, onClose }) {
 
 // ── General Forum Post Detail ─────────────────────────────────────────────────
 function PostDetail({ postId, currentUser, onBack }) {
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const [post, setPost] = useState(null);
   const [replies, setReplies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -143,7 +147,7 @@ function PostDetail({ postId, currentUser, onBack }) {
     if (!newReply.trim() || !currentUser) return;
     setSubmitting(true);
     try {
-      await forumService.addReply(postId, currentUser.uid, currentUser.displayName || 'Anonymous', newReply.trim());
+      await forumService.addReply(postId, currentUser.uid, currentUser.displayName || t('common.anonymous'), newReply.trim());
       setNewReply(''); await loadAll();
     } catch (e) { alert(e.message); }
     setSubmitting(false);
@@ -182,27 +186,72 @@ function PostDetail({ postId, currentUser, onBack }) {
 
   async function handleLikePost() {
     if (!currentUser) return;
-    await forumService.togglePostLike(postId, currentUser.uid); await loadAll();
+    const uid = currentUser.uid;
+    const senderName = currentUser.displayName || t('common.anonymous');
+    const prev = post;
+    if (!prev) return;
+
+    const prevLikedBy = Array.isArray(prev.likedBy) ? prev.likedBy : [];
+    const hasLiked = prevLikedBy.includes(uid);
+    const nextLikedBy = hasLiked ? prevLikedBy.filter(id => id !== uid) : [...prevLikedBy, uid];
+    const nextLikes = Math.max(0, Number(prev.likes || 0) + (hasLiked ? -1 : 1));
+
+    setPost({
+      ...prev,
+      likedBy: nextLikedBy,
+      likes: nextLikes
+    });
+
+    try {
+      await forumService.togglePostLike(postId, uid, senderName);
+    } catch (e) {
+      setPost(prev);
+      return;
+    }
   }
 
   async function handleLikeReply(replyId) {
     if (!currentUser) return;
-    await forumService.toggleReplyLike(replyId, currentUser.uid); await loadAll();
+    const uid = currentUser.uid;
+    const senderName = currentUser.displayName || t('common.anonymous');
+
+    let prevReply = null;
+    setReplies((prevReplies) => {
+      const next = prevReplies.map((r) => {
+        if (r.id !== replyId) return r;
+        prevReply = r;
+        const prevLikedBy = Array.isArray(r.likedBy) ? r.likedBy : [];
+        const hasLiked = prevLikedBy.includes(uid);
+        const nextLikedBy = hasLiked ? prevLikedBy.filter(id => id !== uid) : [...prevLikedBy, uid];
+        const nextLikes = Math.max(0, Number(r.likes || 0) + (hasLiked ? -1 : 1));
+        return { ...r, likedBy: nextLikedBy, likes: nextLikes };
+      });
+      return next;
+    });
+
+    try {
+      await forumService.toggleReplyLike(replyId, uid, senderName);
+    } catch (e) {
+      if (prevReply) {
+        setReplies((prevReplies) => prevReplies.map(r => (r.id === replyId ? prevReply : r)));
+      }
+      return;
+    }
   }
 
   const formatDate = (iso) => {
     const d = new Date(iso), now = new Date();
     const mins = Math.floor((now - d) / 60000);
     if (mins < 1) return t('forum.justNow');
-    if (mins < 60) return `${mins} min ago`;
-    if (mins < 1440) return `${Math.floor(mins / 60)} hr ago`;
+    if (mins < 60) return tf('forum.timeAgoMinutes', { count: mins });
+    if (mins < 1440) return tf('forum.timeAgoHours', { count: Math.floor(mins / 60) });
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   const categoryColor = { general: 'bg-blue-100 text-blue-700', question: 'bg-amber-100 text-amber-700', announcement: 'bg-purple-100 text-purple-700' };
 
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lab-blue" /></div>;
-  if (!post) return <div className="text-center py-12 text-slate-400">Post not found.</div>;
+  if (!post) return <div className="text-center py-12 text-slate-400">{t('forum.postNotFound')}</div>;
 
   return (
     <div className="space-y-4">
@@ -359,7 +408,7 @@ function NewPostModal({ currentUser, onClose, onCreated }) {
     if (!title.trim() || !content.trim()) return;
     setSubmitting(true);
     try {
-      await forumService.createPost(currentUser.uid, currentUser.displayName || 'Anonymous', { title, content, category });
+      await forumService.createPost(currentUser.uid, currentUser.displayName || t('common.anonymous'), { title, content, category });
       onCreated();
     } catch (e) { alert(e.message); }
     setSubmitting(false);
@@ -418,7 +467,7 @@ function NewPostModal({ currentUser, onClose, onCreated }) {
 export default function ForumPage() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const { t } = useLanguage();
+  const { t, tf } = useLanguage();
   const { questions, loading: questionsLoading } = useQuizData(SHEET_URL);
 
   const [activeTab, setActiveTab] = useState('mcq'); // 'mcq' | 'general'
@@ -493,11 +542,11 @@ export default function ForumPage() {
     const d = new Date(iso), now = new Date(), diffMs = now - d;
     const mins = Math.floor(diffMs / 60000);
     if (mins < 1) return t('forum.justNow');
-    if (mins < 60) return `${mins} min ago`;
+    if (mins < 60) return tf('forum.timeAgoMinutes', { count: mins });
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} hr ago`;
+    if (hrs < 24) return tf('forum.timeAgoHours', { count: hrs });
     const days = Math.floor(hrs / 24);
-    if (days < 7) return `${days} days ago`;
+    if (days < 7) return tf('forum.timeAgoDays', { count: days });
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
@@ -519,12 +568,16 @@ export default function ForumPage() {
         <button onClick={() => navigate('/dashboard')} className="p-3 bg-white rounded-lg border-2 border-slate-200 hover:border-lab-blue transition-all">
           <ArrowLeft size={20} />
         </button>
-        <div className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl shadow-xl p-6 text-white">
-          <h1 className="text-3xl font-black flex items-center gap-3">
-            <MessageSquare size={32} />
-            {t('forum.title')}
-          </h1>
-          <p className="text-purple-100 mt-1">{t('forum.connectDiscuss')}</p>
+        <div className="flex-1 flex justify-center">
+          <div className="paper-island paper-island-md paper-rose">
+            <div className="paper-island-content">
+              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-rose">
+                <MessageSquare size={32} className="text-rose-700" />
+                {t('forum.title')}
+              </h1>
+              <p className="text-slate-700 mt-1 font-semibold">{t('forum.connectDiscuss')}</p>
+            </div>
+          </div>
         </div>
         {/* Notification Bell */}
         {currentUser && (
@@ -582,7 +635,7 @@ export default function ForumPage() {
             <p className="text-sm text-slate-600"><span className="font-bold text-lab-blue">{filteredMcqQuestions.length}</span> {t('forum.questionsWithDiscussions')}</p>
 
             {mcqLoading || questionsLoading ? (
-              <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lab-blue" /></div>
+              <div className="flex justify-center py-12"><ChemistryLoading /></div>
             ) : filteredMcqQuestions.length === 0 ? (
               <div className="text-center py-12">
                 <MessageSquare className="w-14 h-14 text-slate-300 mx-auto mb-3" />

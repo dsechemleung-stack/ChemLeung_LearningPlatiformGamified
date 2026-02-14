@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import ChemistryLoading from '../components/ChemistryLoading';
 import { quizService } from '../services/quizService';
 import { Trophy, Medal, Award, Calendar, TrendingUp, ArrowLeft, Flame, GraduationCap } from 'lucide-react';
 import Avatar from '../components/Avatar';
@@ -23,6 +24,94 @@ function LevelBadge({ level, rank }) {
       <GraduationCap size={10} />
       {level}
     </span>
+  );
+}
+
+function getRankPalette(rank) {
+  if (rank === 1) {
+    return {
+      hexBg: 'bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-600',
+      border: 'border-amber-300',
+      glow: 'shadow-[0_0_0_1px_rgba(251,191,36,0.25),0_10px_30px_rgba(251,191,36,0.20)]'
+    };
+  }
+  if (rank === 2) {
+    return {
+      hexBg: 'bg-gradient-to-br from-slate-200 via-slate-300 to-slate-500',
+      border: 'border-slate-300',
+      glow: 'shadow-[0_0_0_1px_rgba(148,163,184,0.30),0_10px_30px_rgba(100,116,139,0.18)]'
+    };
+  }
+  if (rank === 3) {
+    return {
+      hexBg: 'bg-gradient-to-br from-amber-200 via-orange-400 to-amber-800',
+      border: 'border-amber-400',
+      glow: 'shadow-[0_0_0_1px_rgba(251,146,60,0.25),0_10px_30px_rgba(217,119,6,0.18)]'
+    };
+  }
+  return {
+    hexBg: 'bg-gradient-to-br from-cyan-500 to-indigo-600',
+    border: 'border-cyan-300',
+    glow: 'shadow-[0_0_0_1px_rgba(34,211,238,0.18),0_10px_30px_rgba(14,116,144,0.14)]'
+  };
+}
+
+function HexRankBadge({ rank }) {
+  const { tf } = useLanguage();
+  const p = getRankPalette(rank);
+  return (
+    <div
+      className={`w-12 h-12 ${p.hexBg} ${p.glow} text-white flex items-center justify-center font-black text-lg select-none [clip-path:polygon(25%_6.7%,75%_6.7%,100%_50%,75%_93.3%,25%_93.3%,0%_50%)]`}
+      aria-label={tf('leaderboard.rankAriaLabel', { rank })}
+      title={tf('leaderboard.rankTitle', { rank })}
+    >
+      {rank}
+    </div>
+  );
+}
+
+function CircleAvatar({ entry, rank }) {
+  const { t } = useLanguage();
+  const p = getRankPalette(rank);
+  const photoUrl = entry?.photoURL || entry?.photoUrl || entry?.avatarUrl || null;
+
+  return (
+    <div
+      className={`w-12 h-12 p-[2px] border-2 ${p.border} bg-white/70 shadow-sm rounded-full`}
+      title={entry?.displayName || ''}
+    >
+      <div className="w-full h-full overflow-hidden bg-white/80 rounded-full">
+        {photoUrl ? (
+          <img src={photoUrl} alt={entry?.displayName || t('common.avatar')} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Avatar
+              userId={entry.userId}
+              displayName={entry.displayName}
+              profilePicId={entry.equippedProfilePic}
+              themeId={entry.equippedTheme}
+              fetchUser={false}
+              size="md"
+              className="!w-11 !h-11 shadow-none"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TestTubeBar({ value }) {
+  const clamped = Math.max(0, Math.min(100, Number(value || 0)));
+  return (
+    <div className="w-full">
+      <div className="h-3 rounded-full bg-white/60 border border-white/60 shadow-inner overflow-hidden backdrop-blur">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 shadow-[inset_0_0_10px_rgba(255,255,255,0.35)]"
+          style={{ width: `${clamped}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -48,11 +137,14 @@ export default function LeaderboardPage() {
   const [claiming, setClaiming] = useState(false);
   const [claimMessage, setClaimMessage] = useState(null);
   const [showRules, setShowRules] = useState(false);
+  const [claimRank, setClaimRank] = useState(null);
+  const [claimKey, setClaimKey] = useState(null);
   const { currentUser } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
   useEffect(() => { loadLeaderboard(); }, [activeTab]);
+  useEffect(() => { loadClaimContext(); }, [activeTab, currentUser?.uid]);
 
   async function loadLeaderboard() {
     setLoading(true);
@@ -68,23 +160,57 @@ export default function LeaderboardPage() {
     setLoading(false);
   }
 
-  const getRankIcon = (rank) => {
-    if (rank === 1) return <Trophy className="text-yellow-400" size={24} />;
-    if (rank === 2) return <Medal className="text-slate-300" size={24} />;
-    if (rank === 3) return <Award className="text-amber-500" size={24} />;
-    return (
-      <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-        {rank}
-      </div>
-    );
-  };
+  function getWeeklyKeyForDate(dateObj) {
+    const date = new Date(Date.UTC(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()));
+    const dayNum = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+    const yyyy = date.getUTCFullYear();
+    return `leaderboard_weekly_${yyyy}-W${String(weekNo).padStart(2, '0')}`;
+  }
 
-  const getRankStyle = (rank) => {
-    if (rank === 1) return 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-white shadow-lg';
-    if (rank === 2) return 'bg-gradient-to-r from-slate-300 to-slate-500 text-white shadow-md';
-    if (rank === 3) return 'bg-gradient-to-r from-amber-500 to-amber-700 text-white shadow-md';
-    return 'bg-white border-2 border-slate-200 hover:border-slate-300';
-  };
+  function getMonthlyKeyForDate(dateObj) {
+    const yyyy = dateObj.getFullYear();
+    const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+    return `leaderboard_monthly_${yyyy}-${mm}`;
+  }
+
+  async function loadClaimContext() {
+    if (!currentUser?.uid) {
+      setClaimRank(null);
+      setClaimKey(null);
+      return;
+    }
+    if (!['weekly', 'monthly'].includes(activeTab)) {
+      setClaimRank(null);
+      setClaimKey(null);
+      return;
+    }
+
+    try {
+      const now = new Date();
+      if (activeTab === 'weekly') {
+        const lastWeekDate = new Date(now);
+        lastWeekDate.setDate(lastWeekDate.getDate() - 7);
+        setClaimKey(getWeeklyKeyForDate(lastWeekDate));
+        const lastWeekLb = await quizService.getLastWeekLeaderboard(200);
+        const idx = lastWeekLb.findIndex(e => e.userId === currentUser.uid);
+        setClaimRank(idx >= 0 ? idx + 1 : null);
+      } else {
+        const lastMonthDate = new Date(now);
+        lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+        setClaimKey(getMonthlyKeyForDate(lastMonthDate));
+        const lastMonthLb = await quizService.getLastMonthLeaderboard(200);
+        const idx = lastMonthLb.findIndex(e => e.userId === currentUser.uid);
+        setClaimRank(idx >= 0 ? idx + 1 : null);
+      }
+    } catch (e) {
+      console.error('Error loading claim context:', e);
+      setClaimRank(null);
+      setClaimKey(null);
+    }
+  }
 
   const tabs = [
     {
@@ -116,55 +242,36 @@ export default function LeaderboardPage() {
     return idx >= 0 ? idx + 1 : null;
   }, [leaderboard, currentUser]);
 
-  const claimKey = useMemo(() => {
-    const now = new Date();
-    if (activeTab === 'weekly') {
-      const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-      const dayNum = date.getUTCDay() || 7;
-      date.setUTCDate(date.getUTCDate() + 4 - dayNum);
-      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-      const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
-      const yyyy = date.getUTCFullYear();
-      return `leaderboard_weekly_${yyyy}-W${String(weekNo).padStart(2, '0')}`;
-    }
-    if (activeTab === 'monthly') {
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      return `leaderboard_monthly_${yyyy}-${mm}`;
-    }
-    return null;
-  }, [activeTab]);
-
   async function handleClaim() {
     if (!currentUser?.uid) return;
     if (!['weekly', 'monthly'].includes(activeTab)) return;
-    if (!myRank) {
-      setClaimMessage('No rank yet');
+    if (!claimKey) return;
+    if (!claimRank) {
+      setClaimMessage(activeTab === 'weekly' ? t('leaderboard.noRankLastWeek') : t('leaderboard.noRankLastMonth'));
       return;
     }
-    if (!claimKey) return;
 
     setClaiming(true);
     setClaimMessage(null);
     try {
       const check = await canClaimReward(currentUser.uid, claimKey);
       if (!check?.canClaim) {
-        setClaimMessage(check?.message || 'Already claimed');
+        setClaimMessage(check?.message || t('leaderboard.alreadyClaimed'));
         setClaiming(false);
         return;
       }
 
-      const result = await rewardLeaderboardPlacement(currentUser.uid, myRank, activeTab);
+      const result = await rewardLeaderboardPlacement(currentUser.uid, claimRank, activeTab);
       if (result?.success && result.tokensAwarded > 0) {
         await recordRewardClaim(currentUser.uid, claimKey, 99999);
-        setClaimMessage(result.message || `+${result.tokensAwarded} tokens!`);
+        setClaimMessage(result.message || t('leaderboard.tokensAwarded', { count: result.tokensAwarded }));
       } else {
         await recordRewardClaim(currentUser.uid, claimKey, 99999);
-        setClaimMessage('No reward');
+        setClaimMessage(t('leaderboard.noReward'));
       }
     } catch (e) {
       console.error(e);
-      setClaimMessage('Claim failed');
+      setClaimMessage(t('leaderboard.claimFailed'));
     }
     setClaiming(false);
   }
@@ -179,148 +286,177 @@ export default function LeaderboardPage() {
         >
           <ArrowLeft size={20} />
         </button>
-        <div className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 rounded-2xl shadow-xl p-6 text-white">
-          <h1 className="text-3xl font-black flex items-center gap-3">
-            <Trophy size={32} />
-            {t('leaderboard.title')}
-          </h1>
-          <p className="text-orange-100 mt-1">
-            {t('leaderboard.seeHowYouRank')}
-          </p>
+        <div className="flex-1 flex justify-center">
+          <div className="paper-island paper-island-md paper-amber">
+            <div className="paper-island-content">
+              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-amber">
+                <Trophy size={32} className="text-amber-700" />
+                {t('leaderboard.title')}
+              </h1>
+              <p className="text-slate-700 mt-1 font-semibold">
+                {t('leaderboard.seeHowYouRank')}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
       <TokenRulesModal open={showRules} onClose={() => setShowRules(false)} />
 
-      {/* Tabs */}
-      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-        <div className="flex border-b">
-          {tabs.map(tab => (
-            <button
-              key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              className={`flex-1 px-4 py-4 font-bold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${
-                activeTab === tab.value
-                  ? 'bg-lab-blue text-white'
-                  : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
+      {/* Chemistry background wrapper (below header only) */}
+      <div className="relative">
+        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl">
+          <div className="absolute inset-0 bg-gradient-to-b from-slate-50 via-white to-slate-50" />
+          <div
+            className="absolute inset-0 opacity-[0.35]"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 1px 1px, rgba(6,182,212,0.22) 1px, transparent 0), radial-gradient(circle at 1px 1px, rgba(99,102,241,0.12) 1px, transparent 0)',
+              backgroundSize: '26px 26px, 52px 52px',
+              backgroundPosition: '0 0, 13px 13px'
+            }}
+          />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(34,211,238,0.12),transparent_55%)]" />
         </div>
 
-        <div className="px-6 pt-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              {['weekly', 'monthly'].includes(activeTab) && currentUser?.uid && (
-                <button
-                  type="button"
-                  onClick={handleClaim}
-                  disabled={claiming || loading}
-                  className="px-4 py-2 bg-chemistry-green text-white rounded-xl font-bold text-sm hover:opacity-95 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all"
-                >
-                  {claiming ? 'Claiming...' : 'Claim reward'}
-                </button>
-              )}
-              {claimMessage && (
-                <div className="text-sm font-semibold text-slate-600">{claimMessage}</div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowRules(true)}
-              className="w-10 h-10 bg-white rounded-xl border-2 border-slate-200 hover:border-lab-blue transition-all flex items-center justify-center font-black text-lab-blue hover:scale-110 active:scale-105"
-              title={t('store.howToEarnTokens')}
-            >
-              !
-            </button>
+        {/* Tabs + controls (glass lab panel) */}
+        <div className="rounded-3xl border border-white/60 bg-white/75 backdrop-blur-xl shadow-[0_20px_50px_rgba(15,23,42,0.10)] overflow-hidden">
+          <div className="flex border-b border-slate-200/50">
+            {tabs.map(tab => (
+              <button
+                key={tab.value}
+                onClick={() => setActiveTab(tab.value)}
+                className={`flex-1 px-4 py-4 font-black transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${
+                  activeTab === tab.value
+                    ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white'
+                    : 'text-slate-700 hover:bg-white/70'
+                }`}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
           </div>
-        </div>
 
-        {/* List */}
-        <div className="p-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lab-blue"></div>
-            </div>
-          ) : leaderboard.length === 0 ? (
-            <div className="text-center py-16">
-              <Trophy className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-              <p className="text-slate-400 text-lg font-semibold">
-                {t('leaderboard.noDataYet')}
-              </p>
-              <p className="text-slate-500 text-sm mt-2">
-                {t('leaderboard.beFirstComplete')}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {leaderboard.map((entry, index) => {
-                const rank = index + 1;
-                const isCurrentUser = entry.userId === currentUser?.uid;
-                const scoreToShow = activeTab === 'alltime' ? entry.overallPercentage : entry.averageScore;
-                const isTopThree = rank <= 3;
-
-                return (
-                  <div
-                    key={entry.userId}
-                    className={`flex items-center gap-4 p-4 rounded-xl transition-all ${getRankStyle(rank)} ${
-                      isCurrentUser ? 'ring-4 ring-chemistry-green ring-offset-2' : ''
-                    }`}
+          <div className="px-6 pt-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {['weekly', 'monthly'].includes(activeTab) && currentUser?.uid && (
+                  <button
+                    type="button"
+                    onClick={handleClaim}
+                    disabled={claiming || loading}
+                    className="px-5 py-2.5 rounded-full font-black text-sm text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed bg-gradient-to-r from-emerald-500 via-green-500 to-lime-400 shadow-[0_10px_30px_rgba(34,197,94,0.30)] hover:shadow-[0_14px_36px_rgba(34,197,94,0.40)] hover:-translate-y-[1px]"
                   >
-                    {/* Rank icon */}
-                    <div className="flex-shrink-0 w-8 flex items-center justify-center">
-                      {getRankIcon(rank)}
-                    </div>
-
-                    {/* User info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center flex-wrap gap-2 mb-1">
-                        <Avatar
-                          userId={entry.userId}
-                          displayName={entry.displayName}
-                          profilePicId={entry.equippedProfilePic}
-                          themeId={entry.equippedTheme}
-                          fetchUser={false}
-                          size="xs"
-                          className={isTopThree ? 'ring-1 ring-white/40' : 'ring-1 ring-slate-200'}
-                        />
-                        <span className={`font-bold text-base truncate ${isTopThree ? 'text-white' : 'text-slate-800'}`}>
-                          {entry.displayName}
-                        </span>
-                        {isCurrentUser && (
-                          <span className="text-xs bg-chemistry-green text-white px-2 py-0.5 rounded-full font-bold flex-shrink-0">
-                            {t('leaderboard.you')}
-                          </span>
-                        )}
-                        {entry.level && <LevelBadge level={entry.level} rank={rank} />}
-                        {entry.streak > 0 && <StreakBadge streak={entry.streak} rank={rank} />}
-                      </div>
-                      <div className={`text-xs ${isTopThree ? 'text-white/75' : 'text-slate-500'}`}>
-                        {activeTab === 'alltime'
-                          ? `${entry.totalAttempts} ${t('leaderboard.attempts')} · ${entry.totalQuestions} ${t('leaderboard.questions')}`
-                          : `${entry.attemptCount} ${t('leaderboard.attempts')} · ${entry.totalQuestions} ${t('leaderboard.questions')}`
-                        }
-                      </div>
-                    </div>
-
-                    {/* Score */}
-                    <div className="text-right flex-shrink-0">
-                      <div className={`text-3xl font-black ${isTopThree ? 'text-white' : 'text-lab-blue'}`}>
-                        {scoreToShow}%
-                      </div>
-                      <div className={`text-xs ${isTopThree ? 'text-white/70' : 'text-slate-500'}`}>
-                        {entry.totalCorrect}/{entry.totalQuestions}
-                      </div>
-                    </div>
+                    {claiming ? 'Claiming...' : (activeTab === 'weekly' ? 'Claim last week reward' : 'Claim last month reward')}
+                  </button>
+                )}
+                {claimMessage && (
+                  <div className="text-sm font-bold text-slate-700 bg-white/70 border border-white/80 px-3 py-2 rounded-2xl">
+                    {claimMessage}
                   </div>
-                );
-              })}
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowRules(true)}
+                className="w-10 h-10 rounded-2xl border border-white/70 bg-white/70 backdrop-blur hover:bg-white/90 transition-all flex items-center justify-center font-black text-indigo-700 shadow-sm hover:shadow-md hover:-translate-y-[1px]"
+                title={t('store.howToEarnTokens')}
+              >
+                !
+              </button>
             </div>
-          )}
+          </div>
+
+          {/* List */}
+          <div className="p-6">
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <ChemistryLoading />
+              </div>
+            ) : leaderboard.length === 0 ? (
+              <div className="text-center py-16">
+                <Trophy className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+                <p className="text-slate-500 text-lg font-black">
+                  {t('leaderboard.noDataYet')}
+                </p>
+                <p className="text-slate-500 text-sm mt-2 font-medium">
+                  {t('leaderboard.beFirstComplete')}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {leaderboard.map((entry, index) => {
+                  const rank = index + 1;
+                  const isCurrentUser = entry.userId === currentUser?.uid;
+                  const scoreToShow = activeTab === 'alltime' ? entry.overallPercentage : entry.averageScore;
+                  const isTopThree = rank <= 3;
+
+                  return (
+                    <div
+                      key={entry.userId}
+                      className={`group relative rounded-2xl border border-white/70 bg-white/90 shadow-sm transition-all hover:-translate-y-[2px] hover:shadow-[0_18px_50px_rgba(15,23,42,0.12)] ${
+                        isCurrentUser ? 'ring-4 ring-emerald-400/60 ring-offset-2 ring-offset-white/60' : ''
+                      }`}
+                    >
+                      <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity shadow-[0_0_0_1px_rgba(34,211,238,0.22),0_0_40px_rgba(34,211,238,0.18)]" />
+                      <div className="relative p-4 sm:p-5 flex items-center gap-4">
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <HexRankBadge rank={rank} />
+                          <CircleAvatar entry={entry} rank={rank} />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center flex-wrap gap-2">
+                            <span className="font-black text-slate-900 truncate">
+                              {entry.displayName}
+                            </span>
+                            {isCurrentUser && (
+                              <span className="text-xs bg-emerald-500 text-white px-2 py-0.5 rounded-full font-black flex-shrink-0">
+                                {t('leaderboard.you')}
+                              </span>
+                            )}
+                            {entry.level && <LevelBadge level={entry.level} rank={rank} />}
+                            {entry.streak > 0 && <StreakBadge streak={entry.streak} rank={rank} />}
+                          </div>
+
+                          <div className="mt-1 text-xs text-slate-600 font-semibold">
+                            {activeTab === 'alltime'
+                              ? `${entry.totalAttempts} ${t('leaderboard.attempts')} · ${entry.totalQuestions} ${t('leaderboard.questions')}`
+                              : `${entry.attemptCount} ${t('leaderboard.attempts')} · ${entry.totalQuestions} ${t('leaderboard.questions')}`
+                            }
+                          </div>
+
+                          <div className="mt-3 flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <TestTubeBar value={scoreToShow} />
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <div className="text-2xl sm:text-3xl font-black text-indigo-700">
+                                {scoreToShow}%
+                              </div>
+                              <div className="text-xs text-slate-500 font-bold">
+                                {entry.totalCorrect}/{entry.totalQuestions}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {isTopThree && (
+                          <div className="hidden sm:flex flex-shrink-0 items-center justify-center w-10">
+                            {rank === 1 && <Trophy className="text-amber-500" size={26} />}
+                            {rank === 2 && <Medal className="text-slate-400" size={26} />}
+                            {rank === 3 && <Award className="text-amber-700" size={26} />}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

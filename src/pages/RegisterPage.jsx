@@ -134,7 +134,7 @@ export default function RegisterPage() {
                   onChange={(e) => setDisplayName(e.target.value)}
                   required
                   className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
-                  placeholder="John Doe"
+                  placeholder={t('auth.fullNamePlaceholder')}
                 />
               </div>
             </div>
@@ -152,7 +152,7 @@ export default function RegisterPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
-                  placeholder="your.email@example.com"
+                  placeholder={t('auth.emailPlaceholder')}
                 />
               </div>
             </div>
@@ -170,7 +170,7 @@ export default function RegisterPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
-                  placeholder="••••••••"
+                  placeholder={t('auth.passwordPlaceholder')}
                 />
               </div>
               <p className="text-xs text-green-200 ml-1">
@@ -191,7 +191,7 @@ export default function RegisterPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
-                  placeholder="••••••••"
+                  placeholder={t('auth.passwordPlaceholder')}
                 />
               </div>
             </div>

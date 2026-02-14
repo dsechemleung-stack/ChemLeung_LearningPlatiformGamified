@@ -37,8 +37,8 @@ export default function QuizPage() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [sessionStartTime, setSessionStartTime] = useState(() => quizStorage.getSessionStart());
 
-  // Calculate time limit for timed mode (questions × 1.25 minutes in milliseconds)
-  const timeLimit = isTimedMode ? questions.length * 1.25 * 60 * 1000 : 0;
+  // Calculate time limit for timed mode (questions × 75 seconds in milliseconds)
+  const timeLimit = isTimedMode ? questions.length * 75 * 1000 : 0;
 
   // Prevent accidental navigation away
   useEffect(() => {
@@ -430,7 +430,7 @@ export default function QuizPage() {
               <button onClick={() => setShowPeriodicTable(false)} className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100"><X size={24} /></button>
             </div>
             <div className="p-4">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/2/2e/Simple_Periodic_Table_Chart-en.svg" alt="Periodic Table" className="w-full h-auto" />
+              <img src="https://upload.wikimedia.org/wikipedia/commons/2/2e/Simple_Periodic_Table_Chart-en.svg" alt={t('quiz.periodicTableAlt')} className="w-full h-auto" />
             </div>
           </div>
         </div>
@@ -441,7 +441,7 @@ export default function QuizPage() {
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4">
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-baseline gap-3">
-              <span className="text-3xl font-black text-lab-blue">Q{currentIndex + 1}</span>
+              <span className="text-3xl font-black text-lab-blue">{t('quiz.questionPrefix')}{currentIndex + 1}</span>
               <span className="text-sm font-medium text-slate-500">{t('quiz.of')} {totalQuestions}</span>
             </div>
             <span className="text-xl font-bold text-lab-blue">{Math.round(progress)}%</span>
@@ -482,7 +482,7 @@ export default function QuizPage() {
           {questions.slice(0, Math.min(30, totalQuestions)).map((_, idx) => (
             <div key={idx} className={`w-2 h-2 rounded-full transition-all ${idx === currentIndex ? 'bg-lab-blue w-6' : answers[questions[idx].ID] ? 'bg-chemistry-green' : flagged.has(questions[idx].ID) ? 'bg-amber-500' : 'bg-slate-200'}`} />
           ))}
-          {totalQuestions > 30 && <span className="text-slate-400 text-xs">...</span>}
+          {totalQuestions > 30 && <span className="text-slate-400 text-xs">{t('common.ellipsis')}</span>}
         </div>
 
         <div className="text-center text-sm mt-2 space-y-1">
