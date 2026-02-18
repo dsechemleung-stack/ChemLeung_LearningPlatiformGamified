@@ -14,6 +14,14 @@ export function useLanguage() {
   return useContext(LanguageContext);
 }
 
+function normalizeLanguageCode(input) {
+  const raw = String(input || '').trim();
+  const lower = raw.toLowerCase();
+  if (lower === 'en' || lower.startsWith('en-') || lower.startsWith('en_')) return 'en';
+  if (lower === 'zh' || lower.startsWith('zh-') || lower.startsWith('zh_')) return 'zh';
+  return 'en';
+}
+
 // Translation dictionary
 const translations = {
   en: {
@@ -32,9 +40,9 @@ const translations = {
     },
 
     header: {
-      tokens: "tokens",
+      tokens: "diamonds",
       myHistory: "My History",
-      tokenHistory: "Token History",
+      tokenHistory: "Diamond History",
       logoutWarning: "You will be logged out of your account. Any unsaved progress will be lost.",
       confirmLogoutInQuiz: "Are you sure you want to logout?\n\n⚠️ You are in the middle of a quiz. Your progress will be lost!",
       confirmLeaveQuiz: "Are you sure you want to leave the quiz?\n\n⚠️ Your current progress will be lost!",
@@ -304,18 +312,18 @@ const translations = {
 
       millionaireTitle: "Millionaire Mode",
       millionaireSubtitle: "15 questions ladder",
-      millionaireDesc: "One wrong answer ends the run. Earn tokens by reaching higher questions.",
+      millionaireDesc: "One wrong answer ends the run. Earn diamonds by reaching higher questions.",
     },
 
     millionaire: {
       modeName: "Millionaire",
       questionLabel: "Question",
-      tokensUnit: "tokens",
-      tokenLadder: "Token Ladder",
+      tokensUnit: "diamonds",
+      tokenLadder: "Diamond Ladder",
       safetyNet: "Safety Net",
       cleared: "Cleared",
       now: "Now",
-      amountTokens: "{count} tokens",
+      amountTokens: "{count} diamonds",
 
       lifelines: {
         aiTips: "AI Tips",
@@ -351,7 +359,7 @@ const translations = {
         guaranteed: "Your {amount} {unit} are now guaranteed.",
         safeHavenAt: "Safe haven: Q{level}",
         fireRoundWarning: "Fire round ahead! The next 5 questions are timed with fire effects!",
-        finalSafetyNet: "Final safety net! You're guaranteed 60 tokens if you continue!",
+        finalSafetyNet: "Final safety net! You're guaranteed 60 diamonds if you continue!",
         continue: "Continue",
 
         decision: "Decision",
@@ -393,7 +401,7 @@ const translations = {
 
       errors: {
         startFailed: "Failed to start Millionaire mode",
-        tokenUpdateFailed: "Failed to update token balance",
+        tokenUpdateFailed: "Failed to update diamond balance",
       },
     },
     
@@ -415,12 +423,17 @@ const translations = {
       chooseSpecificTopics: "Choose specific topics, subtopics, and question count.",
       questions: "Questions:",
       configure: "Configure",
+      quizSettingsTitle: "Quiz Settings",
       yourAvailableTopics: "Your Available Topics",
       more: "more",
       noTopicsConfigured: "No topics configured!",
       pleaseSetTopics: "Please set which topics you've learned in your Profile settings.",
       goToProfile: "Go to Profile",
       updateTopics: "Update Topics",
+      mistakesToSrsTitle: "Mistakes → SRS",
+      mistakesToSrsAlways: "Always",
+      mistakesToSrsNever: "Never",
+      mistakesToSrsAsk: "Ask",
     },
     
     // Quiz Interface
@@ -573,7 +586,7 @@ const translations = {
       noRankLastWeek: "No rank last week",
       noRankLastMonth: "No rank last month",
       alreadyClaimed: "Already claimed",
-      tokensAwarded: "+{count} tokens!",
+      tokensAwarded: "+{count} diamonds!",
       noReward: "No reward",
       claimFailed: "Claim failed",
       claimReward: "Claim Reward",
@@ -597,7 +610,7 @@ const translations = {
 
     // Token Log
     tokenLog: {
-      title: "Token History",
+      title: "Diamond History",
       subtitle: "Track your earnings and purchases",
       totalEarned: "Total Earned",
       totalSpent: "Total Spent",
@@ -608,8 +621,8 @@ const translations = {
       noTransactionsYet: "No transactions yet",
       noEarningsYet: "No earnings yet",
       noPurchasesYet: "No purchases yet",
-      completeQuizzesToEarn: "Complete quizzes to start earning tokens!",
-      balanceAfterTokens: "Balance after: {balance} tokens",
+      completeQuizzesToEarn: "Complete quizzes to start earning diamonds!",
+      balanceAfterTokens: "Balance after: {balance} diamonds",
       unknown: "Unknown",
     },
 
@@ -910,6 +923,10 @@ const translations = {
       subtopics: "Subtopics",
       subtopicsFilteredNote: "(filtered by selected topics)",
       masteryLevel: "Mastery Level",
+      srsPresence: "SRS",
+      srsPresenceAll: "All",
+      srsPresenceInSrs: "In SRS",
+      srsPresenceNotInSrs: "Not in SRS",
       clearTopicFilter: "✕ Clear topic filter",
       clearSubtopicFilter: "Clear subtopic filter",
       clearMasteryFilter: "Clear mastery filter",
@@ -922,6 +939,7 @@ const translations = {
       masteryProgressing: "Progressing",
       masteryNear: "Near-Mastery",
       masteryMastered: "Mastered",
+      mastered: "Mastered",
       statusUnprocessed: "Unprocessed",
       statusInProgress: "In Progress",
       statusNearMastery: "Near Mastery",
@@ -1203,7 +1221,7 @@ const translations = {
     // ChemStore
     store: {
       title: "ChemStore",
-      subtitle: "Unlock exclusive items with your tokens",
+      subtitle: "Unlock exclusive items with your diamonds",
       yourBalance: "Your Balance",
       profilePics: "Profile Pics",
       badges: "Badges",
@@ -1215,18 +1233,18 @@ const translations = {
       locked: "Locked",
       buying: "Buying...",
       comingSoon: "Coming soon! ",
-      howToEarnTokens: "How to Earn Tokens",
+      howToEarnTokens: "How to Earn Diamonds",
       correctAnswers: "Correct answers:",
-      correctAnswersTokens: "1 token for every 2 correct answers.",
+      correctAnswersTokens: "1 diamond for every 2 correct answers.",
       quizBonus: "Quiz bonus (10+ questions):",
-      quizBonusTokens: "100% = 20 tokens, 80%+ = 15 tokens, 50%+ = 10 tokens",
+      quizBonusTokens: "100% = 20 diamonds, 80%+ = 15 diamonds, 50%+ = 10 diamonds",
       dailyReward: "Daily reward:",
-      dailyRewardTokens: "5 tokens per day",
+      dailyRewardTokens: "5 diamonds per day",
       weeklyLeaderboard: "Weekly leaderboard:",
-      weeklyLeaderboardTokens: "1st place = 30 tokens, 2nd = 27, 3rd = 24, ...",
+      weeklyLeaderboardTokens: "1st place = 30 diamonds, 2nd = 27, 3rd = 24, ...",
       millionaireGame: "Millionaire game:",
-      millionaireGameTokens: "Reach higher questions to earn more tokens (1-100 tokens based on level)",
-      notEnoughTokens: "Not enough tokens! ",
+      millionaireGameTokens: "Reach higher questions to earn more diamonds (1-100 diamonds based on level)",
+      notEnoughTokens: "Not enough diamonds! ",
       purchased: "Purchased {name}! ",
       purchaseFailed: "Purchase failed",
       failedToEquip: "Failed to equip",
@@ -1275,9 +1293,9 @@ const translations = {
     },
 
     header: {
-      tokens: "代幣",
+      tokens: "鑽石",
       myHistory: "我的歷史",
-      tokenHistory: "代幣歷史",
+      tokenHistory: "鑽石歷史",
       logoutWarning: "您將登出帳戶。任何未儲存的進度將會遺失。",
       confirmLogoutInQuiz: "確定要登出嗎？\n\n⚠️ 您正在進行測驗，進度將會丟失！",
       confirmLeaveQuiz: "確定要離開測驗嗎？\n\n⚠️ 您目前的進度將會丟失！",
@@ -1539,18 +1557,18 @@ const translations = {
 
       millionaireTitle: "百萬富翁",
       millionaireSubtitle: "15 題階梯",
-      millionaireDesc: "一題答錯即結束。答對越多題可獲得更多代幣。",
+      millionaireDesc: "一題答錯即結束。答對越多題可獲得更多鑽石。",
     },
 
     millionaire: {
       modeName: "Millionaire",
       questionLabel: "題目",
-      tokensUnit: "代幣",
-      tokenLadder: "代幣階梯",
+      tokensUnit: "鑽石",
+      tokenLadder: "鑽石階梯",
       safetyNet: "安全網",
       cleared: "已通關",
       now: "目前",
-      amountTokens: "{count} 代幣",
+      amountTokens: "{count} 鑽石",
 
       lifelines: {
         aiTips: "AI 提示",
@@ -1587,7 +1605,7 @@ const translations = {
         guaranteed: "你的 {amount} {unit} 已被保證。",
         safeHavenAt: "安全點：第{level}題",
         fireRoundWarning: "火焰回合來襲！接下來5題將是計時題，充滿火焰效果！",
-        finalSafetyNet: "最終安全網！如果繼續，你將保證獲得60代幣！",
+        finalSafetyNet: "最終安全網！如果繼續，你將保證獲得60鑽石！",
         continue: "繼續",
 
         decision: "決定",
@@ -1629,7 +1647,7 @@ const translations = {
 
       errors: {
         startFailed: "無法開始 Millionaire 模式",
-        tokenUpdateFailed: "更新代幣餘額失敗",
+        tokenUpdateFailed: "更新鑽石餘額失敗",
       },
     },
     
@@ -1651,12 +1669,17 @@ const translations = {
       chooseSpecificTopics: "選擇特定主題、子主題和題數。",
       questions: "題數：",
       configure: "設定",
+      quizSettingsTitle: "測驗設定",
       yourAvailableTopics: "您可用的主題",
       more: "更多",
       noTopicsConfigured: "尚未設定主題！",
       pleaseSetTopics: "請在個人資料設定中設定您已學習的主題。",
       goToProfile: "前往個人資料",
       updateTopics: "更新主題",
+      mistakesToSrsTitle: "錯題加入 SRS",
+      mistakesToSrsAlways: "總是",
+      mistakesToSrsNever: "永不",
+      mistakesToSrsAsk: "詢問",
     },
     
     // 測驗介面
@@ -1927,6 +1950,10 @@ const translations = {
       subtopics: "子主題",
       subtopicsFilteredNote: "（會隨已選主題篩選）",
       masteryLevel: "掌握程度",
+      srsPresence: "SRS",
+      srsPresenceAll: "全部",
+      srsPresenceInSrs: "在 SRS 內",
+      srsPresenceNotInSrs: "不在 SRS",
       clearTopicFilter: "✕ 清除主題篩選",
       clearSubtopicFilter: "清除子主題篩選",
       clearMasteryFilter: "清除掌握程度篩選",
@@ -1938,6 +1965,7 @@ const translations = {
       masteryProgressing: "進步中",
       masteryNear: "接近精通",
       masteryMastered: "已精通",
+      mastered: "已精通",
       statusUnprocessed: "未處理",
       statusInProgress: "進行中",
       statusNearMastery: "接近精通",
@@ -2073,7 +2101,7 @@ const translations = {
       noRankLastWeek: "上週沒有排名",
       noRankLastMonth: "上月沒有排名",
       alreadyClaimed: "已領取",
-      tokensAwarded: "+{count} 代幣！",
+      tokensAwarded: "+{count} 鑽石！",
       noReward: "沒有獎勵",
       claimFailed: "領取失敗",
       claimReward: "領取獎勵",
@@ -2365,7 +2393,7 @@ const translations = {
 
     store: {
       title: "ChemStore",
-      subtitle: "使用代幣解鎖專屬物品",
+      subtitle: "使用鑽石解鎖專屬物品",
       yourBalance: "您的餘額",
       profilePics: "頭像",
       badges: "徽章",
@@ -2377,18 +2405,18 @@ const translations = {
       locked: "未解鎖",
       buying: "購買中...",
       comingSoon: "即將推出！",
-      howToEarnTokens: "如何獲得代幣",
+      howToEarnTokens: "如何獲得鑽石",
       correctAnswers: "答對題目：",
-      correctAnswersTokens: "每答對 2 題獲得 1 代幣。",
+      correctAnswersTokens: "每答對 2 題獲得 1 鑽石。",
       quizBonus: "測驗獎勵（10 題或以上）：",
-      quizBonusTokens: "100% = 20 代幣，80%+ = 15 代幣，50%+ = 10 代幣",
+      quizBonusTokens: "100% = 20 鑽石，80%+ = 15 鑽石，50%+ = 10 鑽石",
       dailyReward: "每日獎勵：",
-      dailyRewardTokens: "每天 5 代幣",
+      dailyRewardTokens: "每天 5 鑽石",
       weeklyLeaderboard: "每週排行榜：",
-      weeklyLeaderboardTokens: "第 1 名 = 30 代幣，第 2 名 = 27，第 3 名 = 24，...",
+      weeklyLeaderboardTokens: "第 1 名 = 30 鑽石，第 2 名 = 27，第 3 名 = 24，...",
       millionaireGame: "百萬富翁遊戲：",
-      millionaireGameTokens: "到達更高題目可獲得更多代幣（根據關卡 1-100 代幣）",
-      notEnoughTokens: "代幣不足！",
+      millionaireGameTokens: "到達更高題目可獲得更多鑽石（根據關卡 1-100 鑽石）",
+      notEnoughTokens: "鑽石不足！",
       purchased: "已購買 {name}！",
       purchaseFailed: "購買失敗",
       failedToEquip: "裝備失敗",
@@ -2397,7 +2425,7 @@ const translations = {
     },
 
     tokenLog: {
-      title: "代幣歷史",
+      title: "鑽石歷史",
       subtitle: "查看你的獲得與消費記錄",
       totalEarned: "總獲得",
       totalSpent: "總消費",
@@ -2408,8 +2436,8 @@ const translations = {
       noTransactionsYet: "暫無交易",
       noEarningsYet: "暫無收入",
       noPurchasesYet: "暫無消費",
-      completeQuizzesToEarn: "完成測驗即可開始賺取代幣！",
-      balanceAfterTokens: "交易後餘額：{balance} 代幣",
+      completeQuizzesToEarn: "完成測驗即可開始賺取鑽石！",
+      balanceAfterTokens: "交易後餘額：{balance} 鑽石",
       unknown: "未知",
     },
 
@@ -2438,7 +2466,7 @@ const translations = {
 
 export function LanguageProvider({ children }) {
   const [language, setLanguage] = useState(() => {
-    return localStorage.getItem('chemleung_language') || 'en';
+    return normalizeLanguageCode(localStorage.getItem('chemleung_language') || 'en');
   });
 
   useEffect(() => {
@@ -2449,17 +2477,31 @@ export function LanguageProvider({ children }) {
     setLanguage(prev => prev === 'en' ? 'zh' : 'en');
   };
 
+  const setLanguageNormalized = (next) => {
+    setLanguage(normalizeLanguageCode(next));
+  };
+
   const t = (key) => {
     const keys = key.split('.');
-    let value = translations[language];
-    for (const k of keys) {
-      if (value && typeof value === 'object') {
-        value = value[k];
-      } else {
-        return key;
+    const tryResolve = (langRoot) => {
+      let value = langRoot;
+      for (const k of keys) {
+        if (value && typeof value === 'object') {
+          value = value[k];
+        } else {
+          return undefined;
+        }
       }
-    }
-    return value || key;
+      return value;
+    };
+
+    const primary = tryResolve(translations[language]);
+    if (primary !== undefined && primary !== null) return primary;
+
+    const fallback = tryResolve(translations.en);
+    if (fallback !== undefined && fallback !== null) return fallback;
+
+    return key;
   };
 
   const tf = (key, params = {}) => {
@@ -2472,7 +2514,7 @@ export function LanguageProvider({ children }) {
 
   const value = {
     language,
-    setLanguage,
+    setLanguage: setLanguageNormalized,
     toggleLanguage,
     t,
     tf,

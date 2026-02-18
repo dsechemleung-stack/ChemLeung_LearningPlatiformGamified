@@ -176,7 +176,7 @@ export default function DashboardPage({ questions = [] }) {
         rewardKey
       });
       await recordRewardClaim(currentUser.uid, rewardKey, 24);
-      setDailyClaimMessage(`+${amount} tokens!`);
+      setDailyClaimMessage(`+${amount} diamonds!`);
     } catch (e) {
       console.error(e);
       setDailyClaimMessage('Claim failed');

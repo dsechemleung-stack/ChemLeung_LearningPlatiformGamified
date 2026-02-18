@@ -16,6 +16,332 @@ function safeString(value) {
   return value == null ? '' : String(value);
 }
 
+function decodeKey(value) {
+  const s = value == null ? '' : String(value);
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+function normalizeBucket(value) {
+  const v = value == null ? '' : String(value);
+  if (v === 'not_in_srs' || v === 'new' || v === 'progressing' || v === 'near' || v === 'archived') return v;
+  return 'not_in_srs';
+}
+
+function getTopicFromMistake(m) {
+  if (!m || typeof m !== 'object') return '';
+  return safeString(m.Topic || m.topic || '');
+}
+
+function getBucketFromMistake(m) {
+  if (!m || typeof m !== 'object') return 'not_in_srs';
+  return normalizeBucket(m.srsBucket || 'not_in_srs');
+}
+
+function getIsActiveFromMistake(m) {
+  if (!m || typeof m !== 'object') return false;
+  return m.srsIsActive === true;
+}
+
+async function applyMistakeTopicStatsDelta(db, userId, delta, topic, bucket, isActive) {
+  const uid = safeString(userId);
+  const d = Number(delta);
+  if (!uid || !Number.isFinite(d) || d === 0) return;
+
+  const topicEnc = encodeKey(topic || '');
+  if (!topicEnc) return;
+
+  const b = normalizeBucket(bucket);
+  const active = isActive === true;
+
+  const statsRef = db.collection('users').doc(uid).collection('mistake_stats').doc('topicBuckets');
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(statsRef);
+    const prev = snap.exists ? (snap.data() || {}) : {};
+    const prevTopics = prev.topics && typeof prev.topics === 'object' ? prev.topics : {};
+    const prevEntry = prevTopics[topicEnc] && typeof prevTopics[topicEnc] === 'object' ? prevTopics[topicEnc] : {};
+
+    const nextTopics = { ...prevTopics };
+    const nextEntry = { ...prevEntry };
+
+    const prevTotal = Number(nextEntry.total || 0);
+    const nextTotal = Math.max(0, prevTotal + d);
+    nextEntry.total = nextTotal;
+
+    const bucketKey = `b_${b}`;
+    const prevBucket = Number(nextEntry[bucketKey] || 0);
+    const nextBucket = Math.max(0, prevBucket + d);
+    if (nextBucket === 0) delete nextEntry[bucketKey];
+    else nextEntry[bucketKey] = nextBucket;
+
+    if (active) {
+      const prevActive = Number(nextEntry.active || 0);
+      const nextActive = Math.max(0, prevActive + d);
+      nextEntry.active = nextActive;
+    }
+
+    // Prune empty
+    if (nextEntry.total === 0) {
+      delete nextTopics[topicEnc];
+    } else {
+      nextEntry.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+      nextTopics[topicEnc] = nextEntry;
+    }
+
+    tx.set(statsRef, {
+      topics: nextTopics,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+}
+
+async function applyMistakeDocDelta(db, userId, before, after) {
+  const beforeExists = before && typeof before === 'object' && Object.keys(before).length > 0;
+  const afterExists = after && typeof after === 'object' && Object.keys(after).length > 0;
+
+  if (!beforeExists && !afterExists) return;
+
+  // Create
+  if (!beforeExists && afterExists) {
+    await applyMistakeTopicStatsDelta(
+      db,
+      userId,
+      1,
+      getTopicFromMistake(after),
+      getBucketFromMistake(after),
+      getIsActiveFromMistake(after)
+    );
+    return;
+  }
+
+  // Delete
+  if (beforeExists && !afterExists) {
+    await applyMistakeTopicStatsDelta(
+      db,
+      userId,
+      -1,
+      getTopicFromMistake(before),
+      getBucketFromMistake(before),
+      getIsActiveFromMistake(before)
+    );
+    return;
+  }
+
+  const beforeTopic = getTopicFromMistake(before);
+  const afterTopic = getTopicFromMistake(after);
+  const beforeBucket = getBucketFromMistake(before);
+  const afterBucket = getBucketFromMistake(after);
+  const beforeActive = getIsActiveFromMistake(before);
+  const afterActive = getIsActiveFromMistake(after);
+
+  const changed =
+    beforeTopic !== afterTopic ||
+    beforeBucket !== afterBucket ||
+    beforeActive !== afterActive;
+
+  if (!changed) return;
+
+  // Remove old
+  await applyMistakeTopicStatsDelta(db, userId, -1, beforeTopic, beforeBucket, beforeActive);
+  // Add new
+  await applyMistakeTopicStatsDelta(db, userId, 1, afterTopic, afterBucket, afterActive);
+}
+
+// Maintain mistake topic stats for global sidebar facets
+exports.updateMistakeTopicStatsOnCreate = onDocumentCreated(
+  {
+    document: 'users/{userId}/mistakes/{mistakeId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const after = snap.data() || {};
+    const userId = event.params?.userId;
+    if (!userId) return;
+    const db = admin.firestore();
+    await applyMistakeDocDelta(db, userId, null, after);
+  }
+);
+
+exports.normalizeMistakes = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to normalize mistakes');
+    }
+
+    const db = admin.firestore();
+    const mistakesRef = db.collection('users').doc(uid).collection('mistakes');
+
+    const pageSize = 800;
+    let last = null;
+    let processed = 0;
+    let updated = 0;
+
+    const nowIso = new Date().toISOString();
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let q = mistakesRef.orderBy(admin.firestore.FieldPath.documentId()).limit(pageSize);
+      if (last) q = q.startAfter(last);
+
+      const snap = await q.get();
+      if (snap.empty) break;
+
+      // Only write docs that truly need a patch.
+      const toPatch = [];
+      for (const docSnap of snap.docs) {
+        const d = docSnap.data() || {};
+
+        const topic = d.Topic ?? d.topic ?? null;
+        const subtopic = d.Subtopic ?? d.subtopic ?? null;
+        const lastWrongAt = d.lastWrongAt ?? d.lastAttempted ?? d.updatedAt ?? d.createdAt ?? nowIso;
+
+        const needsTopic = d.Topic == null && d.topic != null;
+        const needsSubtopic = d.Subtopic == null && d.subtopic != null;
+        const needsLastWrongAt = d.lastWrongAt == null;
+
+        if (needsTopic || needsSubtopic || needsLastWrongAt) {
+          toPatch.push({
+            ref: docSnap.ref,
+            patch: {
+              Topic: topic,
+              Subtopic: subtopic,
+              lastWrongAt,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+          });
+        }
+      }
+
+      if (toPatch.length > 0) {
+        for (let i = 0; i < toPatch.length; i += 450) {
+          const batch = db.batch();
+          const slice = toPatch.slice(i, i + 450);
+          slice.forEach((x) => {
+            batch.set(x.ref, x.patch, { merge: true });
+          });
+          await batch.commit();
+          updated += slice.length;
+        }
+      }
+
+      processed += snap.size;
+      last = snap.docs[snap.docs.length - 1];
+      if (snap.size < pageSize) break;
+    }
+
+    // Make it easy to see when it was last run.
+    const statsRef = db.collection('users').doc(uid).collection('mistake_stats').doc('topicBuckets');
+    await statsRef.set({
+      lastNormalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastNormalizedProcessed: processed,
+      lastNormalizedUpdated: updated,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { ok: true, userId: uid, processed, updated };
+  }
+);
+
+exports.updateMistakeTopicStatsOnUpdate = onDocumentUpdated(
+  {
+    document: 'users/{userId}/mistakes/{mistakeId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const before = event.data?.before?.data?.() || null;
+    const after = event.data?.after?.data?.() || null;
+    const userId = event.params?.userId;
+    if (!userId) return;
+    const db = admin.firestore();
+    await applyMistakeDocDelta(db, userId, before, after);
+  }
+);
+
+exports.updateMistakeTopicStatsOnDelete = onDocumentDeleted(
+  {
+    document: 'users/{userId}/mistakes/{mistakeId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const before = snap.data() || {};
+    const userId = event.params?.userId;
+    if (!userId) return;
+    const db = admin.firestore();
+    await applyMistakeDocDelta(db, userId, before, null);
+  }
+);
+
+exports.rebuildMistakeTopicStats = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to rebuild mistake topic stats');
+    }
+
+    const db = admin.firestore();
+    const mistakesRef = db.collection('users').doc(uid).collection('mistakes');
+    const statsRef = db.collection('users').doc(uid).collection('mistake_stats').doc('topicBuckets');
+
+    const topics = {};
+
+    const pageSize = 800;
+    let last = null;
+    let processed = 0;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let q = mistakesRef.orderBy(admin.firestore.FieldPath.documentId()).limit(pageSize);
+      if (last) q = q.startAfter(last);
+      const snap = await q.get();
+      if (snap.empty) break;
+
+      snap.docs.forEach((docSnap) => {
+        const m = docSnap.data() || {};
+        const topic = getTopicFromMistake(m);
+        if (!topic) return;
+        const topicEnc = encodeKey(topic);
+        const bucket = getBucketFromMistake(m);
+        const isActive = getIsActiveFromMistake(m);
+
+        const entry = topics[topicEnc] && typeof topics[topicEnc] === 'object' ? topics[topicEnc] : {};
+        entry.total = Number(entry.total || 0) + 1;
+        const bucketKey = `b_${bucket}`;
+        entry[bucketKey] = Number(entry[bucketKey] || 0) + 1;
+        if (isActive) entry.active = Number(entry.active || 0) + 1;
+        topics[topicEnc] = entry;
+      });
+
+      processed += snap.size;
+      last = snap.docs[snap.docs.length - 1];
+      if (snap.size < pageSize) break;
+    }
+
+    await statsRef.set({
+      topics,
+      processed,
+      rebuiltAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { ok: true, userId: uid, processed, topics: Object.keys(topics).length };
+  }
+);
+
 async function applySrsSummaryDelta(db, userId, dateStr, delta, topic, subtopic) {
   const uid = safeString(userId);
   const dateKey = safeString(dateStr);

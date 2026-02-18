@@ -45,3 +45,5 @@ git checkout backup-2026-02-16-v10
 git checkout -b restore-from-backup-v10 backup-2026-02-16-v10, added Q16-20 to Millionaire
 _______
 backup 11: Shrinking reads of Firestore, use Algorila for search in Forum
+_______
+backup 12: SRS system page, Practice Panel

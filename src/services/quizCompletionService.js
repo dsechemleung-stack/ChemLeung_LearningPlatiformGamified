@@ -43,6 +43,12 @@ async function upsertMistakeIndex(userId, wrongAnswers, userAnswers, attemptId) 
         lastAttemptId: attemptId || null,
         lastUserAnswer: userAnswers?.[questionId] ?? null,
         attemptCount: increment(1),
+        // SRS meta (denormalized). Defaults mean "not yet in SRS".
+        hasSrsCard: false,
+        srsIsActive: false,
+        srsStatus: null,
+        srsBucket: 'not_in_srs',
+        srsUpdatedAt: nowIso,
         updatedAt: nowIso,
         createdAt: nowIso,
       },
@@ -62,6 +68,8 @@ async function upsertMistakeIndex(userId, wrongAnswers, userAnswers, attemptId) 
  * 3. Logs completion to calendar with full metadata
  */
 export async function processQuizCompletion(userId, questions, userAnswers, attemptId = null) {
+  const options = arguments.length >= 5 && arguments[4] ? arguments[4] : {};
+  const createSrsCards = options?.createSrsCards !== false;
   const results = {
     performanceRecorded: false,
     srsCardsCreated: 0,
@@ -102,7 +110,7 @@ export async function processQuizCompletion(userId, questions, userAnswers, atte
       results.errors.push('Mistake index update failed: ' + error.message);
     }
     
-    if (wrongAnswers.length > 0) {
+    if (wrongAnswers.length > 0 && createSrsCards) {
       console.log(`📝 Found ${wrongAnswers.length} wrong answers`);
       
       try {

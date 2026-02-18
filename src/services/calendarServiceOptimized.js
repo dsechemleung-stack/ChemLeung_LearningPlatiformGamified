@@ -75,7 +75,6 @@ async function cleanupOldManualEvents(userId) {
   while (true) {
     const oldManualQuery = query(
       eventsRef,
-      where('type', 'in', MANUAL_EVENT_TYPES),
       where('date', '<', cutoff),
       orderBy('date', 'asc'),
       limit(pageSize)
@@ -84,8 +83,12 @@ async function cleanupOldManualEvents(userId) {
     const snap = await getDocs(oldManualQuery);
     if (snap.empty) break;
 
-    for (const d of snap.docs) {
-      await deleteEvent(userId, d.id, true);
+    const candidates = snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+      .filter((e) => MANUAL_EVENT_TYPES.includes(e.type));
+
+    for (const e of candidates) {
+      await deleteEvent(userId, e.id, true);
     }
   }
 }
@@ -101,16 +104,19 @@ async function ensureManualEventCapacity(userId) {
   while (true) {
     const manualQuery = query(
       eventsRef,
-      where('type', 'in', MANUAL_EVENT_TYPES),
       orderBy('date', 'asc'),
       limit(MANUAL_EVENT_MAX + 1)
     );
 
     const snap = await getDocs(manualQuery);
-    if (snap.size <= MANUAL_EVENT_MAX) break;
+    const manualDocs = snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() || {}) }))
+      .filter((e) => MANUAL_EVENT_TYPES.includes(e.type));
 
-    const earliest = snap.docs[0];
-    if (!earliest) break;
+    if (manualDocs.length <= MANUAL_EVENT_MAX) break;
+
+    const earliest = manualDocs[0];
+    if (!earliest?.id) break;
     await deleteEvent(userId, earliest.id, true);
   }
 }
@@ -157,7 +163,6 @@ export async function getCalendarData(userId, year, month) {
   // ✅ OPTIMIZED: Query user's subcollection instead of global collection
   const eventsQuery = query(
     collection(db, 'users', userId, 'calendar_events'),  // User-specific subcollection
-    where('type', 'in', CALENDAR_EVENT_TYPES_FOR_MONTH_VIEW),
     where('date', '>=', startDateStr),
     where('date', '<=', endDateStr)
   );
@@ -189,6 +194,7 @@ export async function getCalendarData(userId, year, month) {
 
   (eventsSnapshot?.docs || []).forEach(doc => {
     const event = { id: doc.id, ...doc.data() };
+    if (!CALENDAR_EVENT_TYPES_FOR_MONTH_VIEW.includes(event.type)) return;
     
     if (!calendarData[event.date]) {
       calendarData[event.date] = {

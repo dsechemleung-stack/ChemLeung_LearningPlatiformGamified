@@ -267,13 +267,14 @@ export async function getSRSEvents(userId, startDate, endDate) {
   try {
     const eventsQuery = query(
       collection(db, 'users', userId, 'calendar_events'),
-      where('type', '==', EVENT_TYPES.SPACED_REPETITION),
       where('date', '>=', startDate),
       where('date', '<=', endDate)
     );
     
     const snapshot = await getDocs(eventsQuery);
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter((e) => e?.type === EVENT_TYPES.SPACED_REPETITION);
     
   } catch (error) {
     console.error('❌ Error getting SRS events:', error);
@@ -294,12 +295,13 @@ export async function cleanupOldSRSEvents(userId) {
     
     // Get all SRS events
     const allEventsQuery = query(
-      collection(db, 'users', userId, 'calendar_events'),
-      where('type', '==', EVENT_TYPES.SPACED_REPETITION)
+      collection(db, 'users', userId, 'calendar_events')
     );
     
     const snapshot = await getDocs(allEventsQuery);
-    const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const events = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter((e) => e?.type === EVENT_TYPES.SPACED_REPETITION);
     
     // Group events by SRS card ID
     const eventsByCard = {};

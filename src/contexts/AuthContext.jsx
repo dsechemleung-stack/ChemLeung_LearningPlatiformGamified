@@ -19,6 +19,7 @@ export function useAuth() {
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
+  const [profileError, setProfileError] = useState(null);
   const [loading, setLoading] = useState(true);
   
   // Real-time listener cleanup ref
@@ -79,6 +80,7 @@ export function AuthProvider({ children }) {
     
     // Set up real-time listener
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      setProfileError(null);
       if (docSnap.exists()) {
         const data = docSnap.data();
         console.log('📊 Profile updated:', {
@@ -92,6 +94,8 @@ export function AuthProvider({ children }) {
       }
     }, (error) => {
       console.error('❌ Profile listener error:', error);
+      setProfileError(error);
+      loadUserProfile(uid);
     });
 
     profileUnsubscribeRef.current = unsubscribe;
@@ -105,9 +109,11 @@ export function AuthProvider({ children }) {
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
+        setProfileError(null);
         setUserProfile(docSnap.data());
       }
     } catch (error) {
+      setProfileError(error);
       console.error('Error loading profile:', error);
     }
   }
@@ -121,6 +127,7 @@ export function AuthProvider({ children }) {
         setupProfileListener(user.uid);
       } else {
         setUserProfile(null);
+        setProfileError(null);
         // Clean up listener
         if (profileUnsubscribeRef.current) {
           profileUnsubscribeRef.current();
@@ -143,6 +150,7 @@ export function AuthProvider({ children }) {
   const value = {
     currentUser,
     userProfile,
+    profileError,
     signup,
     login,
     logout,

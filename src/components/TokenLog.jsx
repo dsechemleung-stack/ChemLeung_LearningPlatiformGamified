@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTokenHistory } from '../services/tokenService';
-import { ArrowLeft, TrendingUp, TrendingDown, Clock, Filter, Zap } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, Clock, Filter, Gem } from 'lucide-react';
 
 export default function TokenLog() {
   const navigate = useNavigate();
@@ -104,7 +104,7 @@ export default function TokenLog() {
             <div>
               <div className="text-sm font-semibold text-slate-600">{t('tokenLog.totalEarned')}</div>
               <div className="text-3xl font-black text-green-600 flex items-center gap-2">
-                <Zap size={24} fill="currentColor" />
+                <Gem size={24} fill="currentColor" />
                 {totalGained}
               </div>
             </div>
@@ -119,7 +119,7 @@ export default function TokenLog() {
             <div>
               <div className="text-sm font-semibold text-slate-600">{t('tokenLog.totalSpent')}</div>
               <div className="text-3xl font-black text-red-600 flex items-center gap-2">
-                <Zap size={24} fill="currentColor" />
+                <Gem size={24} fill="currentColor" />
                 {totalSpent}
               </div>
             </div>
@@ -229,7 +229,7 @@ export default function TokenLog() {
                       }`}>
                         {isGain ? '+' : '-'}{amount}
                       </div>
-                      <Zap 
+                      <Gem 
                         size={20} 
                         className={isGain ? 'text-green-600' : 'text-red-600'}
                         fill="currentColor"

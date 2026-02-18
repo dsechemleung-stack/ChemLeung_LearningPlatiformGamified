@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Clock, Settings, Play, Zap, BookOpen, Lock, Check, AlertCircle } from 'lucide-react';
+import { Clock, Settings, Play, Zap, BookOpen, Lock, Check, AlertCircle, Info, Infinity, Sparkles, Layers, Heart, Gem } from 'lucide-react';
 import FisheyeCarousel from '../components/FisheyeCarousel';
 import { quizStorage } from '../utils/quizStorage';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -64,6 +64,8 @@ export default function PracticeModeSelection({ questions }) {
   const [showUpdateTopics, setShowUpdateTopics] = useState(false);
   const [loadingMistakes, setLoadingMistakes] = useState(false);
   const [activeCarouselModeId, setActiveCarouselModeId] = useState('timed');
+  const [showAvailableTopicsInfo, setShowAvailableTopicsInfo] = useState(false);
+  const [showPracticeSettings, setShowPracticeSettings] = useState(false);
 
   const [showTopic, setShowTopic] = useState(() => {
     const saved = localStorage.getItem('practice_show_topic');
@@ -83,6 +85,11 @@ export default function PracticeModeSelection({ questions }) {
     return saved === null ? true : saved === 'true';
   });
 
+  const [mistakesToSrsMode, setMistakesToSrsMode] = useState(() => {
+    const saved = localStorage.getItem('practice_mistakes_to_srs_mode');
+    return saved || 'ask';
+  });
+
   useEffect(() => {
     localStorage.setItem('practice_show_topic', String(showTopic));
   }, [showTopic]);
@@ -98,6 +105,10 @@ export default function PracticeModeSelection({ questions }) {
   useEffect(() => {
     localStorage.setItem('practice_show_timer', String(showTimer));
   }, [showTimer]);
+
+  useEffect(() => {
+    localStorage.setItem('practice_mistakes_to_srs_mode', String(mistakesToSrsMode || 'ask'));
+  }, [mistakesToSrsMode]);
 
   // Timer settings for each mode
   const [timedModeTimer, setTimedModeTimer] = useState(() => showTimer);
@@ -398,43 +409,50 @@ export default function PracticeModeSelection({ questions }) {
 
     return (
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
-          <div className="bg-lab-blue p-6 text-white flex justify-between items-center">
-            <h2 className="text-2xl font-bold">
-              {t('practiceMode.updateYourTopics')}
-            </h2>
-            <button
-              onClick={() => setShowUpdateTopics(false)}
-              className="text-white hover:text-blue-100 font-bold"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="p-6 space-y-6">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-3">
-                {t('practiceMode.learnedUpTo')}
-              </label>
-              <div className="grid grid-cols-6 md:grid-cols-8 gap-2">
-                {allTopics.map((topic) => {
-                  const topicNum = topic.match(/^\d+/)?.[0];
-                  return (
-                    <button
-                      key={topic}
-                      onClick={() => setTempLearnedUpTo(topicNum)}
-                      className={`py-2 rounded-lg border-2 font-bold transition-all ${
-                        tempLearnedUpTo === topicNum
-                          ? 'border-chemistry-green bg-green-50 text-chemistry-green'
-                          : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
-                    >
-                      {topicNum}
-                    </button>
-                  );
-                })}
+        <div className="rounded-2xl p-4 border border-white/40 bg-white/55 backdrop-blur-xl shadow-lg">
+          <div className="absolute inset-0 rounded-2xl opacity-70 bg-[radial-gradient(circle_at_15%_20%,rgba(99,102,241,0.22),transparent_60%),radial-gradient(circle_at_80%_30%,rgba(236,72,153,0.18),transparent_60%),radial-gradient(circle_at_50%_85%,rgba(34,211,238,0.16),transparent_55%)]" />
+          <div className="relative rounded-2xl border border-white/40 bg-white/30 backdrop-blur shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-white/40 flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <BookOpen size={18} className="text-slate-900" />
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 truncate">
+                  {t('practiceMode.updateYourTopics')}
+                </h2>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowUpdateTopics(false)}
+                className="w-10 h-10 rounded-xl border border-white/40 bg-white/40 backdrop-blur flex items-center justify-center text-slate-900 hover:bg-white/55 transition-all flex-none"
+                aria-label={t('common.close')}
+              >
+                ×
+              </button>
             </div>
+
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-3">
+                  {t('practiceMode.learnedUpTo')}
+                </label>
+                <div className="grid grid-cols-6 md:grid-cols-8 gap-2">
+                  {allTopics.map((topic) => {
+                    const topicNum = topic.match(/^\d+/)?.[0];
+                    return (
+                      <button
+                        key={topic}
+                        onClick={() => setTempLearnedUpTo(topicNum)}
+                        className={`py-2 rounded-lg border-2 font-bold transition-all ${
+                          tempLearnedUpTo === topicNum
+                            ? 'border-chemistry-green bg-green-50 text-chemistry-green'
+                            : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {topicNum}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
             {tempLearnedUpTo && learnedRangeTopics.length > 0 && (
               <div>
@@ -481,6 +499,7 @@ export default function PracticeModeSelection({ questions }) {
               </button>
             </div>
           </div>
+        </div>
         </div>
       </div>
     );
@@ -655,95 +674,10 @@ export default function PracticeModeSelection({ questions }) {
 
   // Main mode selection screen
   return (
-    <div className="max-w-6xl mx-auto space-y-4">
-      {/* Available Topics Info + Update Button */}
-      {availableTopics.length > 0 ? (
-        <div className="md:sticky md:top-4 z-30 rounded-2xl p-4 border border-white/40 bg-white/55 backdrop-blur-xl shadow-lg">
-          <div className="absolute inset-0 rounded-2xl opacity-70 bg-[radial-gradient(circle_at_15%_20%,rgba(99,102,241,0.22),transparent_60%),radial-gradient(circle_at_80%_30%,rgba(236,72,153,0.18),transparent_60%),radial-gradient(circle_at_50%_85%,rgba(34,211,238,0.16),transparent_55%)]" />
-          <div className="relative flex justify-between items-start mb-2 gap-4">
-            <div>
-              <h3 className="font-black text-slate-900 flex items-center gap-2">
-                <BookOpen size={16} />
-                {t('practice.yourAvailableTopics')} ({availableTopics.length})
-              </h3>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {availableTopics.map((topic) => (
-                  <span key={topic} className="px-2 py-1 bg-white/70 border border-white/50 text-slate-800 rounded-lg text-xs font-bold shadow-sm">
-                    {topic}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <button
-              onClick={() => setShowUpdateTopics(true)}
-              className="px-4 py-2 rounded-xl font-bold text-sm transition-all whitespace-nowrap border border-white/40 bg-white/40 backdrop-blur hover:bg-white/55 text-slate-900 shadow-sm"
-            >
-              {t('practice.updateTopics')}
-            </button>
-          </div>
-
-          <div className="relative mt-3 rounded-2xl border border-white/40 bg-white/30 backdrop-blur px-4 py-3 shadow-sm">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-xs font-black uppercase tracking-wider text-slate-900/80">
-                Hide in quiz
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowTopic(v => !v)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${!showTopic ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(34,211,238,0.55)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
-                >
-                  Topic
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSubtopic(v => !v)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${!showSubtopic ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(236,72,153,0.45)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
-                >
-                  Subtopic
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowDseCode(v => !v)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${!showDseCode ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(99,102,241,0.5)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
-                >
-                  Code
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowTimer(v => !v)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${!showTimer ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(16,185,129,0.55)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
-                >
-                  Timer
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
-            <div className="flex-1">
-              <p className="text-amber-900 font-bold mb-2">
-                {t('practice.noTopicsConfigured')}
-              </p>
-              <p className="text-amber-800 text-sm mb-3">
-                {t('practice.pleaseSetTopics')}
-              </p>
-              <button
-                onClick={() => navigate('/profile')}
-                className="px-4 py-2 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 transition-all"
-              >
-                {t('practice.goToProfile')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+    <div className="max-w-6xl mx-auto space-y-4 pb-6">
       <div className="rounded-2xl border border-white/40 bg-white/55 backdrop-blur-xl shadow-lg px-4 py-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="absolute inset-0 rounded-2xl opacity-70 bg-[radial-gradient(circle_at_20%_20%,rgba(245,158,11,0.16),transparent_60%),radial-gradient(circle_at_80%_30%,rgba(249,115,22,0.14),transparent_60%),radial-gradient(circle_at_50%_85%,rgba(236,72,153,0.10),transparent_55%)]" />
+        <div className="relative grid grid-cols-1 sm:grid-cols-3 gap-3">
           {(() => {
             const modeTitleKey = {
               timed: 'practiceModeCarousel.timedTitle',
@@ -759,38 +693,53 @@ export default function PracticeModeSelection({ questions }) {
               {
                 id: 'regular',
                 titleKey: 'practiceModeLegend.regular',
+                icon: Clock,
                 modeIds: ['timed', 'marathon', 'custom'],
               },
               {
                 id: 'mistake',
                 titleKey: 'practiceModeLegend.mistakeReview',
+                icon: Heart,
                 modeIds: ['ai-daily', 'srs-review', 'mistake-review'],
               },
               {
                 id: 'game',
                 titleKey: 'practiceModeLegend.gameMode',
+                icon: Gem,
                 modeIds: ['millionaire'],
               },
             ];
 
             return groups.map((group) => {
               const isGroupActive = group.modeIds.includes(activeCarouselModeId);
+              const GroupIcon = group.icon;
 
               return (
                 <div key={group.id} className="rounded-xl border border-white/50 bg-white/40 p-2">
                   <button
                     type="button"
                     onClick={() => setActiveCarouselModeId(group.modeIds[0])}
-                    className={`w-full rounded-xl px-3 py-2 border border-slate-200 transition-all font-black text-sm ${
+                    className={`w-full rounded-xl px-3 py-2 border border-slate-200 transition-all font-black text-sm flex items-center justify-center gap-2 ${
                       isGroupActive ? 'bg-slate-900 text-white border-slate-900' : 'bg-white/50 text-slate-800 hover:bg-white/70'
                     }`}
                   >
+                    {GroupIcon && <GroupIcon size={16} strokeWidth={2.5} className={isGroupActive ? 'text-white' : 'text-slate-800'} />}
                     {t(group.titleKey)}
                   </button>
 
                   <div className="mt-2 flex flex-nowrap gap-2 justify-center items-center overflow-visible py-1">
                     {group.modeIds.map((modeId) => {
                       const isModeActive = activeCarouselModeId === modeId;
+
+                      const ModeIcon = {
+                        timed: Clock,
+                        marathon: Infinity,
+                        custom: Settings,
+                        'ai-daily': Sparkles,
+                        'srs-review': Layers,
+                        'mistake-review': Heart,
+                        millionaire: Gem,
+                      }[modeId];
 
                       const shortLabelKey = {
                         timed: 'practiceModeLegend.timedShort',
@@ -806,7 +755,7 @@ export default function PracticeModeSelection({ questions }) {
                       const modeActiveClass = {
                         timed: 'bg-gradient-to-r from-red-500 to-orange-500 border-red-600 text-white shadow-sm',
                         marathon: 'bg-gradient-to-r from-purple-600 to-indigo-600 border-indigo-700 text-white shadow-sm',
-                        custom: 'bg-gradient-to-r from-blue-600 to-cyan-600 border-blue-700 text-white shadow-sm',
+                        custom: 'bg-gradient-to-r from-amber-700 via-orange-500 to-amber-900 border-amber-900 text-white shadow-sm',
                         'ai-daily': 'bg-gradient-to-r from-cyan-600 via-sky-600 to-indigo-600 border-cyan-700 text-white shadow-sm',
                         'srs-review': 'bg-gradient-to-r from-emerald-600 to-teal-600 border-emerald-700 text-white shadow-sm',
                         'mistake-review': 'bg-gradient-to-r from-rose-500 to-pink-500 border-rose-600 text-white shadow-sm',
@@ -818,12 +767,13 @@ export default function PracticeModeSelection({ questions }) {
                           key={modeId}
                           type="button"
                           onClick={() => setActiveCarouselModeId(modeId)}
-                          className={`flex-none min-w-[4.5rem] px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-black transition-all whitespace-nowrap leading-none text-center ${
+                          className={`flex-none min-w-[5.25rem] px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-black transition-all whitespace-nowrap leading-none text-center flex items-center justify-center gap-1.5 ${
                             isModeActive
                               ? modeActiveClass
                               : 'bg-white/60 text-slate-700 border-slate-200 hover:bg-white/80'
                           }`}
                         >
+                          {ModeIcon && <ModeIcon size={14} strokeWidth={2.5} className={isModeActive ? 'text-white' : 'text-slate-700'} />}
                           {shortLabel}
                         </button>
                       );
@@ -836,6 +786,17 @@ export default function PracticeModeSelection({ questions }) {
         </div>
       </div>
 
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowPracticeSettings(true)}
+          className="rounded-2xl border border-white/40 bg-white/55 backdrop-blur-xl shadow-lg px-4 py-2 flex items-center gap-2 hover:bg-white/70 transition-all"
+        >
+          <Settings size={16} className="text-slate-900" />
+          <span className="text-sm font-black text-slate-900">{t('practice.quizSettingsTitle')}</span>
+        </button>
+      </div>
+
       <FisheyeCarousel
         onModeSelect={handleCarouselModeSelect}
         showHeader={false}
@@ -844,6 +805,202 @@ export default function PracticeModeSelection({ questions }) {
         activeModeId={activeCarouselModeId}
         onActiveModeChange={setActiveCarouselModeId}
       />
+
+      {showPracticeSettings && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setShowPracticeSettings(false)}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <div
+            className="relative w-full max-w-3xl rounded-2xl p-4 border border-white/40 bg-white/55 backdrop-blur-xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute inset-0 rounded-2xl opacity-70 bg-[radial-gradient(circle_at_15%_20%,rgba(99,102,241,0.22),transparent_60%),radial-gradient(circle_at_80%_30%,rgba(236,72,153,0.18),transparent_60%),radial-gradient(circle_at_50%_85%,rgba(34,211,238,0.16),transparent_55%)]" />
+            <div className="relative rounded-2xl border border-white/40 bg-white/30 backdrop-blur shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-white/40 flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <BookOpen size={18} className="text-slate-900" />
+                  <h3 className="text-lg font-black text-slate-900 truncate">
+                    {t('practice.quizSettingsTitle')}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPracticeSettings(false)}
+                  className="w-10 h-10 rounded-xl border border-white/40 bg-white/40 backdrop-blur flex items-center justify-center text-slate-900 hover:bg-white/55 transition-all flex-none"
+                  aria-label={t('common.close')}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {availableTopics.length > 0 ? (
+                  <div className="rounded-2xl border border-white/40 bg-white/40 backdrop-blur px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h4 className="font-black text-slate-900 truncate">
+                          {t('practice.yourAvailableTopics')} ({availableTopics.length})
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setShowAvailableTopicsInfo(true)}
+                          className="w-7 h-7 rounded-full border border-white/40 bg-white/40 backdrop-blur flex items-center justify-center text-slate-800 hover:bg-white/55 transition-all flex-none"
+                          aria-label={t('practice.availableTopicsInfoTitle')}
+                        >
+                          <Info size={14} />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-none">
+                        <button
+                          type="button"
+                          onClick={() => setShowUpdateTopics(true)}
+                          className="px-4 py-2 rounded-xl font-bold text-sm transition-all whitespace-nowrap border border-white/40 bg-white/40 backdrop-blur hover:bg-white/55 text-slate-900 shadow-sm"
+                        >
+                          {t('practice.updateTopics')}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {availableTopics.map((topic) => (
+                        <span key={topic} className="px-2 py-1 bg-white/70 border border-white/50 text-slate-800 rounded-lg text-xs font-bold shadow-sm">
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+                      <div className="flex-1">
+                        <p className="text-amber-900 font-bold mb-2">
+                          {t('practice.noTopicsConfigured')}
+                        </p>
+                        <p className="text-amber-800 text-sm mb-3">
+                          {t('practice.pleaseSetTopics')}
+                        </p>
+                        <button
+                          onClick={() => navigate('/profile')}
+                          className="px-4 py-2 bg-amber-600 text-white rounded-lg font-bold hover:bg-amber-700 transition-all"
+                        >
+                          {t('practice.goToProfile')}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-white/40 bg-white/40 backdrop-blur px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="text-xs font-black uppercase tracking-wider text-slate-900/80">
+                      Hide in quiz
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowTopic(v => !v)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${!showTopic ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(34,211,238,0.55)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
+                      >
+                        Topic
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowSubtopic(v => !v)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${!showSubtopic ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(236,72,153,0.45)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
+                      >
+                        Subtopic
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowDseCode(v => !v)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${!showDseCode ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(99,102,241,0.5)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
+                      >
+                        Code
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowTimer(v => !v)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${!showTimer ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(16,185,129,0.55)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
+                      >
+                        Timer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/40 bg-white/40 backdrop-blur px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="text-xs font-black uppercase tracking-wider text-slate-900/80">
+                      {t('practice.mistakesToSrsTitle')}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setMistakesToSrsMode('always')}
+                        className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${mistakesToSrsMode === 'always' ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(16,185,129,0.45)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
+                      >
+                        {t('practice.mistakesToSrsAlways')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMistakesToSrsMode('never')}
+                        className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${mistakesToSrsMode === 'never' ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(236,72,153,0.35)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
+                      >
+                        {t('practice.mistakesToSrsNever')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMistakesToSrsMode('ask')}
+                        className={`px-3 py-1.5 rounded-full text-xs font-black border transition-all ${mistakesToSrsMode === 'ask' ? 'bg-white text-slate-900 border-white shadow-[0_0_0_2px_rgba(255,255,255,0.9),0_0_18px_rgba(99,102,241,0.35)]' : 'bg-transparent text-slate-400 border-white/30 hover:border-white/60 hover:text-slate-600'}`}
+                      >
+                        {t('practice.mistakesToSrsAsk')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAvailableTopicsInfo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowAvailableTopicsInfo(false)}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <div
+            className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border-2 border-indigo-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b-2 border-indigo-200 flex items-center justify-between bg-indigo-50">
+              <div className="flex items-center gap-2">
+                <Info size={18} className="text-indigo-700" />
+                <h3 className="text-lg font-black text-slate-800">{t('practice.availableTopicsInfoTitle')}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAvailableTopicsInfo(false)}
+                className="p-2 hover:bg-white rounded-xl transition-all"
+                aria-label={t('common.close')}
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                {t('practice.availableTopicsInfoBody')}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

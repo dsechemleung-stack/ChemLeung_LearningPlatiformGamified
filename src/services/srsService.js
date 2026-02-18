@@ -41,6 +41,98 @@ const COLLECTIONS = {
   SESSIONS: 'review_sessions'
 };
 
+function deriveSrsBucketFromCard(card) {
+  if (!card || typeof card !== 'object') return 'not_in_srs';
+  if (card.isActive === false) return 'archived';
+  if (card.status === 'new') return 'new';
+  if (card.status === 'learning') return 'progressing';
+  if (card.status === 'review') return 'near';
+  if (card.status === 'graduated') return 'archived';
+  return 'progressing';
+}
+
+async function upsertMistakeSrsMeta(userId, questionId, cardOrNull) {
+  if (!userId || !questionId) return;
+
+  const ref = doc(db, 'users', userId, 'mistakes', String(questionId));
+
+  if (!cardOrNull) {
+    await setDoc(ref, {
+      hasSrsCard: false,
+      srsIsActive: false,
+      srsStatus: null,
+      srsBucket: 'not_in_srs',
+      srsUpdatedAt: new Date().toISOString(),
+    }, { merge: true });
+    return;
+  }
+
+  await setDoc(ref, {
+    hasSrsCard: true,
+    srsIsActive: cardOrNull.isActive !== false,
+    srsStatus: cardOrNull.status || null,
+    srsBucket: deriveSrsBucketFromCard(cardOrNull),
+    srsCardId: cardOrNull.id || null,
+    srsUpdatedAt: new Date().toISOString(),
+  }, { merge: true });
+}
+
+async function findAnyCardForQuestion(userId, questionId) {
+  if (!userId || !questionId) return null;
+
+  // Prefer deterministic ID (new behavior)
+  const deterministicId = `card_${userId}_${questionId}`;
+  const deterministicRef = doc(db, COLLECTIONS.CARDS, deterministicId);
+  const deterministicSnap = await getDoc(deterministicRef);
+  if (deterministicSnap.exists()) {
+    return { id: deterministicSnap.id, ...deterministicSnap.data() };
+  }
+
+  // Backward-compatibility: legacy cards were session-scoped IDs.
+  // We pick any existing card for this question.
+  const q = query(
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId),
+    where('questionId', '==', questionId),
+    limit(1)
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+function resetCardForReactivation(card, { topic, subtopic, attemptId }) {
+  const now = getNow();
+  const nextReviewDate = formatHKDateKey(new Date(now.getTime() + 86400000));
+  return {
+    ...card,
+    topic: topic ?? card.topic ?? null,
+    subtopic: subtopic ?? card.subtopic ?? null,
+
+    interval: 1,
+    easeFactor: 2.5,
+    repetitionCount: 0,
+    status: 'new',
+    currentAttemptNumber: 0,
+
+    nextReviewDate,
+    lastReviewedAt: null,
+    isDue: false,
+
+    totalAttempts: 0,
+    successfulAttempts: 0,
+    failedAttempts: 0,
+
+    isActive: true,
+    archivedAt: null,
+    archiveReason: null,
+    createdFromAttemptId: attemptId ?? card.createdFromAttemptId ?? null,
+    updatedAt: now.toISOString(),
+  };
+}
+
 /**
  * Create SRS cards for wrong answers from a quiz
  * 
@@ -57,25 +149,44 @@ export async function createCardsFromMistakes(userId, wrongQuestions, sessionId,
   console.log(`📝 Creating ${wrongQuestions.length} SRS cards for user ${userId}`);
   
   for (const question of wrongQuestions) {
-    // Check if card already exists for this user+question combination
-    const existingCardId = `card_${userId}_${question.ID}_${sessionId}`;
-    const existingCardRef = doc(db, COLLECTIONS.CARDS, existingCardId);
-    const existingCardSnap = await getDoc(existingCardRef);
-    
-    if (existingCardSnap.exists()) {
-      console.log(`⚠️ Card already exists: ${existingCardId}, skipping`);
+    const questionId = question?.ID;
+    if (!questionId) continue;
+
+    const existing = await findAnyCardForQuestion(userId, questionId);
+    if (existing) {
+      // If a card exists (active or archived), reuse it.
+      // Archived/graduated cards are reactivated + reset.
+      const next = existing.isActive === false
+        ? resetCardForReactivation(existing, {
+          topic: question.Topic,
+          subtopic: question.Subtopic || null,
+          attemptId,
+        })
+        : {
+          ...existing,
+          topic: question.Topic ?? existing.topic ?? null,
+          subtopic: (question.Subtopic || null) ?? existing.subtopic ?? null,
+          updatedAt: getNow().toISOString(),
+        };
+
+      batch.set(doc(db, COLLECTIONS.CARDS, existing.id), next);
+      createdCards.push(next);
+
+      console.log(`♻️ Reused SRS card: ${existing.id} (review on ${next.nextReviewDate})`);
       continue;
     }
-    
-    // Create new card
+
+    // No prior card -> create deterministic ID (one card per user+question)
     const card = createNewCard({
-      questionId: question.ID,
+      questionId,
       userId,
       topic: question.Topic,
       subtopic: question.Subtopic || null,
       sessionId,
       attemptId
     });
+    const deterministicId = `card_${userId}_${questionId}`;
+    card.id = deterministicId;
     
     batch.set(doc(db, COLLECTIONS.CARDS, card.id), card);
     createdCards.push(card);
@@ -86,6 +197,11 @@ export async function createCardsFromMistakes(userId, wrongQuestions, sessionId,
   if (createdCards.length > 0) {
     await batch.commit();
     console.log(`🎉 Successfully created ${createdCards.length} SRS cards`);
+
+    // Denormalize onto mistake index (writes only)
+    await Promise.all(
+      createdCards.map((c) => upsertMistakeSrsMeta(userId, c.questionId, c))
+    );
   }
   
   return createdCards;
@@ -238,6 +354,11 @@ export async function archiveOverdueCards(userId) {
     await batch.commit();
     archivedCount += batchCards.length;
     console.log(`📦 Archived batch of ${batchCards.length} cards`);
+
+    // Best-effort denormalization
+    await Promise.all(
+      batchCards.map((c) => upsertMistakeSrsMeta(userId, c.questionId, { ...c, isActive: false }))
+    );
   }
   
   console.log(`🎉 Successfully archived ${archivedCount} overdue cards`);
@@ -296,6 +417,14 @@ export async function restoreArchivedCard(cardId) {
   
   const updatedCard = await getCard(cardId);
   console.log(`♻️ Restored archived card: ${cardId}`);
+
+  try {
+    if (updatedCard) {
+      await upsertMistakeSrsMeta(updatedCard.userId, updatedCard.questionId, updatedCard);
+    }
+  } catch (e) {
+    console.error('⚠️ Failed to update mistake SRS meta on restore:', e);
+  }
   
   return updatedCard;
 }
@@ -333,6 +462,23 @@ export async function getAllCards(userId) {
 
   const snapshot = await getDocs(cardsQuery);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+}
+
+export async function getActiveCards(userId, options = {}) {
+  const max = Number(options?.limit);
+
+  if (!userId) return [];
+
+  // Index-safe: avoid requiring a composite index on (userId, isActive).
+  // We'll query by userId only and filter isActive client-side.
+  const queryParts = [collection(db, COLLECTIONS.CARDS), where('userId', '==', userId)];
+  if (Number.isFinite(max) && max > 0) queryParts.push(limit(max));
+
+  const q = query(...queryParts);
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((c) => c?.isActive === true);
 }
 
 export async function getCardsByQuestionIds(userId, questionIds = []) {
@@ -491,6 +637,16 @@ export async function submitReview(cardId, wasCorrect, attemptData = {}) {
   if (shouldArchiveCard(updatedCard)) {
     console.log(`🎓 Card graduated! Archiving: ${cardId}`);
     await archiveCard(cardId);
+  }
+
+  // Denormalize onto mistake index
+  try {
+    const fresh = shouldArchiveCard(updatedCard)
+      ? { ...updatedCard, isActive: false }
+      : updatedCard;
+    await upsertMistakeSrsMeta(fresh.userId, fresh.questionId, fresh);
+  } catch (e) {
+    console.error('⚠️ Failed to update mistake SRS meta:', e);
   }
   
   return {
@@ -666,6 +822,7 @@ export async function updateDueFlags(userId) {
 export const srsService = {
   createCardsFromMistakes,
   getAllCards,
+  getActiveCards,
   getCardsByQuestionIds,
   getRecentReviewAttempts,
   getDueCards,

@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { purchaseItem, equipItem } from '../services/tokenService';
 import { STORE_ITEMS, RARITY_COLORS, RARITY_BORDER, RARITY_LABELS } from '../utils/storeItems';
-import { ArrowLeft, ShoppingBag, Sparkles, Check, Lock, Zap } from 'lucide-react';
+import { ArrowLeft, ShoppingBag, Sparkles, Check, Lock, Gem } from 'lucide-react';
 import TokenRulesModal from './TokenRulesModal';
 
 export default function ChemStore() {
@@ -125,7 +125,7 @@ export default function ChemStore() {
                   {t('store.yourBalance')}
                 </div>
                 <div className="mt-1 flex items-center justify-end gap-2">
-                  <Zap size={20} className="text-amber-600" fill="currentColor" />
+                  <Gem size={20} className="text-amber-600" fill="currentColor" />
                   <span className="text-3xl font-black text-slate-900 tabular-nums">
                     {tokens}
                   </span>
@@ -213,7 +213,7 @@ export default function ChemStore() {
                     {/* Price & Actions */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Zap size={20} className="text-amber-500" fill="currentColor" />
+                        <Gem size={20} className="text-amber-500" fill="currentColor" />
                         <span className="text-2xl font-black text-slate-800">
                           {item.price === 0 ? 'FREE' : item.price}
                         </span>

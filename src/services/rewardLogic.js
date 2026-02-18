@@ -99,7 +99,7 @@ export async function rewardMCQCompletion(userId, attemptData) {
     return {
       success: true,
       tokensAwarded,
-      message: tokensAwarded > 0 ? `+${tokensAwarded} tokens! ${rewardTier}` : `No token bonus (${rewardTier})`
+      message: tokensAwarded > 0 ? `+${tokensAwarded} diamonds! ${rewardTier}` : `No diamond bonus (${rewardTier})`
     };
   } catch (error) {
     console.error('Error rewarding MCQ completion:', error);
@@ -137,7 +137,7 @@ export async function rewardLeaderboardPlacement(userId, rank, period = 'weekly'
     return {
       success: true,
       tokensAwarded,
-      message: `+${tokensAwarded} tokens!`
+      message: `+${tokensAwarded} diamonds!`
     };
   } catch (error) {
     console.error('Error rewarding leaderboard placement:', error);
@@ -164,14 +164,14 @@ export async function rewardQuizQuestionTokens(userId, questions = [], answers =
       }
     });
 
-    // 1 token per 2 correct answers (floor division)
+    // 1 diamond per 2 correct answers (floor division)
     const tokensAwarded = Math.floor(correctCount / 2);
 
     if (tokensAwarded <= 0) {
       return { success: true, tokensAwarded: 0 };
     }
 
-    const reason = `Quiz Correct Answers: ${correctCount} correct (${tokensAwarded} tokens)`;
+    const reason = `Quiz Correct Answers: ${correctCount} correct (${tokensAwarded} diamonds)`;
     await awardTokens(userId, tokensAwarded, reason, {
       category: 'quiz_correct_answers',
       correctCount,

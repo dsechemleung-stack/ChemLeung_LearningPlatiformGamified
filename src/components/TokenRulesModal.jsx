@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { X, Info, Zap, Trophy, Gift, Target } from 'lucide-react';
+import { X, Info, Gem, Trophy, Gift, Target } from 'lucide-react';
 
 export default function TokenRulesModal({ open, onClose, title }) {
   const { t } = useLanguage();
@@ -27,7 +27,7 @@ export default function TokenRulesModal({ open, onClose, title }) {
             </button>
           </div>
           <p className="mt-3 text-amber-100 font-medium">
-            Complete activities to earn tokens and unlock exclusive items!
+            Complete activities to earn diamonds and unlock exclusive items!
           </p>
         </div>
 
@@ -82,7 +82,7 @@ export default function TokenRulesModal({ open, onClose, title }) {
             {/* Weekly Leaderboard */}
             <div className="flex items-start gap-4 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
               <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-                <Zap size={20} />
+                <Gem size={20} />
               </div>
               <div className="flex-1">
                 <h3 className="font-bold text-amber-900 text-lg mb-1">
@@ -113,9 +113,9 @@ export default function TokenRulesModal({ open, onClose, title }) {
           {/* Footer Tip */}
           <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
             <div className="flex items-center gap-2 text-slate-600 text-sm">
-              <Zap size={16} className="text-amber-500" />
+              <Gem size={16} className="text-amber-500" />
               <span className="font-medium">
-                Pro tip: Combine multiple activities to maximize your token earnings!
+                Pro tip: Combine multiple activities to maximize your diamond earnings!
               </span>
             </div>
           </div>

@@ -1,6 +1,6 @@
 // MistakeNotebookPage.jsx - Spaced Repetition Integration
 import React, {
-  useState, useEffect, useMemo, useCallback, useRef,
+  useState, useEffect, useMemo, useCallback,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -1483,17 +1483,9 @@ export default function MistakeNotebookPage({ questions = [] }) {
   const [showHelpPanel, setShowHelpPanel] = useState(false);
   const [filterInfoOpen, setFilterInfoOpen] = useState(false);
   const [archivedLoaded, setArchivedLoaded] = useState(false);
-
-  // ─── SRS data cache ───────────────────────────────────────────────────────
-  // getDueCards + getRecentReviewAttempts are expensive cross-collection reads.
-  // They are independent of topic/subtopic/mastery/srsPresence filters, so we
-  // cache them per-uid and only re-fetch when the user changes or the cache is
-  // older than SRS_CACHE_TTL_MS (5 min). Filter-only changes reuse the cache.
-  const SRS_CACHE_TTL_MS = 5 * 60 * 1000;
-  const srsDataCachedForUidRef = useRef(null); // uid the current cache belongs to
-  const cachedDueCardsRef       = useRef([]);
-  const cachedReviewAttemptsRef = useRef([]);
-  const srsLastFetchedAtRef     = useRef(0);   // Date.now() at last SRS fetch
+  
+  // Load data
+  useEffect(() => { loadMistakes(); }, [currentUser]);
 
   const refreshTopicStatsDoc = useCallback(async () => {
     if (!currentUser?.uid) return;
@@ -1702,17 +1694,21 @@ export default function MistakeNotebookPage({ questions = [] }) {
     loadFacetMistakes();
   }, [currentUser, datePeriod]);
 
-  // Single consolidated load effect — replaces 3 separate effects that each called
-  // loadMistakes independently (causing 2–3 redundant full Firestore fetches on every
-  // mount and filter change). Pagination state is reset here so loadMistakes always
-  // starts from the first page. SRS data re-use is controlled inside loadMistakes.
+  // Reset pagination when date filter changes
   useEffect(() => {
     setMistakeIndexRows([]);
     setMistakeIndexHasMore(false);
     setMistakeIndexCursor(null);
     if (currentUser) loadMistakes();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence]);
+  }, [datePeriod]);
+
+  // Reset pagination when topic/subtopic filters change (server-side filtered query)
+  useEffect(() => {
+    setMistakeIndexRows([]);
+    setMistakeIndexHasMore(false);
+    setMistakeIndexCursor(null);
+    if (currentUser) loadMistakes();
+  }, [selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence]);
 
   // Lazy-load archived cards only when Archive tab is opened
   useEffect(() => {
@@ -1784,28 +1780,10 @@ export default function MistakeNotebookPage({ questions = [] }) {
         })
         .catch((e) => console.error('Active-card backfill failed:', e));
 
-      // Re-fetch SRS data only when the user changes or the cache is stale (>5 min).
-      // Topic / subtopic / mastery / srsPresence filter changes do NOT affect which SRS
-      // cards exist, so those filter-triggered calls reuse the cached values and avoid
-      // the expensive getDueCards + getRecentReviewAttempts round-trips.
-      const srsNeedsFetch =
-        srsDataCachedForUidRef.current !== currentUser.uid ||
-        (Date.now() - srsLastFetchedAtRef.current) > SRS_CACHE_TTL_MS;
-
-      let srsAttempts, dueCards;
-      if (srsNeedsFetch) {
-        [srsAttempts, dueCards] = await Promise.all([
-          srsService.getRecentReviewAttempts(currentUser.uid, 30),
-          srsService.getDueCards(currentUser.uid, getNow(), { limit: 200 })
-        ]);
-        cachedReviewAttemptsRef.current = srsAttempts;
-        cachedDueCardsRef.current       = dueCards;
-        srsDataCachedForUidRef.current  = currentUser.uid;
-        srsLastFetchedAtRef.current     = Date.now();
-      } else {
-        srsAttempts = cachedReviewAttemptsRef.current;
-        dueCards    = cachedDueCardsRef.current;
-      }
+      const [srsAttempts, dueCards] = await Promise.all([
+        srsService.getRecentReviewAttempts(currentUser.uid, 30),
+        srsService.getDueCards(currentUser.uid, getNow(), { limit: 200 })
+      ]);
 
       const now = getNow();
       const weekAgo = new Date(now);
@@ -2009,6 +1987,12 @@ export default function MistakeNotebookPage({ questions = [] }) {
 
     setLoadingMoreMistakes(true);
     try {
+      const now = getNow();
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const monthAgo = new Date(now);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+
       const pageSize = 40;
       const firstBuilt = buildMistakeIndexQueryConstraints({
         userId: currentUser.uid,
@@ -2025,12 +2009,10 @@ export default function MistakeNotebookPage({ questions = [] }) {
       let nextCursor = mistakeIndexCursor;
       let hasMore = false;
 
-      // FIX: include srsPresence in needsClientFiltering check (was missing)
       const needsClientFiltering =
         (firstBuilt.needsClientTopicFilter && firstBuilt.topics.length > 0) ||
         (firstBuilt.needsClientSubtopicFilter && firstBuilt.subs.length > 0) ||
-        (firstBuilt.needsClientMasteryFilter && firstBuilt.masteryLevels.length > 0) ||
-        firstBuilt.needsClientSrsPresenceFilter;
+        (firstBuilt.needsClientMasteryFilter && firstBuilt.masteryLevels.length > 0);
 
       if (!needsClientFiltering) {
         const snap = await getDocs(firstBuilt.q);
@@ -2067,13 +2049,6 @@ export default function MistakeNotebookPage({ questions = [] }) {
           }
           if (built.needsClientSubtopicFilter && subs.length > 0) {
             pageRows = pageRows.filter((r) => subs.includes(r?.Subtopic ?? r?.subtopic));
-          }
-          if (built.needsClientMasteryFilter && masteryLevels.length > 0) {
-            pageRows = pageRows.filter((r) => masteryLevels.includes(r.srsBucket || 'not_in_srs'));
-          }
-          // FIX: apply srsPresence filter inside the overfetch loop (was missing)
-          if (built.needsClientSrsPresenceFilter) {
-            pageRows = pageRows.filter((r) => matchesSrsPresence(r, srsPresence));
           }
 
           fetchedRows.push(...pageRows);
@@ -2523,10 +2498,8 @@ export default function MistakeNotebookPage({ questions = [] }) {
     if (globalFilteredTotalCount != null) {
       const loaded = Number(filteredMistakes?.length || 0);
       const remaining = Math.max(0, Number(globalFilteredTotalCount) - loaded);
-      // FIX: when Firestore confirms no more pages, all matching docs are loaded;
-      // any remaining count discrepancy is from stale stats or legacy docs — suppress the hint.
-      if (!mistakeIndexHasMore) return '';
       if (remaining > 0) return `(${tf('notebook.questionsHidden', { count: remaining })})`;
+      if (mistakeIndexHasMore) return `(${t('notebook.moreQuestionsHidden')})`;
       return '';
     }
 
@@ -2719,9 +2692,9 @@ export default function MistakeNotebookPage({ questions = [] }) {
       </AnimatePresence>
 
       
-      		{/* ══════════════════════════════════════════════════════════════════════════════
+      		{/* ══════════════════════════════════════════════════════════════════════════════
 			SIDEBAR: Practice Configurator
-			══════════════════════════════════════════════════════════════════════════════ */}
+			══════════════════════════════════════════════════════════════════════════════ */}
 		
 		<div className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col min-h-0 md:sticky md:top-20 md:max-h-[calc(100vh-5rem)] overflow-hidden">
 			{/* Header */}
@@ -3245,8 +3218,7 @@ export default function MistakeNotebookPage({ questions = [] }) {
                         onViewFull={setFullViewMistake}
                       />
                     ) : (
-                      // FIX: was incorrectly named <KanbanDeck> — component is KanbanViewDeck
-                      <KanbanViewDeck
+                      <KanbanDeck
                         columns={kanbanColumns}
                         errorTags={errorTags}
                         onTag={handleTag}

@@ -2,7 +2,7 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, updateDoc, increment } from 'firebase/firestore';
-import { Coins, PhoneCall, BarChart3, Percent, X, Menu, Info, MoreHorizontal, LayoutGrid, HandCoins, ShieldCheck } from 'lucide-react';
+import { Gem, PhoneCall, BarChart3, Percent, X, Menu, Info, MoreHorizontal, LayoutGrid, HandCoins, ShieldCheck } from 'lucide-react';
 import { motion, useMotionValue, useSpring } from 'framer-motion';
 
 import { db } from '../firebase/config';
@@ -599,7 +599,7 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
         <div className="flex items-center justify-between gap-3 mb-4 flex-none">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-cyan-400/10 border border-cyan-300/30 flex items-center justify-center">
-              <Coins className="text-white" size={20} />
+              <Gem className="text-white" size={20} />
             </div>
             <div>
               <div className="text-xs uppercase tracking-widest text-white/70">{t('millionaire.modeName')}</div>

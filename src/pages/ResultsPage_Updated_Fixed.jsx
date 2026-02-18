@@ -10,6 +10,8 @@ import { calendarService } from '../services/calendarService';
 import { rewardMCQCompletion, rewardQuizQuestionTokens } from '../services/rewardLogic';
 import ChemistryLoading from '../components/ChemistryLoading';
 import { formatHKDateKey } from '../utils/hkTime';
+import { srsService } from '../services/srsService';
+import { HelpCircle } from 'lucide-react';
 
 /**
  * ResultsPage - OPTIMIZED VERSION with SRS Review Support
@@ -30,6 +32,12 @@ export default function ResultsPage() {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const hasSavedRef = useRef(false);
+  const [savedAttemptId, setSavedAttemptId] = useState(null);
+  const [showAddToSrsPrompt, setShowAddToSrsPrompt] = useState(false);
+  const [showSrsInfo, setShowSrsInfo] = useState(false);
+  const [addingToSrs, setAddingToSrs] = useState(false);
+  const [addToSrsDone, setAddToSrsDone] = useState(false);
+  const hasShownSrsPromptRef = useRef(false);
 
   const questions = quizStorage.getSelectedQuestions();
   const userAnswers = quizStorage.getUserAnswers();
@@ -39,6 +47,8 @@ export default function ResultsPage() {
   const attemptKey = userAnswers && Object.keys(userAnswers).length > 0 
     ? `quiz_saved_${Object.keys(userAnswers).sort().join('_')}` 
     : null;
+
+  const mistakesToSrsMode = localStorage.getItem('practice_mistakes_to_srs_mode') || 'ask';
 
   useEffect(() => {
     if (!questions || questions.length === 0 || Object.keys(userAnswers).length === 0) {
@@ -71,6 +81,44 @@ export default function ResultsPage() {
       if (attemptKey && sessionStorage.getItem(attemptKey)) {
         console.log('⚠️ Attempt already saved (sessionStorage), skipping duplicate save');
         setSaved(true);
+
+        const existingAttemptId = attemptKey
+          ? sessionStorage.getItem(`${attemptKey}_attemptId`)
+          : null;
+
+        if (existingAttemptId) setSavedAttemptId(existingAttemptId);
+
+        if (!hasShownSrsPromptRef.current) {
+          const alreadyResponded = attemptKey && sessionStorage.getItem(`${attemptKey}_srsPromptResponded`);
+          const alreadyAutoAdded = attemptKey && sessionStorage.getItem(`${attemptKey}_srsAutoAdded`);
+          if (!alreadyResponded) {
+            hasShownSrsPromptRef.current = true;
+            const wrongAnswers = questions.filter(q => userAnswers[q.ID] !== q.CorrectOption);
+            const mode = localStorage.getItem('quiz_mode') || 'practice';
+
+            if (mode !== 'spaced-repetition' && wrongAnswers.length > 0) {
+              if (mistakesToSrsMode === 'never') {
+                sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+              } else if (mistakesToSrsMode === 'always') {
+                if (!alreadyAutoAdded && currentUser?.uid && existingAttemptId) {
+                  (async () => {
+                    try {
+                      await srsService.createCardsFromMistakes(currentUser.uid, wrongAnswers, existingAttemptId, existingAttemptId);
+                      sessionStorage.setItem(`${attemptKey}_srsAutoAdded`, 'true');
+                      sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+                      setAddToSrsDone(true);
+                      setTimeout(() => setAddToSrsDone(false), 2500);
+                    } catch (e) {
+                      console.error('Failed to auto-add mistakes to SRS:', e);
+                    }
+                  })();
+                }
+              } else {
+                setShowAddToSrsPrompt(true);
+              }
+            }
+          }
+        }
         return;
       }
 
@@ -107,9 +155,10 @@ export default function ResultsPage() {
         };
 
         // STEP 1: Save attempt to Firestore
-        const savedAttempt = await quizService.saveAttempt(currentUser.uid, attemptData);
-        const attemptId = savedAttempt.id || `attempt_${Date.now()}`;
+        const savedAttemptId = await quizService.saveAttempt(currentUser.uid, attemptData);
+        const attemptId = savedAttemptId || `attempt_${Date.now()}`;
         console.log('✅ Attempt saved:', attemptId);
+        setSavedAttemptId(attemptId);
 
         // Get quiz metadata
         const quizMode = localStorage.getItem('quiz_mode') || 'practice';
@@ -158,7 +207,8 @@ export default function ResultsPage() {
             currentUser.uid,
             questions,
             userAnswers,
-            attemptId
+            attemptId,
+            { createSrsCards: false }
           ).catch(err => {
             console.error('⚠️ Processing error:', err);
             return { error: err };
@@ -302,10 +352,38 @@ export default function ResultsPage() {
         }
 
         setSaved(true);
+
+        if (!hasShownSrsPromptRef.current) {
+          const alreadyResponded = attemptKey && sessionStorage.getItem(`${attemptKey}_srsPromptResponded`);
+          if (!alreadyResponded) {
+            hasShownSrsPromptRef.current = true;
+            const wrongAnswers = questions.filter(q => userAnswers[q.ID] !== q.CorrectOption);
+            const mode = localStorage.getItem('quiz_mode') || 'practice';
+
+            if (mode !== 'spaced-repetition' && wrongAnswers.length > 0) {
+              if (mistakesToSrsMode === 'never') {
+                sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+              } else if (mistakesToSrsMode === 'always') {
+                try {
+                  await srsService.createCardsFromMistakes(currentUser.uid, wrongAnswers, attemptId, attemptId);
+                  sessionStorage.setItem(`${attemptKey}_srsAutoAdded`, 'true');
+                  sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+                  setAddToSrsDone(true);
+                  setTimeout(() => setAddToSrsDone(false), 2500);
+                } catch (e) {
+                  console.error('Failed to auto-add mistakes to SRS:', e);
+                }
+              } else {
+                setShowAddToSrsPrompt(true);
+              }
+            }
+          }
+        }
         
         // Mark as saved in sessionStorage to prevent double-submit on refresh
         if (attemptKey) {
           sessionStorage.setItem(attemptKey, 'true');
+          sessionStorage.setItem(`${attemptKey}_attemptId`, attemptId);
         }
         
         console.log('🎉 Save complete!');
@@ -356,6 +434,124 @@ export default function ResultsPage() {
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
             <ChemistryLoading />
+          </div>
+        </div>
+      )}
+
+      {addToSrsDone && (
+        <div className="fixed top-32 right-4 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2 animate-in fade-in">
+          <span className="font-semibold">
+            {t('results.addedToSrs')}
+          </span>
+        </div>
+      )}
+
+      {showAddToSrsPrompt && !saving && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAddToSrsPrompt(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-xl font-black text-slate-900">
+                  {t('results.addMistakesToSrsTitle')}
+                </h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  {t('results.addMistakesToSrsBody')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddToSrsPrompt(false)}
+                className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all flex items-center justify-center flex-none"
+                aria-label={t('common.close')}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between mt-5 gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSrsInfo(true)}
+                className="w-10 h-10 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-all flex items-center justify-center text-slate-800 font-bold"
+                aria-label={t('common.details')}
+              >
+                <HelpCircle size={16} />
+              </button>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={addingToSrs}
+                  onClick={() => {
+                    if (attemptKey) sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+                    setShowAddToSrsPrompt(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-200 text-slate-800 font-black hover:bg-slate-300 transition-all disabled:opacity-60"
+                >
+                  {t('common.noThanks')}
+                </button>
+                <button
+                  type="button"
+                  disabled={addingToSrs}
+                  onClick={async () => {
+                    try {
+                      setAddingToSrs(true);
+                      const uid = currentUser?.uid;
+                      if (!uid) return;
+                      const wrongAnswers = questions.filter(q => userAnswers[q.ID] !== q.CorrectOption);
+                      if (wrongAnswers.length === 0) {
+                        setShowAddToSrsPrompt(false);
+                        return;
+                      }
+
+                      const attemptId = savedAttemptId || null;
+                      const sessionId = attemptId || `attempt_${Date.now()}`;
+
+                      await srsService.createCardsFromMistakes(uid, wrongAnswers, sessionId, attemptId);
+
+                      if (attemptKey) sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+
+                      setShowAddToSrsPrompt(false);
+                      setAddToSrsDone(true);
+                      setTimeout(() => setAddToSrsDone(false), 2500);
+                    } catch (e) {
+                      console.error('Failed to add mistakes to SRS:', e);
+                      alert(t('results.failedAddToSrs'));
+                    } finally {
+                      setAddingToSrs(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-900 text-white font-black hover:bg-black transition-all disabled:opacity-60"
+                >
+                  {addingToSrs ? t('results.addingToSrs') : t('results.addToSrs')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSrsInfo && (
+        <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowSrsInfo(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-xl font-black text-slate-900">
+                  {t('calendar.srsReviewMechanismTitle')}
+                </h3>
+                <p className="text-sm text-slate-700 mt-2 whitespace-pre-wrap">
+                  {t('calendar.srsReviewMechanismDesc')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSrsInfo(false)}
+                className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all flex items-center justify-center flex-none"
+                aria-label={t('common.close')}
+              >
+                ×
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -8,6 +8,18 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
   const [forumQuestion, setForumQuestion] = useState(null);
   const [showChineseExplanation, setShowChineseExplanation] = useState(() => ({}));
 
+  const normalizeLiteralNewlinesToBr = (html) => {
+    if (!html) return '';
+    const s = String(html);
+    return s
+      .replace(/\\r\\n/g, '<br>')
+      .replace(/\\n/g, '<br>')
+      .replace(/\\r/g, '<br>')
+      .replace(/\r\n/g, '<br>')
+      .replace(/\n/g, '<br>')
+      .replace(/\r/g, '<br>');
+  };
+
   // 1. Calculate Score
   const total = questions.length;
   const correctCount = questions.reduce((acc, q) => {
@@ -68,7 +80,7 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
           <p className="text-blue-100">
             {correctCount} out of {total} questions correct
           </p>
-          {totalTime && (
+          {!!totalTime && (
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-blue-100">
               <div className="bg-blue-700 bg-opacity-50 rounded-lg p-4">
                 <div className="flex items-center justify-center gap-2 mb-1">
@@ -182,6 +194,49 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
               
               <div className="prose prose-slate max-w-none mb-4 text-lg" dangerouslySetInnerHTML={{ __html: q.Question }} />
               
+              <div className="space-y-2 mb-4">
+                {[
+                  { key: 'A', html: normalizeLiteralNewlinesToBr(q.OptionA) },
+                  { key: 'B', html: normalizeLiteralNewlinesToBr(q.OptionB) },
+                  { key: 'C', html: normalizeLiteralNewlinesToBr(q.OptionC) },
+                  { key: 'D', html: normalizeLiteralNewlinesToBr(q.OptionD) },
+                ].filter(o => o.html).map((opt) => {
+                  const isUser = userAnswers[q.ID] === opt.key;
+                  const isCorrectOpt = q.CorrectOption === opt.key;
+
+                  const base = 'border-slate-200 bg-white text-slate-800';
+                  const correctCls = 'border-green-300 bg-green-50 text-green-900';
+                  const wrongCls = 'border-red-300 bg-red-50 text-red-900';
+
+                  const finalClass = isCorrectOpt
+                    ? correctCls
+                    : (isUser && !isCorrectOpt)
+                      ? wrongCls
+                      : base;
+
+                  return (
+                    <div
+                      key={opt.key}
+                      className={`p-3 rounded-lg border ${finalClass}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-none w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm font-black">
+                          {opt.key}
+                        </div>
+                        <div className="prose prose-slate max-w-none text-sm" dangerouslySetInnerHTML={{ __html: opt.html }} />
+                      </div>
+                      {(isUser || isCorrectOpt) && (
+                        <div className="mt-2 text-xs font-black">
+                          {isCorrectOpt && isUser && <span className="text-green-700">Correct</span>}
+                          {isCorrectOpt && !isUser && <span className="text-green-700">Correct answer</span>}
+                          {!isCorrectOpt && isUser && <span className="text-red-700">Your answer</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
                 <div className={`p-3 rounded-lg text-sm border ${userAnswers[q.ID] === q.CorrectOption ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
                   <strong>Your Answer:</strong> {userAnswers[q.ID] || 'None'}

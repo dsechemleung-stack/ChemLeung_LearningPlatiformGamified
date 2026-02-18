@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Infinity, Sparkles, Heart, Settings, ChevronLeft, ChevronRight, Play, BarChart3, Percent, PhoneCall, Layers, Shield, Coins } from 'lucide-react';
+import { Clock, Infinity, Sparkles, Heart, Settings, ChevronLeft, ChevronRight, Play, BarChart3, Percent, PhoneCall, Layers, Shield, Gem } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
 const MODES = [
@@ -34,11 +34,11 @@ const MODES = [
     subtitleKey: 'practiceModeCarousel.customSubtitle',
     descriptionKey: 'practiceModeCarousel.customDesc',
     icon: Settings,
-    gradient: 'from-blue-600 to-cyan-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
-    textColor: 'text-blue-700',
-    iconColor: 'text-blue-600',
+    gradient: 'from-amber-700 via-orange-500 to-amber-900',
+    bgColor: 'bg-amber-50',
+    borderColor: 'border-amber-200',
+    textColor: 'text-amber-900',
+    iconColor: 'text-amber-800',
   },
   {
     id: 'ai-daily',
@@ -269,7 +269,7 @@ export default function FisheyeCarousel({
 
                             <div className="pm-mill-top p-8 text-white relative overflow-hidden">
                               <span className="pm-mill-top-icon pm-mill-top-icon--abs" aria-hidden="true">
-                                <Coins size={28} />
+                                <Gem size={28} />
                               </span>
                               <div className="pm-mill-maxwin pm-mill-maxwin--top" aria-hidden="true">
                                 {isEnglish
@@ -299,7 +299,7 @@ export default function FisheyeCarousel({
                               <p className={`text-sm font-medium mb-4 ${isActive ? 'text-slate-700' : 'text-slate-500'}`}>
                                 {isEnglish
                                   ? 'One wrong answer ends the run. Reach higher stages to earn more.'
-                                  : '答錯即止，闖關賺代幣。'}
+                                  : '答錯即止，闖關賺鑽石。'}
                               </p>
 
                               <AnimatePresence>

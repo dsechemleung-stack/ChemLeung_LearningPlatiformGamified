@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Beaker, Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Zap, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle } from 'lucide-react';
+import { Beaker, Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 import { forumService } from '../services/forumService';
 import Avatar from './Avatar';
@@ -15,7 +15,7 @@ const iconMap = {
 };
 
 export default function Header() {
-    const { currentUser, logout, userProfile } = useAuth();
+    const { currentUser, logout, userProfile, profileError } = useAuth();
     const { language, toggleLanguage, isEnglish, t, tf } = useLanguage();
     const navigate = useNavigate();
     const location = useLocation();
@@ -98,7 +98,11 @@ export default function Header() {
     };
 
     // Get tokens from userProfile with real-time sync
-    const tokens = userProfile?.tokens || 0;
+    const tokens = userProfile?.tokens;
+    const tokensDisplay =
+        profileError && (tokens === undefined || tokens === null)
+            ? '—'
+            : (tokens ?? 0);
     const equipped = userProfile?.equipped || {};
     const profileColor = userProfile?.profileColor || '#2563eb'; // Default blue
 
@@ -236,8 +240,8 @@ export default function Header() {
                                     aria-label={t('store.title')}
                                     title={t('store.title')}
                                 >
-                                    <Zap size={20} fill="currentColor" />
-                                    <span className="nav-orb-badge bg-slate-900/90">{tokens}</span>
+                                    <Gem size={20} fill="currentColor" />
+                                    <span className="nav-orb-badge bg-slate-900/90">{tokensDisplay}</span>
                                     <span className="nav-orb-label font-extrabold text-slate-900">{t('store.title')}</span>
                                 </button>
 
@@ -461,8 +465,8 @@ export default function Header() {
                                 <div className="mb-2 p-3 bg-gradient-to-r from-amber-400 to-orange-500 rounded-lg">
                                     <div className="flex items-center justify-between text-white">
                                         <div className="flex items-center gap-2">
-                                        <Zap size={20} fill="currentColor" />
-                                        <span className="font-black text-lg">{tokens}</span>
+                                        <Gem size={20} fill="currentColor" />
+                                        <span className="font-black text-lg">{tokensDisplay}</span>
                                         <span className="text-sm opacity-90">{t('header.tokens')}</span>
                                     </div>
                                     <button

@@ -1,0 +1,212 @@
+MISTAKE NOTEBOOK HANDOFF (for another AI coder)
+Project: ChemLeung HKDSE MCQ Platform
+Date: 2026-02-19
+
+0) TL;DR
+We are debugging/repairing the Mistake Notebook counts + filtering system (Topic/Subtopic filters, SRS presence filters, Mastery buckets). The key problems were:
+- Firestore query limitations + missing fields excluded docs (orderBy excludes docs missing the ordered field).
+- Legacy mistake docs created before this system may lack required fields (Topic/Subtopic/lastWrongAt), causing persistent mismatches like 18/31.
+- Some UI rows were dropped/duplicated due to non-unique React keys.
+- Pagination (Load more) path previously mixed UI objects with raw Firestore rows, causing out-of-filter topics and unstable counts.
+
+Goal: Make counts and loaded items consistent under all filters with MINIMAL ongoing Firestore reads.
+Strategy: keep minimal-read queries (where Topic/Subtopic + orderBy lastWrongAt + limit 40) and fix legacy data via one-time normalization (callable Cloud Function normalizeMistakes). Ensure UI never drops rows (unique React keys) and pagination rebuilds the deck correctly.
+
+
+1) DATA MODEL (important)
+Firestore collections (per-user):
+- users/{uid}/mistakes/{questionId}
+  Important fields used by Mistake Notebook:
+  - Topic (string) [canonical]
+  - Subtopic (string) [canonical]
+  - lastWrongAt (ISO string) [canonical; required for orderBy]
+  - attemptCount, lastUserAnswer, etc
+  - SRS denormalized meta:
+    - hasSrsCard (bool)
+    - srsIsActive (bool)
+    - srsStatus (string: new/learning/review/graduated)
+    - srsBucket (string: not_in_srs/new/progressing/near/archived)
+    - srsCardId (string)
+
+Legacy/bug sources:
+- Some docs may have lowercase topic/subtopic (topic/subtopic) instead of Topic/Subtopic.
+- Some docs may not have lastWrongAt.
+- Firestore orderBy('lastWrongAt') excludes docs missing lastWrongAt.
+
+
+2) WHAT WE CHANGED (high-level)
+A) Mastery buckets + counts
+- Added mastery bucket 'archived' into the mastery system.
+- Mastery counts (server-side getCountFromServer) are intentionally DISABLED when:
+  - topics/subtopics are selected (needs composite indexes / can be inaccurate)
+  - srsPresence != 'all'
+  This is done to avoid Firestore composite index complexity and incorrect counts.
+
+B) Topic totals and "hidden" denominator mismatch
+- Introduced immediate count overrides using getCountFromServer:
+  - Single topic override: where('Topic','==',topic)
+  - Multi-topic override (2-10): where('Topic','in',topics)
+- These overrides are used to compute the denominator when topic stats doc may be stale right after quizzes.
+
+C) Denormalized topic stats via Cloud Functions
+- Cloud Functions maintain users/{uid}/mistake_stats/topicBuckets with per-topic totals and per-bucket counts.
+- Triggers: onDocumentCreated/onDocumentUpdated/onDocumentDeleted on users/{uid}/mistakes.
+
+D) One-time normalization for legacy docs
+- Added callable Cloud Function: normalizeMistakes (asia-east1).
+  It pages through all users/{uid}/mistakes ordered by documentId and backfills:
+  - Topic from topic
+  - Subtopic from subtopic
+  - lastWrongAt from lastAttempted/updatedAt/createdAt/now
+  Writes only docs that need patch.
+
+E) Frontend auto-trigger for normalizeMistakes
+- In MistakeNotebookPage.jsx: an effect runs when it detects:
+  - datePeriod === 'all'
+  - selectedTopics.length > 0
+  - globalFilteredTotalCount > filteredMistakes.length
+  and calls normalizeMistakes once, using localStorage keys:
+  - normalize_mistakes_running_{uid}
+  - normalize_mistakes_done_{uid}
+  It retries if it fails (running cleared on error; done set only on success).
+
+F) Firestore snapshot mapping bug (doc id overwrite)
+- Changed mapping from { id: d.id, ...d.data() } to { docId: d.id, ...d.data() }
+  because if the doc data contains an 'id' field, it overwrote d.id and could cause questionId derivation to be null and the row was dropped.
+
+G) React duplicate key warnings
+- List/Kanban/Archive cards were keyed by mistake.ID which can be duplicated.
+- Changed to key={mistake.docId ?? mistake.ID}.
+
+H) Load more pagination bug
+- loadMoreMistakes() now rebuilds deck from mergedRows only, dedupes by questionId, applies same filters (topic/subtopic/srsPresence/mastery), then sorts.
+- This prevents out-of-filter topics from appearing after loading more.
+
+
+3) CURRENT PROBLEM (as of now)
+- Some users still see mismatches like 18/31 for a topic in All Time.
+- Root cause is almost certainly legacy mistakes missing lastWrongAt / Topic. Those docs are excluded by minimal-read query.
+- normalizeMistakes should fix it, but the team needs to verify:
+  - The callable is reachable from frontend (region asia-east1).
+  - It actually runs (Network tab / console).
+  - After running, counts converge and Firestore docs are normalized.
+
+
+4) GOAL / ACCEPTANCE CRITERIA
+For any filter combination:
+- Loaded list only contains items matching the filter.
+- Denominator (total) matches reality and never shows impossible states.
+- No persistent "1 hidden" when there are actually no hidden items.
+- Minimal ongoing reads: list pages are 40 docs; use getCountFromServer sparingly for overrides.
+- Legacy docs are fixed via one-time normalizeMistakes.
+
+
+5) KEY FILES
+- src/pages/MistakeNotebookPage.jsx
+- functions/index.js
+- src/services/srsService.js
+- src/contexts/LanguageContext.jsx
+
+
+6) CODE EXCERPTS (authoritative snippets)
+
+6.1) Mastery buckets
+File: src/pages/MistakeNotebookPage.jsx
+
+const MASTERY_LEVELS = {
+  not_in_srs:  { labelKey: 'notebook.masteryNotInSrs', color: 'slate' },
+  new:        { labelKey: 'notebook.masteryNew', color: 'red' },
+  progressing:{ labelKey: 'notebook.masteryDeveloping', color: 'amber' },
+  near:       { labelKey: 'notebook.masteryNear', color: 'yellow' },
+  archived:   { labelKey: 'notebook.mastered', color: 'green' },
+};
+
+
+6.2) Minimal-read index query constraints
+File: src/pages/MistakeNotebookPage.jsx
+Function: buildMistakeIndexQueryConstraints
+- Uses where('Topic'...) / where('Subtopic'...) when possible
+- Uses orderBy('lastWrongAt','desc')
+- Uses needsClientSrsPresenceFilter to indicate client-side filtering for srsPresence
+
+
+6.3) Snapshot mapping fix (docId)
+File: src/pages/MistakeNotebookPage.jsx
+Example:
+rows = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+
+
+6.4) Backfill on fetched rows
+File: src/pages/MistakeNotebookPage.jsx
+Function: backfillMistakeSrsDefaults
+- Patches missing srsBucket/hasSrsCard/srsIsActive and also Topic/Subtopic/lastWrongAt.
+- qid resolution includes docId:
+  const qid = r?.questionId ?? r?.ID ?? r?.docId ?? r?.id;
+
+
+6.5) Denormalized topic stats doc
+Collection doc:
+users/{uid}/mistake_stats/topicBuckets
+Maintained by Cloud Functions (see functions/index.js)
+
+
+6.6) Callable one-time normalization
+File: functions/index.js
+exports.normalizeMistakes = onCall({ region:'asia-east1' }, async (request) => {
+  // pages through users/{uid}/mistakes ordered by documentId
+  // sets Topic/Subtopic/lastWrongAt when missing
+  // writes lastNormalizedAt/Processed/Updated into mistake_stats/topicBuckets
+});
+
+
+6.7) Auto-trigger normalizeMistakes from UI
+File: src/pages/MistakeNotebookPage.jsx
+- Effect runs when total > loaded; uses localStorage running/done keys.
+
+
+6.8) React key fix
+File: src/pages/MistakeNotebookPage.jsx
+In ListViewDeck / KanbanViewDeck / Archive:
+const reactKey = mistake?.docId ?? mistake?.ID;
+<motion.div key={reactKey} ...>
+
+
+6.9) Load more deck rebuilding fix
+File: src/pages/MistakeNotebookPage.jsx
+Function: loadMoreMistakes
+- Rebuild deck from mergedRows
+- Dedupe by questionId
+- Filter by selectedTopics/selectedSubtopics/srsPresence/selectedMasteryLevels
+
+
+7) i18n changes (hidden indicator text)
+File: src/contexts/LanguageContext.jsx
+Keys:
+- notebook.questionsHidden: "{count} questions hidden…"
+- notebook.moreQuestionsHidden: "more questions hidden…"
+(also zh equivalents)
+
+
+8) DEPLOYMENT NOTES
+- Cloud Functions were deployed with: firebase deploy --only functions
+- normalizeMistakes function exists in region asia-east1
+
+
+9) WHAT THE NEXT CODER SHOULD DO
+A) Verify normalizeMistakes actually ran
+- In Firestore: users/{uid}/mistake_stats/topicBuckets should have:
+  lastNormalizedAt, lastNormalizedProcessed, lastNormalizedUpdated
+- In browser: Network tab should show callable request to normalizeMistakes.
+
+B) If counts still wrong after normalization
+- Identify remaining mismatch source:
+  - Docs missing Topic entirely (neither Topic nor topic)
+  - Docs missing lastWrongAt even after normalization
+  - Topic stats doc stale (topicBuckets)
+  - Remaining query paths still using row.id instead of row.docId
+
+C) (Optional) Make facet filtering robust
+- facetFilteredCount currently filters by m.Topic/m.Subtopic only; if legacy values remain, it may be off.
+
+
+END

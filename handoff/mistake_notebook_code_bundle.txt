@@ -1,6 +1,7 @@
+=== MistakeNotebookPage.jsx ===
 // MistakeNotebookPage.jsx - Spaced Repetition Integration
 import React, {
-  useState, useEffect, useMemo, useCallback, useRef,
+  useState, useEffect, useMemo, useCallback,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -1483,17 +1484,9 @@ export default function MistakeNotebookPage({ questions = [] }) {
   const [showHelpPanel, setShowHelpPanel] = useState(false);
   const [filterInfoOpen, setFilterInfoOpen] = useState(false);
   const [archivedLoaded, setArchivedLoaded] = useState(false);
-
-  // ─── SRS data cache ───────────────────────────────────────────────────────
-  // getDueCards + getRecentReviewAttempts are expensive cross-collection reads.
-  // They are independent of topic/subtopic/mastery/srsPresence filters, so we
-  // cache them per-uid and only re-fetch when the user changes or the cache is
-  // older than SRS_CACHE_TTL_MS (5 min). Filter-only changes reuse the cache.
-  const SRS_CACHE_TTL_MS = 5 * 60 * 1000;
-  const srsDataCachedForUidRef = useRef(null); // uid the current cache belongs to
-  const cachedDueCardsRef       = useRef([]);
-  const cachedReviewAttemptsRef = useRef([]);
-  const srsLastFetchedAtRef     = useRef(0);   // Date.now() at last SRS fetch
+  
+  // Load data
+  useEffect(() => { loadMistakes(); }, [currentUser]);
 
   const refreshTopicStatsDoc = useCallback(async () => {
     if (!currentUser?.uid) return;
@@ -1702,17 +1695,21 @@ export default function MistakeNotebookPage({ questions = [] }) {
     loadFacetMistakes();
   }, [currentUser, datePeriod]);
 
-  // Single consolidated load effect — replaces 3 separate effects that each called
-  // loadMistakes independently (causing 2–3 redundant full Firestore fetches on every
-  // mount and filter change). Pagination state is reset here so loadMistakes always
-  // starts from the first page. SRS data re-use is controlled inside loadMistakes.
+  // Reset pagination when date filter changes
   useEffect(() => {
     setMistakeIndexRows([]);
     setMistakeIndexHasMore(false);
     setMistakeIndexCursor(null);
     if (currentUser) loadMistakes();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence]);
+  }, [datePeriod]);
+
+  // Reset pagination when topic/subtopic filters change (server-side filtered query)
+  useEffect(() => {
+    setMistakeIndexRows([]);
+    setMistakeIndexHasMore(false);
+    setMistakeIndexCursor(null);
+    if (currentUser) loadMistakes();
+  }, [selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence]);
 
   // Lazy-load archived cards only when Archive tab is opened
   useEffect(() => {
@@ -1784,28 +1781,10 @@ export default function MistakeNotebookPage({ questions = [] }) {
         })
         .catch((e) => console.error('Active-card backfill failed:', e));
 
-      // Re-fetch SRS data only when the user changes or the cache is stale (>5 min).
-      // Topic / subtopic / mastery / srsPresence filter changes do NOT affect which SRS
-      // cards exist, so those filter-triggered calls reuse the cached values and avoid
-      // the expensive getDueCards + getRecentReviewAttempts round-trips.
-      const srsNeedsFetch =
-        srsDataCachedForUidRef.current !== currentUser.uid ||
-        (Date.now() - srsLastFetchedAtRef.current) > SRS_CACHE_TTL_MS;
-
-      let srsAttempts, dueCards;
-      if (srsNeedsFetch) {
-        [srsAttempts, dueCards] = await Promise.all([
-          srsService.getRecentReviewAttempts(currentUser.uid, 30),
-          srsService.getDueCards(currentUser.uid, getNow(), { limit: 200 })
-        ]);
-        cachedReviewAttemptsRef.current = srsAttempts;
-        cachedDueCardsRef.current       = dueCards;
-        srsDataCachedForUidRef.current  = currentUser.uid;
-        srsLastFetchedAtRef.current     = Date.now();
-      } else {
-        srsAttempts = cachedReviewAttemptsRef.current;
-        dueCards    = cachedDueCardsRef.current;
-      }
+      const [srsAttempts, dueCards] = await Promise.all([
+        srsService.getRecentReviewAttempts(currentUser.uid, 30),
+        srsService.getDueCards(currentUser.uid, getNow(), { limit: 200 })
+      ]);
 
       const now = getNow();
       const weekAgo = new Date(now);
@@ -2009,6 +1988,12 @@ export default function MistakeNotebookPage({ questions = [] }) {
 
     setLoadingMoreMistakes(true);
     try {
+      const now = getNow();
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const monthAgo = new Date(now);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+
       const pageSize = 40;
       const firstBuilt = buildMistakeIndexQueryConstraints({
         userId: currentUser.uid,
@@ -2025,12 +2010,10 @@ export default function MistakeNotebookPage({ questions = [] }) {
       let nextCursor = mistakeIndexCursor;
       let hasMore = false;
 
-      // FIX: include srsPresence in needsClientFiltering check (was missing)
       const needsClientFiltering =
         (firstBuilt.needsClientTopicFilter && firstBuilt.topics.length > 0) ||
         (firstBuilt.needsClientSubtopicFilter && firstBuilt.subs.length > 0) ||
-        (firstBuilt.needsClientMasteryFilter && firstBuilt.masteryLevels.length > 0) ||
-        firstBuilt.needsClientSrsPresenceFilter;
+        (firstBuilt.needsClientMasteryFilter && firstBuilt.masteryLevels.length > 0);
 
       if (!needsClientFiltering) {
         const snap = await getDocs(firstBuilt.q);
@@ -2067,13 +2050,6 @@ export default function MistakeNotebookPage({ questions = [] }) {
           }
           if (built.needsClientSubtopicFilter && subs.length > 0) {
             pageRows = pageRows.filter((r) => subs.includes(r?.Subtopic ?? r?.subtopic));
-          }
-          if (built.needsClientMasteryFilter && masteryLevels.length > 0) {
-            pageRows = pageRows.filter((r) => masteryLevels.includes(r.srsBucket || 'not_in_srs'));
-          }
-          // FIX: apply srsPresence filter inside the overfetch loop (was missing)
-          if (built.needsClientSrsPresenceFilter) {
-            pageRows = pageRows.filter((r) => matchesSrsPresence(r, srsPresence));
           }
 
           fetchedRows.push(...pageRows);
@@ -2523,10 +2499,8 @@ export default function MistakeNotebookPage({ questions = [] }) {
     if (globalFilteredTotalCount != null) {
       const loaded = Number(filteredMistakes?.length || 0);
       const remaining = Math.max(0, Number(globalFilteredTotalCount) - loaded);
-      // FIX: when Firestore confirms no more pages, all matching docs are loaded;
-      // any remaining count discrepancy is from stale stats or legacy docs — suppress the hint.
-      if (!mistakeIndexHasMore) return '';
       if (remaining > 0) return `(${tf('notebook.questionsHidden', { count: remaining })})`;
+      if (mistakeIndexHasMore) return `(${t('notebook.moreQuestionsHidden')})`;
       return '';
     }
 
@@ -2625,822 +2599,1783 @@ export default function MistakeNotebookPage({ questions = [] }) {
     quizStorage.clearQuizData();
     quizStorage.saveSelectedQuestions(selected);
 
-    const selectedSrsCards = selected.filter((card) => !!card?.id);
-    if (selectedSrsCards.length === selected.length) {
-      localStorage.setItem('quiz_mode', 'spaced-repetition');
-      localStorage.setItem(
-        'quiz_srs_cards',
-        JSON.stringify(
-          selectedSrsCards.map((card) => ({
-            id: card.id,
-            questionId: card.questionId,
-            topic: card.topic || card.Topic,
-            subtopic: card.subtopic || card.Subtopic || null,
-            nextReviewDate: card.nextReviewDate,
-            status: card.status,
-          }))
-        )
-      );
-    } else {
-      localStorage.setItem('quiz_mode', 'mistakes');
-      localStorage.removeItem('quiz_srs_cards');
-    }
 
-    localStorage.setItem('quiz_timer_enabled', timerEnabled.toString());
-    localStorage.setItem('quiz_is_timed_mode', isTimedMode.toString());
-    navigate('/quiz');
-  };
-  
-  const toggleMistakeSelection = (questionId) => {
-    setSelectedMistakeIds(prev => {
-      const next = new Set(prev);
-      if (next.has(questionId)) next.delete(questionId);
-      else next.add(questionId);
-      return next;
-    });
-  };
-  
-  const toggleSelectAll = () => {
-    if (selectedMistakeIds.size === filteredMistakes.length) {
-      setSelectedMistakeIds(new Set());
-    } else {
-      setSelectedMistakeIds(new Set(filteredMistakes.map(m => m.ID)));
-    }
-  };
-  
-  const formatDate = (iso) =>
-    new Date(iso).toLocaleDateString('en-GB', {
-      day: '2-digit', month: 'short', year: 'numeric',
-    });
-  
-  // Loading state
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-50">
-        <ChemistryLoading />
-      </div>
-    );
-  }
+=== functions/index.js ===
+const admin = require('firebase-admin');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } = require('firebase-functions/v2/firestore');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
+const algoliasearch = require('algoliasearch');
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-50">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-sm border border-red-200 max-w-lg">
-          <p className="text-red-600 font-black mb-2">{t('notebook.loadingMistakes')}</p>
-          <p className="text-slate-600 text-sm">{String(error?.message || error)}</p>
-        </div>
-      </div>
-    );
-  }
-  
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════════════════════════════
-  
-  return (
-    <div className="flex flex-col md:flex-row min-h-0 bg-slate-50">
-      {/* Full Question Modal */}
-      <AnimatePresence>
-        {fullViewMistake && (
-          <FullQuestionModal
-            mistake={fullViewMistake}
-            errorTag={errorTags[fullViewMistake.ID]}
-            onTag={handleTag}
-            onClose={() => setFullViewMistake(null)}
-          />
-        )}
-      </AnimatePresence>
+admin.initializeApp();
 
-      {/* Filter Info Modal */}
-      <AnimatePresence>
-        {filterInfoOpen && (
-          <FilterInfoModal onClose={() => setFilterInfoOpen(false)} />
-        )}
-      </AnimatePresence>
-
-      
-      		{/* ══════════════════════════════════════════════════════════════════════════════
-			SIDEBAR: Practice Configurator
-			══════════════════════════════════════════════════════════════════════════════ */}
-		
-		<div className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col min-h-0 md:sticky md:top-20 md:max-h-[calc(100vh-5rem)] overflow-hidden">
-			{/* Header */}
-			<div className="p-3 border-b border-slate-200 flex items-center gap-2">
-				<button
-					onClick={() => navigate('/dashboard')}
-					className="p-2 hover:bg-slate-100 rounded-lg transition-all"
-            title="Back to Dashboard"
-          >
-            <ArrowLeft size={20} className="text-slate-700" />
-          </button>
-          <h1 className="font-black text-lg text-slate-800 flex items-center gap-2">
-            <Command size={20} className="text-indigo-600"/>
-            {t('notebook.commandCenter')}
-          </h1>
-        </div>
-        
-        {/* Configurator */}
-        <div className="flex-1 p-3 space-y-4 overflow-y-auto min-h-0">
-          {/* Question Count */}
-          <div>
-            <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2 flex items-center gap-1">
-              <Hash size={12} />
-              {t('notebook.numberOfQuestions')}
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              {['5', '10', '15', '20', 'All'].map((num) => (
-                <button
-                  key={num}
-                  onClick={() => setQuestionCount(num)}
-                  disabled={num !== 'All' && parseInt(num) > filteredMistakes.length}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
-                    questionCount === num
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-600'
-                      : 'border-slate-200 text-slate-500 hover:border-slate-300 disabled:opacity-30'
-                  }`}
-                >
-                  {num}
-                </button>
-              ))}
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-slate-500">Custom:</span>
-                <input
-                  type="number"
-                  min="1"
-                  max={filteredMistakes.length || 1}
-                  value={questionCount === 'All' || ['5','10','15','20'].includes(questionCount) ? '' : questionCount}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value);
-                    if (val && val > 0) {
-                      setQuestionCount(String(Math.min(val, filteredMistakes.length)));
-                    }
-                  }}
-                  placeholder="___"
-                  className="w-14 px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-center focus:border-indigo-500 focus:outline-none"
-                />
-              </div>
-            </div>
-          </div>
-          
-          {/* Time Range & Mastery Level - Horizontal */}
-          <div className="grid grid-cols-2 gap-3">
-            {/* Date Range */}
-            <div>
-              <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2 flex items-center gap-1">
-                <Calendar size={12} />
-                {t('notebook.timeRange')}
-              </label>
-              <div className="space-y-1">
-                {[
-                  { value: 'all',   label: t('notebook.allTime') },
-                  { value: 'month', label: t('notebook.lastMonth') },
-                  { value: 'week',  label: t('notebook.lastWeek') },
-                ].map((o) => (
-                  <button
-                    key={o.value}
-                    onClick={() => setDatePeriod(o.value)}
-                    className={`w-full px-2 py-1.5 rounded-lg border text-[11px] font-bold text-left transition-all ${
-                      datePeriod === o.value
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            
-            {/* Mastery Level */}
-            <div>
-              <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2">
-                {t('notebook.masteryLevel')}
-              </label>
-              <div className="space-y-1">
-                {Object.entries(MASTERY_LEVELS).map(([key, lvl]) => {
-                  const count = Number(masteryCounts?.[key] ?? mistakes.filter((m) => getSrsBucket(m) === key).length);
-                  
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => toggleMasteryLevel(key)}
-                      className={`w-full text-left px-2 py-1.5 rounded-lg border-2 font-bold text-[11px] transition-all flex items-center justify-between ${
-                        selectedMasteryLevels.includes(key)
-                          ? `bg-${lvl.color}-50 border-${lvl.color}-400 text-${lvl.color}-800`
-                          : `bg-white border-${lvl.color}-200 text-${lvl.color}-700`
-                      }`}
-                    >
-                      {t(lvl.labelKey)}
-                      <span className="ml-1 opacity-70">({count})</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* SRS Presence */}
-          <div>
-            <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2">
-              {t('notebook.srsPresence')}
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {[{
-                value: 'all',
-                label: t('notebook.srsPresenceAll')
-              }, {
-                value: 'in_srs',
-                label: t('notebook.srsPresenceInSrs')
-              }, {
-                value: 'not_in_srs',
-                label: t('notebook.srsPresenceNotInSrs')
-              }].map((o) => (
-                <button
-                  key={o.value}
-                  onClick={() => setSrsPresence(o.value)}
-                  className={`px-2 py-1.5 rounded-lg border text-[11px] font-bold transition-all ${
-                    srsPresence === o.value
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          
-          {/* Topics */}
-          {allTopics.length > 1 && (
-            <div>
-              <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2 flex items-center gap-1">
-                {t('notebook.topics')}
-                <InfoIconButton
-                  title={t('notebook.filterInfoTitle')}
-                  body={t('notebook.filterInfoBody')}
-                  onOpenModal={() => setFilterInfoOpen(true)}
-                  hoverCapable={hoverCapable}
-                />
-              </label>
-              <div className="space-y-1 max-h-80 overflow-y-auto">
-                {allTopics.map((topic) => (
-                  <button
-                    key={topic}
-                    onClick={() => toggleTopic(topic)}
-                    className={`w-full px-3 py-2 rounded-lg text-xs font-bold text-left border transition-all ${
-                      selectedTopics.includes(topic)
-                        ? 'bg-indigo-500 border-indigo-500 text-white'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'
-                    }`}
-                  >
-                    {topic}
-                    <span className="ml-1 opacity-70">
-                      ({topicFacetCountMap.get(topic) || 0})
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {/* Subtopics */}
-          {availableSubtopics.length > 1 && (
-            <div>
-              <label className="text-xs font-black text-slate-600 uppercase tracking-widest mb-2 flex items-center gap-1">
-                {t('notebook.subtopics')}
-                <InfoIconButton
-                  title={t('notebook.filterInfoTitle')}
-                  body={t('notebook.filterInfoBody')}
-                  onOpenModal={() => setFilterInfoOpen(true)}
-                  hoverCapable={hoverCapable}
-                />
-              </label>
-              <div className="space-y-1 max-h-80 overflow-y-auto">
-                {availableSubtopics.slice(0, 12).map((sub) => (
-                  <button
-                    key={sub}
-                    onClick={() => toggleSubtopic(sub)}
-                    className={`w-full px-3 py-2 rounded-lg text-xs font-bold text-left border transition-all ${
-                      selectedSubtopics.includes(sub)
-                        ? 'bg-indigo-400 border-indigo-400 text-white'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-200'
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Fixed Timer Settings */}
-        <div className="p-3 border-t border-slate-200 bg-white flex-shrink-0 space-y-2">
-          <button
-            onClick={() => setTimerEnabled(!timerEnabled)}
-            className={`w-full px-3 py-2 rounded-lg text-xs font-bold border transition-all text-left flex items-center justify-between ${
-              timerEnabled
-                ? 'bg-green-600 border-green-600 text-white'
-                : 'bg-white border-slate-200 text-slate-600'
-            }`}
-          >
-            <span className="flex items-center gap-1">
-              <Clock size={12} />
-              {t('notebook.timerEnabled')}
-            </span>
-            {timerEnabled && <Check size={14} />}
-          </button>
-          {timerEnabled && (
-            <button
-              onClick={() => setIsTimedMode(!isTimedMode)}
-              className={`w-full px-3 py-2 rounded-lg text-xs font-bold border transition-all text-left flex items-center justify-between ${
-                isTimedMode
-                  ? 'bg-amber-600 border-amber-600 text-white'
-                  : 'bg-white border-slate-200 text-slate-600'
-              }`}
-            >
-              <span className="flex items-center gap-1">
-                <Zap size={12} />
-                {t('notebook.timedMode')}
-              </span>
-              {isTimedMode && <Check size={14} />}
-            </button>
-          )}
-        </div>
-        
-        {/* Practice Button */}
-        <div className="p-3 border-t border-slate-200 bg-white flex-shrink-0">
-          <button
-            onClick={handlePracticeMistakes}
-            disabled={filteredMistakes.length === 0}
-            className="w-full py-2.5 bg-orange-600 text-white rounded-xl font-black text-sm shadow-lg hover:bg-orange-700 disabled:bg-slate-300 transition-all flex items-center justify-center gap-2 active:scale-95"
-          >
-            <Play fill="currentColor" size={16} />
-            {selectedMistakeIds.size > 0 
-              ? tf('notebook.practiceSelected', { count: selectedMistakeIds.size })
-              : tf('notebook.practiceMistakesCount', { 
-                  count: practiceCount,
-                  plural: practiceCount !== 1 ? 's' : ''
-                })}
-          </button>
-          <p className="text-xs text-slate-500 mt-2 text-center">
-            {filteredMistakes.length} {t('notebook.questionsAvailable')}
-          </p>
-        </div>
-      </div>
-      
-      {/* ═══════════════════════════════════════════════════════════════════════════════
-          MAIN WORKSPACE: Tabbed Interface
-          ═══════════════════════════════════════════════════════════════════════════════ */}
-      
-      <div className="flex-1 flex flex-col min-h-0">
-        {/* Tab Navigation */}
-        <div className="bg-white border-b border-slate-200 p-3 sm:p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => setActiveTab('analytics')}
-                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-sm transition-all ${
-                  activeTab === 'analytics'
-                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500'
-                    : 'bg-slate-100 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <Brain size={16} className="inline mr-2" />
-                {t('notebook.learningInsights')}
-              </button>
-              <button
-                onClick={() => setActiveTab('deck')}
-                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-sm transition-all ${
-                  activeTab === 'deck'
-                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500'
-                    : 'bg-slate-100 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <Grid3x3 size={16} className="inline mr-2" />
-                {t('notebook.mistakeDeck')} ({filteredMistakes.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('archive')}
-                className={`px-3 sm:px-4 py-2 rounded-lg font-bold text-sm transition-all ${
-                  activeTab === 'archive'
-                    ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-500'
-                    : 'bg-slate-100 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <Archive size={16} className="inline mr-2" />
-                {t('notebook.archive')} ({Object.keys(archivedMistakes).length})
-              </button>
-            </div>
-            
-            {activeTab === 'deck' && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-2 rounded-lg transition-all ${
-                    viewMode === 'list'
-                      ? 'bg-indigo-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                  title={t('notebook.listView')}
-                >
-                  <ListIcon size={18} />
-                </button>
-                <button
-                  onClick={() => setViewMode('kanban')}
-                  className={`p-2 rounded-lg transition-all ${
-                    viewMode === 'kanban'
-                      ? 'bg-indigo-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                  title={t('notebook.kanbanView')}
-                >
-                  <Grid3x3 size={18} />
-                </button>
-              </div>
-            )}
-          </div>
-          
-          {/* Filter Summary */}
-          {(selectedTopics.length > 0 || selectedMasteryLevels.length > 0 || datePeriod !== 'all') && (
-            <div className="flex flex-wrap gap-2 text-xs">
-              {selectedTopics.map(t => (
-                <span key={t} className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
-                  {tf('notebook.topicFilter', { topic: t })}
-                  <button onClick={() => toggleTopic(t)} className="ml-1">✕</button>
-                </span>
-              ))}
-              {selectedMasteryLevels.map(l => (
-                <span key={l} className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
-                  {t(MASTERY_LEVELS[l].labelKey)}
-                  <button onClick={() => toggleMasteryLevel(l)} className="ml-1">✕</button>
-                </span>
-              ))}
-              {datePeriod !== 'all' && (
-                <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
-                  {datePeriod === 'week' ? t('notebook.lastWeek') : t('notebook.lastMonth')}
-                  <button onClick={() => setDatePeriod('all')} className="ml-1">✕</button>
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-        
-        {/* Tab Content */}
-        <div className="flex-1 p-3 sm:p-6 overflow-y-auto min-h-0">
-          <AnimatePresence mode="wait">
-            {/* Tab 1: Learning Insights */}
-            {activeTab === 'analytics' && mistakes.length > 0 && (
-              <motion.div
-                key="analytics"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="space-y-6"
-              >
-                {/* Quick Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                    <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                      {t('notebook.totalMistakes')}
-                    </div>
-                    <div className="text-3xl font-black text-red-600">{totalMistakesCount ?? mistakes.length}</div>
-                  </div>
-                  <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                    <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                      {t('notebook.topicsToFocus')}
-                    </div>
-                    <div className="text-3xl font-black text-amber-600">
-                      {new Set(mistakes.map((m) => m.Topic)).size}
-                    </div>
-                  </div>
-                  <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-                    <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
-                      {t('notebook.repeatedMistakes')}
-                    </div>
-                    <div className="text-3xl font-black text-green-600">
-                      {mistakes.filter((m) => m.attemptCount > 1).length}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* LEFT: Error density + topic order */}
-                  <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-                      <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-                        <Target size={20} className="text-rose-600" />
-                        {t('notebook.topicsToFocus')}
-                      </h3>
-
-                      <div className="space-y-2">
-                        {topicErrorDensity.slice(0, 10).map((row, idx) => (
-                          <button
-                            key={row.topic}
-                            onClick={() => toggleTopic(row.topic)}
-                            className={`w-full text-left p-3 rounded-xl border transition-all hover:shadow-sm ${
-                              selectedTopics.includes(row.topic)
-                                ? 'border-rose-300 bg-rose-50'
-                                : 'border-slate-200 bg-white hover:bg-slate-50'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="text-sm font-black text-slate-800 truncate">
-                                  #{idx + 1} {row.topic}
-                                </div>
-                                <div className="text-xs text-slate-500 mt-0.5">
-                                  {tf('notebook.topicFilter', { topic: row.topic })}
-                                </div>
-                              </div>
-
-                              <div className="shrink-0 text-right">
-                                <div className="text-xs font-black text-rose-600">
-                                  {row.density.toFixed(2)}
-                                </div>
-                                <div className="text-[11px] text-slate-500">
-                                  {Math.round(row.score)} / {row.total || '—'}
-                                </div>
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Optional: keep the interactive heatmap (mistake-based) */}
-                    <InteractiveTopicHeatmap 
-                      mistakes={mistakes} 
-                      selectedTopics={selectedTopics}
-                      onTopicToggle={toggleTopic}
-                    />
-                  </div>
-
-                  {/* RIGHT: SRS charts */}
-                  <div className="lg:col-span-2 space-y-6">
-                    <RetentionDashboard cards={srsCards} attempts={reviewAttempts} />
-                    <div className="grid grid-cols-1 gap-6">
-                      <CalendarHeatmap attempts={reviewAttempts} />
-                      <ImprovementTrendChart cards={srsCards} attempts={reviewAttempts} />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-            
-            {/* Tab 2: Mistake Deck */}
-            {activeTab === 'deck' && (
-              <motion.div
-                key="deck"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-              >
-                {mistakes.length === 0 ? (
-                  <div className="text-center py-12">
-                    <CheckCircle className="w-16 h-16 text-green-300 mx-auto mb-4" />
-                    <p className="text-slate-400 text-lg mb-2 font-semibold">
-                      {t('notebook.noMistakesYet')}
-                    </p>
-                    <p className="text-slate-500 text-sm mb-4">
-                      {t('notebook.keepPracticing')}
-                    </p>
-                    <button
-                      onClick={() => navigate('/practice')}
-                      className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-all"
-                    >
-                      {t('notebook.startPracticing')}
-                    </button>
-                  </div>
-                ) : filteredMistakes.length === 0 ? (
-                  <div className="text-center py-12">
-                    <AlertCircle className="w-16 h-16 text-amber-300 mx-auto mb-4" />
-                    <p className="text-slate-400 text-lg mb-2 font-semibold">
-                      {t('notebook.noQuestionsFound')}
-                    </p>
-                    <p className="text-slate-500 text-sm">
-                      {t('notebook.tryAdjustFilters')}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {viewMode === 'list' ? (
-                      <ListViewDeck
-                        mistakes={filteredMistakes}
-                        errorTags={errorTags}
-                        onTag={handleTag}
-                        selectedIds={selectedMistakeIds}
-                        onToggleSelect={toggleMistakeSelection}
-                        onToggleSelectAll={toggleSelectAll}
-                        allSelected={selectedMistakeIds.size === filteredMistakes.length}
-                        moreHint={moreHint}
-                        totalCount={
-                          globalFilteredTotalCount != null
-                            ? Math.max(
-                                Number(globalFilteredTotalCount) || 0,
-                                Number(filteredMistakes?.length || 0)
-                              )
-                            : null
-                        }
-                        onViewFull={setFullViewMistake}
-                      />
-                    ) : (
-                      // FIX: was incorrectly named <KanbanDeck> — component is KanbanViewDeck
-                      <KanbanViewDeck
-                        columns={kanbanColumns}
-                        errorTags={errorTags}
-                        onTag={handleTag}
-                        selectedIds={selectedMistakeIds}
-                        onToggleSelect={toggleMistakeSelection}
-                        onToggleSelectAll={toggleSelectAll}
-                        allSelected={selectedMistakeIds.size === filteredMistakes.length}
-                        onViewFull={setFullViewMistake}
-                      />
-                    )}
-
-                    {mistakeIndexHasMore && (
-                      <div className="flex justify-center">
-                        <button
-                          type="button"
-                          onClick={loadMoreMistakes}
-                          disabled={loadingMoreMistakes}
-                          className="px-5 py-2.5 rounded-xl border-2 border-slate-200 bg-white font-black text-slate-700 hover:bg-slate-50 transition-all disabled:opacity-50"
-                        >
-                          {loadingMoreMistakes ? 'Loading…' : 'Load more'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            )}
-            
-            {/* Tab 3: Mastery Archive */}
-            {activeTab === 'archive' && (
-              <motion.div
-                key="archive"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-              >
-                {Object.keys(archivedMistakes).length === 0 ? (
-                  <div className="text-center py-12">
-                    <Archive className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                    <p className="text-slate-400 text-lg mb-2 font-semibold">
-                      {t('notebook.noArchivedYet')}
-                    </p>
-                    <div className="max-w-2xl mx-auto space-y-3">
-                      <p className="text-slate-500 text-sm">
-                        {t('notebook.archiveInstructions')}
-                      </p>
-
-                      <div className="p-4 rounded-xl border-2 bg-emerald-50 border-emerald-200 text-left">
-                        <div className="text-sm font-black text-slate-800 mb-1">
-                          {t('notebook.archiveMasteryHowTitle')}
-                        </div>
-                        <div className="text-xs text-slate-600 leading-relaxed">
-                          {t('notebook.archiveMasteryHowBody')}
-                        </div>
-                      </div>
-
-                      <div className="p-4 rounded-xl border-2 bg-amber-50 border-amber-200 text-left">
-                        <div className="text-sm font-black text-slate-800 mb-1">
-                          {t('notebook.archiveOverdueHowTitle')}
-                        </div>
-                        <div className="text-xs text-slate-600 leading-relaxed">
-                          {t('notebook.archiveOverdueHowBody')}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  (() => {
-                    const allArchived = Object.values(archivedMistakes);
-                    const overdueArchived = allArchived.filter((q) => q.archiveReason === 'overdue_7_days' || q.archiveReason === 'overdue_14_days');
-                    const masteryArchived = allArchived.filter((q) => q.archiveReason !== 'overdue_7_days' && q.archiveReason !== 'overdue_14_days');
-
-                    const activeList = archiveSubTab === 'overdue' ? overdueArchived : masteryArchived;
-                    const activeCount = activeList.length;
-
-                    const renderCard = (question) => (
-                      <motion.div
-                        key={question?.docId ?? question?.ID}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="p-4 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <div className="text-xs font-bold text-green-700 uppercase">
-                              {question.Topic}
-                            </div>
-                            <div className="text-xs text-green-600">{question.Subtopic}</div>
-                            {question.archiveReason && (
-                              <div className="text-xs text-amber-600 font-semibold mt-1">
-                                {question.archiveReason === 'overdue_7_days' || question.archiveReason === 'overdue_14_days' 
-                                  ? 'Auto-archived (14+ days overdue)' 
-                                  : 'Archived'}
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs text-green-600 font-bold flex items-center gap-1">
-                              <CheckCircle size={14} />
-                              {tf('notebook.masteredOn', { date: formatDate(question.archivedAt) })}
-                            </div>
-                            <button
-                              onClick={() => handleRestoreCard(question.ID)}
-                              className="mt-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
-                            >
-                              <PlusCircle size={12} />
-                              Restore
-                            </button>
-                          </div>
-                        </div>
-                        <div className="text-sm text-green-900 font-medium mb-2">
-                          {question.Question?.replace(/<[^>]*>/g, '').substring(0, 100)}...
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-slate-600">
-                          <span>Original attempts: {question.attemptCount || 1}</span>
-                          <span>SRS reviews: {question.repetitionCount || 0}</span>
-                          {question.interval && <span>Interval: {question.interval} days</span>}
-                        </div>
-                      </motion.div>
-                    );
-
-                    return (
-                      <div className="space-y-6">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setArchiveSubTab('mastery')}
-                              className={`px-3 py-1.5 rounded-lg text-sm font-black border-2 transition-all ${
-                                archiveSubTab === 'mastery'
-                                  ? 'bg-emerald-600 text-white border-emerald-600'
-                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                              }`}
-                            >
-                              {t('notebook.archiveSubtabMastery')} ({masteryArchived.length})
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setArchiveSubTab('overdue')}
-                              className={`px-3 py-1.5 rounded-lg text-sm font-black border-2 transition-all ${
-                                archiveSubTab === 'overdue'
-                                  ? 'bg-amber-500 text-white border-amber-500'
-                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                              }`}
-                            >
-                              {t('notebook.archiveSubtabOverdue')} ({overdueArchived.length})
-                            </button>
-                          </div>
-
-                          <div className="text-xs text-slate-500 font-semibold">
-                            {tf('notebook.archiveSubtabCount', { count: activeCount })}
-                          </div>
-                        </div>
-
-                        <div className={`p-4 rounded-xl border-2 ${archiveSubTab === 'overdue' ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                          <div className="text-sm font-black text-slate-800 mb-1">
-                            {archiveSubTab === 'overdue'
-                              ? t('notebook.archiveOverdueHowTitle')
-                              : t('notebook.archiveMasteryHowTitle')}
-                          </div>
-                          <div className="text-xs text-slate-600 leading-relaxed">
-                            {archiveSubTab === 'overdue'
-                              ? t('notebook.archiveOverdueHowBody')
-                              : t('notebook.archiveMasteryHowBody')}
-                          </div>
-                        </div>
-
-                        {activeList.length === 0 ? (
-                          <div className="text-center py-10">
-                            <div className="text-sm font-black text-slate-700 mb-1">
-                              {archiveSubTab === 'overdue'
-                                ? t('notebook.noOverdueArchives')
-                                : t('notebook.noMasteryArchives')}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {archiveSubTab === 'overdue'
-                                ? t('notebook.noOverdueArchivesHint')
-                                : t('notebook.noMasteryArchivesHint')}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {activeList.map(renderCard)}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </div>
-  );
+function encodeKey(value) {
+  const s = value == null ? '' : String(value);
+  return encodeURIComponent(s);
 }
+
+function safeString(value) {
+  return value == null ? '' : String(value);
+}
+
+function decodeKey(value) {
+  const s = value == null ? '' : String(value);
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+function normalizeBucket(value) {
+  const v = value == null ? '' : String(value);
+  if (v === 'not_in_srs' || v === 'new' || v === 'progressing' || v === 'near' || v === 'archived') return v;
+  return 'not_in_srs';
+}
+
+function getTopicFromMistake(m) {
+  if (!m || typeof m !== 'object') return '';
+  return safeString(m.Topic || m.topic || '');
+}
+
+function getBucketFromMistake(m) {
+  if (!m || typeof m !== 'object') return 'not_in_srs';
+  return normalizeBucket(m.srsBucket || 'not_in_srs');
+}
+
+function getIsActiveFromMistake(m) {
+  if (!m || typeof m !== 'object') return false;
+  return m.srsIsActive === true;
+}
+
+async function applyMistakeTopicStatsDelta(db, userId, delta, topic, bucket, isActive) {
+  const uid = safeString(userId);
+  const d = Number(delta);
+  if (!uid || !Number.isFinite(d) || d === 0) return;
+
+  const topicEnc = encodeKey(topic || '');
+  if (!topicEnc) return;
+
+  const b = normalizeBucket(bucket);
+  const active = isActive === true;
+
+  const statsRef = db.collection('users').doc(uid).collection('mistake_stats').doc('topicBuckets');
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(statsRef);
+    const prev = snap.exists ? (snap.data() || {}) : {};
+    const prevTopics = prev.topics && typeof prev.topics === 'object' ? prev.topics : {};
+    const prevEntry = prevTopics[topicEnc] && typeof prevTopics[topicEnc] === 'object' ? prevTopics[topicEnc] : {};
+
+    const nextTopics = { ...prevTopics };
+    const nextEntry = { ...prevEntry };
+
+    const prevTotal = Number(nextEntry.total || 0);
+    const nextTotal = Math.max(0, prevTotal + d);
+    nextEntry.total = nextTotal;
+
+    const bucketKey = `b_${b}`;
+    const prevBucket = Number(nextEntry[bucketKey] || 0);
+    const nextBucket = Math.max(0, prevBucket + d);
+    if (nextBucket === 0) delete nextEntry[bucketKey];
+    else nextEntry[bucketKey] = nextBucket;
+
+    if (active) {
+      const prevActive = Number(nextEntry.active || 0);
+      const nextActive = Math.max(0, prevActive + d);
+      nextEntry.active = nextActive;
+    }
+
+    // Prune empty
+    if (nextEntry.total === 0) {
+      delete nextTopics[topicEnc];
+    } else {
+      nextEntry.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+      nextTopics[topicEnc] = nextEntry;
+    }
+
+    tx.set(statsRef, {
+      topics: nextTopics,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+}
+
+async function applyMistakeDocDelta(db, userId, before, after) {
+  const beforeExists = before && typeof before === 'object' && Object.keys(before).length > 0;
+  const afterExists = after && typeof after === 'object' && Object.keys(after).length > 0;
+
+  if (!beforeExists && !afterExists) return;
+
+  // Create
+  if (!beforeExists && afterExists) {
+    await applyMistakeTopicStatsDelta(
+      db,
+      userId,
+      1,
+      getTopicFromMistake(after),
+      getBucketFromMistake(after),
+      getIsActiveFromMistake(after)
+    );
+    return;
+  }
+
+  // Delete
+  if (beforeExists && !afterExists) {
+    await applyMistakeTopicStatsDelta(
+      db,
+      userId,
+      -1,
+      getTopicFromMistake(before),
+      getBucketFromMistake(before),
+      getIsActiveFromMistake(before)
+    );
+    return;
+  }
+
+  const beforeTopic = getTopicFromMistake(before);
+  const afterTopic = getTopicFromMistake(after);
+  const beforeBucket = getBucketFromMistake(before);
+  const afterBucket = getBucketFromMistake(after);
+  const beforeActive = getIsActiveFromMistake(before);
+  const afterActive = getIsActiveFromMistake(after);
+
+  const changed =
+    beforeTopic !== afterTopic ||
+    beforeBucket !== afterBucket ||
+    beforeActive !== afterActive;
+
+  if (!changed) return;
+
+  // Remove old
+  await applyMistakeTopicStatsDelta(db, userId, -1, beforeTopic, beforeBucket, beforeActive);
+  // Add new
+  await applyMistakeTopicStatsDelta(db, userId, 1, afterTopic, afterBucket, afterActive);
+}
+
+// Maintain mistake topic stats for global sidebar facets
+exports.updateMistakeTopicStatsOnCreate = onDocumentCreated(
+  {
+    document: 'users/{userId}/mistakes/{mistakeId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const after = snap.data() || {};
+    const userId = event.params?.userId;
+    if (!userId) return;
+    const db = admin.firestore();
+    await applyMistakeDocDelta(db, userId, null, after);
+  }
+);
+
+exports.normalizeMistakes = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to normalize mistakes');
+    }
+
+    const db = admin.firestore();
+    const mistakesRef = db.collection('users').doc(uid).collection('mistakes');
+
+    const pageSize = 800;
+    let last = null;
+    let processed = 0;
+    let updated = 0;
+
+    const nowIso = new Date().toISOString();
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let q = mistakesRef.orderBy(admin.firestore.FieldPath.documentId()).limit(pageSize);
+      if (last) q = q.startAfter(last);
+
+      const snap = await q.get();
+      if (snap.empty) break;
+
+      // Only write docs that truly need a patch.
+      const toPatch = [];
+      for (const docSnap of snap.docs) {
+        const d = docSnap.data() || {};
+
+        const topic = d.Topic ?? d.topic ?? null;
+        const subtopic = d.Subtopic ?? d.subtopic ?? null;
+        const lastWrongAt = d.lastWrongAt ?? d.lastAttempted ?? d.updatedAt ?? d.createdAt ?? nowIso;
+
+        const needsTopic = d.Topic == null && d.topic != null;
+        const needsSubtopic = d.Subtopic == null && d.subtopic != null;
+        const needsLastWrongAt = d.lastWrongAt == null;
+
+        if (needsTopic || needsSubtopic || needsLastWrongAt) {
+          toPatch.push({
+            ref: docSnap.ref,
+            patch: {
+              Topic: topic,
+              Subtopic: subtopic,
+              lastWrongAt,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+          });
+        }
+      }
+
+      if (toPatch.length > 0) {
+        for (let i = 0; i < toPatch.length; i += 450) {
+          const batch = db.batch();
+          const slice = toPatch.slice(i, i + 450);
+          slice.forEach((x) => {
+            batch.set(x.ref, x.patch, { merge: true });
+          });
+          await batch.commit();
+          updated += slice.length;
+        }
+      }
+
+      processed += snap.size;
+      last = snap.docs[snap.docs.length - 1];
+      if (snap.size < pageSize) break;
+    }
+
+    // Make it easy to see when it was last run.
+    const statsRef = db.collection('users').doc(uid).collection('mistake_stats').doc('topicBuckets');
+    await statsRef.set({
+      lastNormalizedAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastNormalizedProcessed: processed,
+      lastNormalizedUpdated: updated,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { ok: true, userId: uid, processed, updated };
+  }
+);
+
+exports.updateMistakeTopicStatsOnUpdate = onDocumentUpdated(
+  {
+    document: 'users/{userId}/mistakes/{mistakeId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const before = event.data?.before?.data?.() || null;
+    const after = event.data?.after?.data?.() || null;
+    const userId = event.params?.userId;
+    if (!userId) return;
+    const db = admin.firestore();
+    await applyMistakeDocDelta(db, userId, before, after);
+  }
+);
+
+exports.updateMistakeTopicStatsOnDelete = onDocumentDeleted(
+  {
+    document: 'users/{userId}/mistakes/{mistakeId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const before = snap.data() || {};
+    const userId = event.params?.userId;
+    if (!userId) return;
+    const db = admin.firestore();
+    await applyMistakeDocDelta(db, userId, before, null);
+  }
+);
+
+exports.rebuildMistakeTopicStats = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to rebuild mistake topic stats');
+    }
+
+    const db = admin.firestore();
+    const mistakesRef = db.collection('users').doc(uid).collection('mistakes');
+    const statsRef = db.collection('users').doc(uid).collection('mistake_stats').doc('topicBuckets');
+
+    const topics = {};
+
+    const pageSize = 800;
+    let last = null;
+    let processed = 0;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let q = mistakesRef.orderBy(admin.firestore.FieldPath.documentId()).limit(pageSize);
+      if (last) q = q.startAfter(last);
+      const snap = await q.get();
+      if (snap.empty) break;
+
+      snap.docs.forEach((docSnap) => {
+        const m = docSnap.data() || {};
+        const topic = getTopicFromMistake(m);
+        if (!topic) return;
+        const topicEnc = encodeKey(topic);
+        const bucket = getBucketFromMistake(m);
+        const isActive = getIsActiveFromMistake(m);
+
+        const entry = topics[topicEnc] && typeof topics[topicEnc] === 'object' ? topics[topicEnc] : {};
+        entry.total = Number(entry.total || 0) + 1;
+        const bucketKey = `b_${bucket}`;
+        entry[bucketKey] = Number(entry[bucketKey] || 0) + 1;
+        if (isActive) entry.active = Number(entry.active || 0) + 1;
+        topics[topicEnc] = entry;
+      });
+
+      processed += snap.size;
+      last = snap.docs[snap.docs.length - 1];
+      if (snap.size < pageSize) break;
+    }
+
+    await statsRef.set({
+      topics,
+      processed,
+      rebuiltAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { ok: true, userId: uid, processed, topics: Object.keys(topics).length };
+  }
+);
+
+async function applySrsSummaryDelta(db, userId, dateStr, delta, topic, subtopic) {
+  const uid = safeString(userId);
+  const dateKey = safeString(dateStr);
+  if (!uid || !dateKey || !Number.isFinite(delta) || delta === 0) return;
+
+  const topicKey = encodeKey(topic || '');
+  const subtopicKey = encodeKey(subtopic || '');
+  const hasTopic = Boolean(topicKey);
+  const hasSubtopic = Boolean(topicKey) && Boolean(subtopicKey);
+  const compoundSubKey = hasSubtopic ? `${topicKey}::${subtopicKey}` : '';
+
+  const summaryRef = db.collection('users').doc(uid).collection('srs_daily_summaries').doc(dateKey);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(summaryRef);
+    const prev = snap.exists ? (snap.data() || {}) : {};
+
+    const next = { ...prev };
+    next.date = dateKey;
+    next.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+    const prevTotal = Number(prev.dueTotal || 0);
+    next.dueTotal = Math.max(0, prevTotal + delta);
+
+    const prevTopics = prev.topicCounts && typeof prev.topicCounts === 'object' ? prev.topicCounts : {};
+    const prevSubs = prev.subtopicCounts && typeof prev.subtopicCounts === 'object' ? prev.subtopicCounts : {};
+
+    const nextTopics = { ...prevTopics };
+    const nextSubs = { ...prevSubs };
+
+    if (hasTopic) {
+      const old = Number(nextTopics[topicKey] || 0);
+      const v = Math.max(0, old + delta);
+      if (v === 0) delete nextTopics[topicKey];
+      else nextTopics[topicKey] = v;
+    }
+
+    if (hasSubtopic) {
+      const old = Number(nextSubs[compoundSubKey] || 0);
+      const v = Math.max(0, old + delta);
+      if (v === 0) delete nextSubs[compoundSubKey];
+      else nextSubs[compoundSubKey] = v;
+    }
+
+    next.topicCounts = nextTopics;
+    next.subtopicCounts = nextSubs;
+
+    tx.set(summaryRef, next, { merge: true });
+  });
+}
+
+function isActiveCard(card) {
+  if (!card || typeof card !== 'object') return false;
+  if (card.isActive === false) return false;
+  if (!card.userId) return false;
+  if (!card.nextReviewDate) return false;
+  return true;
+}
+
+// Define secrets (use new Firebase Functions params API)
+const algoliaAppId = defineSecret('ALGOLIA_APP_ID');
+const algoliaAdminKey = defineSecret('ALGOLIA_ADMIN_KEY');
+const ALGOLIA_INDEX_NAME = 'forum_posts';
+
+// Initialize Algolia client lazily at runtime
+function getAlgoliaClient() {
+  const appId = algoliaAppId.value();
+  const adminKey = algoliaAdminKey.value();
+  if (!appId || !adminKey) return null;
+  return algoliasearch(appId, adminKey);
+}
+
+exports.aggregateCommentQuestionStatsOnCommentCreate = onDocumentCreated(
+  {
+    document: 'comments/{commentId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+
+    const comment = snap.data() || {};
+    const questionId = comment.questionId != null ? String(comment.questionId) : '';
+    if (!questionId) return;
+
+    const createdAt = typeof comment.createdAt === 'string'
+      ? comment.createdAt
+      : new Date().toISOString();
+
+    const db = admin.firestore();
+    const statsRef = db.collection('comment_question_stats').doc(questionId);
+
+    await db.runTransaction(async (tx) => {
+      const statsSnap = await tx.get(statsRef);
+      const prev = statsSnap.exists ? (statsSnap.data() || {}) : {};
+
+      const prevLast = typeof prev.lastActivity === 'string' ? prev.lastActivity : '';
+      const nextLastActivity = prevLast && prevLast > createdAt ? prevLast : createdAt;
+
+      tx.set(statsRef, {
+        questionId,
+        commentCount: admin.firestore.FieldValue.increment(1),
+        lastActivity: nextLastActivity,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+  }
+);
+
+exports.rebuildSrsDailySummaries = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to rebuild summaries');
+    }
+
+    const db = admin.firestore();
+
+    // Page through all active cards for this user
+    const cardsRef = db.collection('spaced_repetition_cards');
+    const pageSize = 500;
+    let last = null;
+    let totalCards = 0;
+
+    // dateStr => { dueTotal, topicCounts, subtopicCounts }
+    const aggregated = new Map();
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let q = cardsRef
+        .where('userId', '==', uid)
+        .where('isActive', '==', true)
+        .orderBy(admin.firestore.FieldPath.documentId())
+        .limit(pageSize);
+
+      if (last) {
+        q = q.startAfter(last);
+      }
+
+      const snap = await q.get();
+      if (snap.empty) break;
+
+      for (const docSnap of snap.docs) {
+        const card = docSnap.data() || {};
+        if (!card.nextReviewDate) continue;
+
+        const dateKey = safeString(card.nextReviewDate);
+        const topicEnc = encodeKey(card.topic || '');
+        const subEnc = encodeKey(card.subtopic || '');
+        const compound = (topicEnc && subEnc) ? `${topicEnc}::${subEnc}` : '';
+
+        if (!aggregated.has(dateKey)) {
+          aggregated.set(dateKey, {
+            date: dateKey,
+            dueTotal: 0,
+            topicCounts: {},
+            subtopicCounts: {},
+          });
+        }
+
+        const entry = aggregated.get(dateKey);
+        entry.dueTotal += 1;
+
+        if (topicEnc) {
+          entry.topicCounts[topicEnc] = (entry.topicCounts[topicEnc] || 0) + 1;
+        }
+        if (compound) {
+          entry.subtopicCounts[compound] = (entry.subtopicCounts[compound] || 0) + 1;
+        }
+      }
+
+      totalCards += snap.size;
+      last = snap.docs[snap.docs.length - 1];
+      if (snap.size < pageSize) break;
+    }
+
+    // Write summaries for encountered dates (overwrite those docs).
+    const summariesRef = db.collection('users').doc(uid).collection('srs_daily_summaries');
+    const dateKeys = Array.from(aggregated.keys()).sort((a, b) => String(a).localeCompare(String(b)));
+
+    let written = 0;
+    for (let i = 0; i < dateKeys.length; i += 400) {
+      const batch = db.batch();
+      const slice = dateKeys.slice(i, i + 400);
+
+      for (const dateKey of slice) {
+        const data = aggregated.get(dateKey);
+        const ref = summariesRef.doc(dateKey);
+        batch.set(ref, {
+          date: data.date,
+          dueTotal: data.dueTotal,
+          topicCounts: data.topicCounts,
+          subtopicCounts: data.subtopicCounts,
+          rebuiltAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      await batch.commit();
+      written += slice.length;
+    }
+
+    return {
+      ok: true,
+      userId: uid,
+      cardsProcessed: totalCards,
+      datesWritten: written,
+    };
+  }
+);
+
+// Maintain SRS daily summaries (cheap calendar counts)
+exports.updateSrsDailySummaryOnCardCreate = onDocumentCreated(
+  {
+    document: 'spaced_repetition_cards/{cardId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const card = snap.data() || {};
+    if (!isActiveCard(card)) return;
+
+    const db = admin.firestore();
+    await applySrsSummaryDelta(db, card.userId, card.nextReviewDate, 1, card.topic, card.subtopic);
+  }
+);
+
+exports.updateSrsDailySummaryOnCardUpdate = onDocumentUpdated(
+  {
+    document: 'spaced_repetition_cards/{cardId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const before = event.data?.before?.data?.() || {};
+    const after = event.data?.after?.data?.() || {};
+
+    const beforeActive = isActiveCard(before);
+    const afterActive = isActiveCard(after);
+
+    const db = admin.firestore();
+
+    // Removed from active set
+    if (beforeActive && !afterActive) {
+      await applySrsSummaryDelta(db, before.userId, before.nextReviewDate, -1, before.topic, before.subtopic);
+      return;
+    }
+
+    // Added to active set
+    if (!beforeActive && afterActive) {
+      await applySrsSummaryDelta(db, after.userId, after.nextReviewDate, 1, after.topic, after.subtopic);
+      return;
+    }
+
+    if (!beforeActive && !afterActive) return;
+
+    const uid = after.userId || before.userId;
+    const beforeDate = safeString(before.nextReviewDate);
+    const afterDate = safeString(after.nextReviewDate);
+    const beforeTopic = safeString(before.topic);
+    const afterTopic = safeString(after.topic);
+    const beforeSub = safeString(before.subtopic);
+    const afterSub = safeString(after.subtopic);
+
+    const dateChanged = beforeDate !== afterDate;
+    const topicChanged = beforeTopic !== afterTopic;
+    const subChanged = beforeSub !== afterSub;
+
+    if (!dateChanged && !topicChanged && !subChanged) return;
+
+    // Remove old
+    await applySrsSummaryDelta(db, uid, beforeDate, -1, beforeTopic, beforeSub);
+    // Add new
+    await applySrsSummaryDelta(db, uid, afterDate, 1, afterTopic, afterSub);
+  }
+);
+
+exports.updateSrsDailySummaryOnCardDelete = onDocumentDeleted(
+  {
+    document: 'spaced_repetition_cards/{cardId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const card = snap.data() || {};
+    if (!isActiveCard(card)) return;
+
+    const db = admin.firestore();
+    await applySrsSummaryDelta(db, card.userId, card.nextReviewDate, -1, card.topic, card.subtopic);
+  }
+);
+
+ function toHongKongDate(dateObj) {
+   // Convert an instant-in-time to a Date whose UTC fields represent Asia/Hong_Kong local time.
+   // This avoids discrepancies between browser local time (HK) and Cloud Functions runtime (UTC).
+   const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
+   return new Date(d.getTime() + 8 * 60 * 60 * 1000);
+ }
+
+function getWeeklyKeyForDate(dateObj) {
+  // Use UTC getters so output is independent of the runtime's local timezone.
+  const date = new Date(Date.UTC(dateObj.getUTCFullYear(), dateObj.getUTCMonth(), dateObj.getUTCDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  const yyyy = date.getUTCFullYear();
+  return `leaderboard_weekly_${yyyy}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function weeklyTokensForRank(rank) {
+  const r = Number(rank || 0);
+  if (!Number.isFinite(r) || r <= 0) return 0;
+  // Keep consistent with frontend logic: max(0, 11 - rank)
+  return Math.max(0, 11 - r);
+}
+
+exports.aggregateWeeklyLeaderboardOnAttemptCreate = onDocumentCreated(
+  {
+    document: 'attempts/{attemptId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const attemptData = snap.data() || {};
+    const userId = attemptData.userId;
+    if (!userId) return;
+
+    const attemptTs = attemptData.timestamp ? new Date(attemptData.timestamp) : new Date();
+    const weekId = getWeeklyKeyForDate(toHongKongDate(attemptTs));
+
+    const db = admin.firestore();
+    const entryRef = db.collection('weekly_leaderboards').doc(weekId).collection('entries').doc(userId);
+    const userRef = db.collection('users').doc(userId);
+
+    await db.runTransaction(async (tx) => {
+      const [entrySnap, userSnap] = await Promise.all([
+        tx.get(entryRef),
+        tx.get(userRef),
+      ]);
+
+      const userData = userSnap.exists ? userSnap.data() : {};
+      const prev = entrySnap.exists ? entrySnap.data() : {};
+
+      const prevAttemptCount = Number(prev.attemptCount || 0);
+      const prevTotalScore = Number(prev.totalScore || 0);
+      const prevTotalQuestions = Number(prev.totalQuestions || 0);
+      const prevTotalCorrect = Number(prev.totalCorrect || 0);
+
+      const nextAttemptCount = prevAttemptCount + 1;
+      const nextTotalScore = prevTotalScore + Number(attemptData.percentage || 0);
+      const nextTotalQuestions = prevTotalQuestions + Number(attemptData.totalQuestions || 0);
+      const nextTotalCorrect = prevTotalCorrect + Number(attemptData.correctAnswers || 0);
+      const nextAverageScore = nextAttemptCount > 0 ? Math.round(nextTotalScore / nextAttemptCount) : 0;
+
+      tx.set(entryRef, {
+        userId,
+        weekId,
+        displayName: userData?.displayName || 'Unknown',
+        level: userData?.level || null,
+        equippedProfilePic: (userData?.equipped || {}).profilePic || 'flask_blue',
+        equippedTheme: (userData?.equipped || {}).theme || 'default',
+        streak: Number(userData?.streak || 0),
+        attemptCount: nextAttemptCount,
+        totalScore: nextTotalScore,
+        averageScore: nextAverageScore,
+        totalQuestions: nextTotalQuestions,
+        totalCorrect: nextTotalCorrect,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+  }
+);
+
+exports.weeklyLeaderboardPayout = onSchedule(
+  {
+    schedule: '0 0 * * 1',
+    timeZone: 'Asia/Hong_Kong',
+    region: 'asia-east1',
+  },
+  async () => {
+    const db = admin.firestore();
+
+    // Run payout for LAST week (so the leaderboard is complete)
+    const now = toHongKongDate(new Date());
+    const lastWeekDate = new Date(now);
+    lastWeekDate.setDate(lastWeekDate.getDate() - 7);
+    const weekId = getWeeklyKeyForDate(toHongKongDate(lastWeekDate));
+
+    const entriesRef = db.collection('weekly_leaderboards').doc(weekId).collection('entries');
+    const topSnap = await entriesRef.orderBy('averageScore', 'desc').limit(10).get();
+
+    if (topSnap.empty) return;
+
+    // Batch-like loop (transactions per user to keep idempotency + correct balances)
+    const payoutPromises = topSnap.docs.map(async (docSnap, idx) => {
+      const entry = docSnap.data() || {};
+      const userId = entry.userId || docSnap.id;
+      const rank = idx + 1;
+      const tokens = weeklyTokensForRank(rank);
+      if (!userId || tokens <= 0) return;
+
+      const payoutRef = db
+        .collection('weekly_leaderboards')
+        .doc(weekId)
+        .collection('payouts')
+        .doc(userId);
+
+      const userRef = db.collection('users').doc(userId);
+
+      await db.runTransaction(async (tx) => {
+        const [payoutSnap, userSnap] = await Promise.all([
+          tx.get(payoutRef),
+          tx.get(userRef),
+        ]);
+
+        if (payoutSnap.exists) {
+          return; // already paid
+        }
+
+        if (!userSnap.exists) {
+          // still record payout marker to avoid repeated attempts
+          tx.set(payoutRef, {
+            userId,
+            weekId,
+            rank,
+            tokens,
+            skipped: true,
+            reason: 'User doc missing',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+
+        const userData = userSnap.data() || {};
+        const currentTokens = Number(userData.tokens || 0);
+        const newTokens = currentTokens + tokens;
+
+        tx.update(userRef, {
+          tokens: newTokens,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        const historyRef = userRef.collection('tokenHistory').doc();
+        tx.set(historyRef, {
+          amount: tokens,
+          reason: `Leaderboard Reward: weekly #${rank}`,
+          type: 'gain',
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          balanceAfter: newTokens,
+          metadata: {
+            category: 'leaderboard',
+            period: 'weekly',
+            rank,
+            weekId,
+          },
+        });
+
+        const notifRef = db.collection('notifications').doc();
+        tx.set(notifRef, {
+          recipientId: userId,
+          senderId: 'system',
+          type: 'leaderboard_reward',
+          senderDisplayName: 'System',
+          previewText: `Weekly leaderboard #${rank}: +${tokens} tokens`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          weekId,
+          rank,
+          tokens,
+        });
+
+        tx.set(payoutRef, {
+          userId,
+          weekId,
+          rank,
+          tokens,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+    });
+
+    await Promise.all(payoutPromises);
+  }
+);
+
+// === Algolia search sync for forum_posts ===
+
+// Helper: prepare Algolia record from Firestore doc
+function toAlgoliaRecord(postId, data) {
+  return {
+    objectID: postId,
+    title: data.title || '',
+    content: data.content || '',
+    category: data.category || '',
+    userDisplayName: data.userDisplayName || '',
+    userId: data.userId || '',
+    createdAt: data.createdAt || '',
+    // You can add more fields if you want them searchable/filterable
+  };
+}
+
+// Create: when a new forum post is created
+exports.syncForumPostToAlgoliaOnCreate = onDocumentCreated(
+  {
+    document: 'forum_posts/{postId}',
+    region: 'asia-east1',
+    secrets: [algoliaAppId, algoliaAdminKey],
+  },
+  async (event) => {
+    const algoliaClient = getAlgoliaClient();
+    if (!algoliaClient) return;
+    const algoliaIndex = algoliaClient.initIndex(ALGOLIA_INDEX_NAME);
+    const snap = event.data;
+    if (!snap) return;
+    const data = snap.data() || {};
+    const postId = event.params.postId;
+    const record = toAlgoliaRecord(postId, data);
+    await algoliaIndex.saveObject(record);
+  }
+);
+
+// Update: when a forum post is updated
+exports.syncForumPostToAlgoliaOnUpdate = onDocumentUpdated(
+  {
+    document: 'forum_posts/{postId}',
+    region: 'asia-east1',
+    secrets: [algoliaAppId, algoliaAdminKey],
+  },
+  async (event) => {
+    const algoliaClient = getAlgoliaClient();
+    if (!algoliaClient) return;
+    const algoliaIndex = algoliaClient.initIndex(ALGOLIA_INDEX_NAME);
+    const snap = event.data;
+    if (!snap) return;
+    const data = snap.after.data() || {};
+    const postId = event.params.postId;
+    const record = toAlgoliaRecord(postId, data);
+    await algoliaIndex.saveObject(record);
+  }
+);
+
+// Delete: when a forum post is deleted
+exports.syncForumPostToAlgoliaOnDelete = onDocumentDeleted(
+  {
+    document: 'forum_posts/{postId}',
+    region: 'asia-east1',
+    secrets: [algoliaAppId, algoliaAdminKey],
+  },
+  async (event) => {
+    const algoliaClient = getAlgoliaClient();
+    if (!algoliaClient) return;
+    const algoliaIndex = algoliaClient.initIndex(ALGOLIA_INDEX_NAME);
+    const postId = event.params.postId;
+    await algoliaIndex.deleteObject(postId);
+  }
+);
+
+=== srsService.js ===
+/**
+ * SRS Service - Firestore Integration
+ * 
+ * Manages spaced repetition cards using Just-in-Time scheduling
+ * 
+ * CRITICAL: This service NEVER pre-schedules multiple reviews.
+ * Reviews are created ONE AT A TIME as users complete them.
+ */
+
+import { db } from '../firebase/config';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc,
+  getDocs,
+  getCountFromServer,
+  updateDoc,
+  deleteDoc,
+  query, 
+  where,
+  orderBy,
+  limit,
+  Timestamp,
+  writeBatch
+} from 'firebase/firestore';
+import { getNow } from '../utils/timeTravel';
+import { formatHKDateKey } from '../utils/hkTime';
+import {
+  createNewCard,
+  updateCardAfterReview,
+  isCardDue,
+  shouldArchiveCard,
+  SRS_CONFIG
+} from './srsAlgorithm';
+
+// Collection names
+const COLLECTIONS = {
+  CARDS: 'spaced_repetition_cards',
+  ATTEMPTS: 'review_attempts',
+  SESSIONS: 'review_sessions'
+};
+
+function deriveSrsBucketFromCard(card) {
+  if (!card || typeof card !== 'object') return 'not_in_srs';
+  if (card.isActive === false) return 'archived';
+  if (card.status === 'new') return 'new';
+  if (card.status === 'learning') return 'progressing';
+  if (card.status === 'review') return 'near';
+  if (card.status === 'graduated') return 'archived';
+  return 'progressing';
+}
+
+async function upsertMistakeSrsMeta(userId, questionId, cardOrNull) {
+  if (!userId || !questionId) return;
+
+  const ref = doc(db, 'users', userId, 'mistakes', String(questionId));
+
+  if (!cardOrNull) {
+    await setDoc(ref, {
+      hasSrsCard: false,
+      srsIsActive: false,
+      srsStatus: null,
+      srsBucket: 'not_in_srs',
+      srsUpdatedAt: new Date().toISOString(),
+    }, { merge: true });
+    return;
+  }
+
+  await setDoc(ref, {
+    hasSrsCard: true,
+    srsIsActive: cardOrNull.isActive !== false,
+    srsStatus: cardOrNull.status || null,
+    srsBucket: deriveSrsBucketFromCard(cardOrNull),
+    srsCardId: cardOrNull.id || null,
+    srsUpdatedAt: new Date().toISOString(),
+  }, { merge: true });
+}
+
+async function findAnyCardForQuestion(userId, questionId) {
+  if (!userId || !questionId) return null;
+
+  // Prefer deterministic ID (new behavior)
+  const deterministicId = `card_${userId}_${questionId}`;
+  const deterministicRef = doc(db, COLLECTIONS.CARDS, deterministicId);
+  const deterministicSnap = await getDoc(deterministicRef);
+  if (deterministicSnap.exists()) {
+    return { id: deterministicSnap.id, ...deterministicSnap.data() };
+  }
+
+  // Backward-compatibility: legacy cards were session-scoped IDs.
+  // We pick any existing card for this question.
+  const q = query(
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId),
+    where('questionId', '==', questionId),
+    limit(1)
+  );
+
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+
+function resetCardForReactivation(card, { topic, subtopic, attemptId }) {
+  const now = getNow();
+  const nextReviewDate = formatHKDateKey(new Date(now.getTime() + 86400000));
+  return {
+    ...card,
+    topic: topic ?? card.topic ?? null,
+    subtopic: subtopic ?? card.subtopic ?? null,
+
+    interval: 1,
+    easeFactor: 2.5,
+    repetitionCount: 0,
+    status: 'new',
+    currentAttemptNumber: 0,
+
+    nextReviewDate,
+    lastReviewedAt: null,
+    isDue: false,
+
+    totalAttempts: 0,
+    successfulAttempts: 0,
+    failedAttempts: 0,
+
+    isActive: true,
+    archivedAt: null,
+    archiveReason: null,
+    createdFromAttemptId: attemptId ?? card.createdFromAttemptId ?? null,
+    updatedAt: now.toISOString(),
+  };
+}
+
+/**
+ * Create SRS cards for wrong answers from a quiz
+ * 
+ * @param {string} userId - User ID
+ * @param {Array} wrongQuestions - Questions answered incorrectly
+ * @param {string} sessionId - Original quiz session ID
+ * @param {string} attemptId - Original quiz attempt ID
+ * @returns {Promise<Array>} Created cards
+ */
+export async function createCardsFromMistakes(userId, wrongQuestions, sessionId, attemptId) {
+  const batch = writeBatch(db);
+  const createdCards = [];
+  
+  console.log(`📝 Creating ${wrongQuestions.length} SRS cards for user ${userId}`);
+  
+  for (const question of wrongQuestions) {
+    const questionId = question?.ID;
+    if (!questionId) continue;
+
+    const existing = await findAnyCardForQuestion(userId, questionId);
+    if (existing) {
+      // If a card exists (active or archived), reuse it.
+      // Archived/graduated cards are reactivated + reset.
+      const next = existing.isActive === false
+        ? resetCardForReactivation(existing, {
+          topic: question.Topic,
+          subtopic: question.Subtopic || null,
+          attemptId,
+        })
+        : {
+          ...existing,
+          topic: question.Topic ?? existing.topic ?? null,
+          subtopic: (question.Subtopic || null) ?? existing.subtopic ?? null,
+          updatedAt: getNow().toISOString(),
+        };
+
+      batch.set(doc(db, COLLECTIONS.CARDS, existing.id), next);
+      createdCards.push(next);
+
+      console.log(`♻️ Reused SRS card: ${existing.id} (review on ${next.nextReviewDate})`);
+      continue;
+    }
+
+    // No prior card -> create deterministic ID (one card per user+question)
+    const card = createNewCard({
+      questionId,
+      userId,
+      topic: question.Topic,
+      subtopic: question.Subtopic || null,
+      sessionId,
+      attemptId
+    });
+    const deterministicId = `card_${userId}_${questionId}`;
+    card.id = deterministicId;
+    
+    batch.set(doc(db, COLLECTIONS.CARDS, card.id), card);
+    createdCards.push(card);
+    
+    console.log(`✅ Created SRS card: ${card.id} (review on ${card.nextReviewDate})`);
+  }
+  
+  if (createdCards.length > 0) {
+    await batch.commit();
+    console.log(`🎉 Successfully created ${createdCards.length} SRS cards`);
+
+    // Denormalize onto mistake index (writes only)
+    await Promise.all(
+      createdCards.map((c) => upsertMistakeSrsMeta(userId, c.questionId, c))
+    );
+  }
+  
+  return createdCards;
+}
+
+/**
+ * Get all cards due for review (JIT query)
+ * 
+ * @param {string} userId - User ID
+ * @param {Date} asOf - Check for cards due as of this date (defaults to today)
+ * @param {Object} options - Query options
+ * @param {number} options.limit - Max number of due cards to return
+ * @returns {Promise<Array>} Due cards
+ */
+export async function getDueCards(userId, asOf = getNow(), options = {}) {
+  const today = formatHKDateKey(asOf);
+  const max = Number(options?.limit);
+  
+  console.log(`🔍 Fetching due cards for ${userId} as of ${today}`);
+  
+  const queryParts = [
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId),
+    where('isActive', '==', true),
+    where('nextReviewDate', '<=', today),
+    orderBy('nextReviewDate', 'asc')
+  ];
+
+  if (Number.isFinite(max) && max > 0) {
+    queryParts.push(limit(max));
+  }
+
+  const cardsQuery = query(...queryParts);
+  
+  const snapshot = await getDocs(cardsQuery);
+  const dueCards = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  
+  console.log(`📊 Found ${dueCards.length} cards due for review`);
+  
+  return dueCards;
+}
+
+/**
+ * Get cards due on an exact date (no overdue accumulation)
+ *
+ * This is useful for calendar scheduling when you only want to create
+ * events for "today" (or a specific day) and avoid reading a large backlog.
+ *
+ * @param {string} userId - User ID
+ * @param {string} dateStr - YYYY-MM-DD
+ * @param {Object} options - Query options
+ * @param {number} options.limit - Max number of cards to return
+ * @returns {Promise<Array>} Cards due exactly on dateStr
+ */
+export async function getCardsDueOnDate(userId, dateStr, options = {}) {
+  const max = Number(options?.limit);
+
+  if (!dateStr) {
+    throw new Error('getCardsDueOnDate requires dateStr (YYYY-MM-DD)');
+  }
+
+  console.log(`🔍 Fetching cards due on ${dateStr} for ${userId}`);
+
+  const queryParts = [
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId),
+    where('isActive', '==', true),
+    where('nextReviewDate', '==', dateStr),
+    orderBy('nextReviewDate', 'asc')
+  ];
+
+  if (Number.isFinite(max) && max > 0) {
+    queryParts.push(limit(max));
+  }
+
+  const cardsQuery = query(...queryParts);
+  const snapshot = await getDocs(cardsQuery);
+  const cards = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+
+  console.log(`📊 Found ${cards.length} cards due on ${dateStr}`);
+  return cards;
+}
+
+export async function getOverdueCount(userId, asOf = getNow()) {
+  const todayStr = formatHKDateKey(asOf);
+  const fourteenDaysAgo = new Date(asOf);
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+  const fourteenDaysAgoStr = formatHKDateKey(fourteenDaysAgo);
+
+  const q = query(
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId),
+    where('isActive', '==', true),
+    where('nextReviewDate', '<', todayStr),
+    where('nextReviewDate', '>=', fourteenDaysAgoStr)
+  );
+
+  const snap = await getCountFromServer(q);
+  return Number(snap.data().count || 0);
+}
+
+/**
+ * Archive overdue cards older than 14 days (recoverable)
+ * 
+ * @param {string} userId - User ID
+ * @returns {Promise<number>} Number of archived cards
+ */
+export async function archiveOverdueCards(userId) {
+  const today = new Date();
+  const fourteenDaysAgo = new Date(today);
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+  const fourteenDaysAgoStr = formatHKDateKey(fourteenDaysAgo);
+  
+  console.log(`🗄️ Archiving overdue cards older than 14 days for user ${userId}`);
+  
+  // Find cards overdue by more than 14 days
+  const overdueQuery = query(
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId),
+    where('isActive', '==', true),
+    where('nextReviewDate', '<', fourteenDaysAgoStr)
+  );
+  
+  const snapshot = await getDocs(overdueQuery);
+  const cardsToArchive = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  
+  if (cardsToArchive.length === 0) {
+    console.log('✅ No cards to archive');
+    return 0;
+  }
+  
+  // Archive cards in batches
+  const batchSize = 500;
+  let archivedCount = 0;
+  
+  for (let i = 0; i < cardsToArchive.length; i += batchSize) {
+    const batch = writeBatch(db);
+    const batchCards = cardsToArchive.slice(i, i + batchSize);
+    
+    batchCards.forEach(card => {
+      const cardRef = doc(db, COLLECTIONS.CARDS, card.id);
+      batch.update(cardRef, {
+        isActive: false,
+        archivedAt: new Date().toISOString(),
+        archiveReason: 'overdue_14_days',
+        updatedAt: new Date().toISOString()
+      });
+    });
+    
+    await batch.commit();
+    archivedCount += batchCards.length;
+    console.log(`📦 Archived batch of ${batchCards.length} cards`);
+
+    // Best-effort denormalization
+    await Promise.all(
+      batchCards.map((c) => upsertMistakeSrsMeta(userId, c.questionId, { ...c, isActive: false }))
+    );
+  }
+  
+  console.log(`🎉 Successfully archived ${archivedCount} overdue cards`);
+  return archivedCount;
+}
+
+/**
+ * Get archived cards for a user
+ * 
+ * @param {string} userId - User ID
+ * @param {Object} options - Query options
+ * @param {string} options.reason - Filter by archive reason
+ * @param {number} options.limit - Max number of cards to return
+ * @returns {Promise<Array>} Archived cards
+ */
+export async function getArchivedCards(userId, options = {}) {
+  const { reason, limit } = options;
+  
+  const queryParts = [
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId),
+    where('isActive', '==', false)
+  ];
+  
+  if (reason) {
+    queryParts.push(where('archiveReason', '==', reason));
+  }
+  
+  queryParts.push(orderBy('archivedAt', 'desc'));
+  
+  if (Number.isFinite(limit) && limit > 0) {
+    queryParts.push(limit(limit));
+  }
+  
+  const cardsQuery = query(...queryParts);
+  const snapshot = await getDocs(cardsQuery);
+  
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+/**
+ * Restore an archived card
+ * 
+ * @param {string} cardId - Card ID
+ * @returns {Promise<Object>} Restored card
+ */
+export async function restoreArchivedCard(cardId) {
+  const cardRef = doc(db, COLLECTIONS.CARDS, cardId);
+  
+  await updateDoc(cardRef, {
+    isActive: true,
+    archivedAt: null,
+    archiveReason: null,
+    updatedAt: new Date().toISOString()
+  });
+  
+  const updatedCard = await getCard(cardId);
+  console.log(`♻️ Restored archived card: ${cardId}`);
+
+  try {
+    if (updatedCard) {
+      await upsertMistakeSrsMeta(updatedCard.userId, updatedCard.questionId, updatedCard);
+    }
+  } catch (e) {
+    console.error('⚠️ Failed to update mistake SRS meta on restore:', e);
+  }
+  
+  return updatedCard;
+}
+/**
+ * Save a single card (for debugging)
+ * 
+ * @param {Object} card - Card data
+ * @returns {Promise<Object>} Saved card
+ */
+export async function saveCard(card) {
+  const cardRef = doc(db, COLLECTIONS.CARDS, card.id);
+  await setDoc(cardRef, card);
+  return { id: card.id, ...card };
+}
+
+/**
+ * Delete a card (for debugging)
+ * 
+ * @param {string} cardId - Card ID
+ * @returns {Promise<void>}
+ */
+export async function deleteCard(cardId) {
+  const cardRef = doc(db, COLLECTIONS.CARDS, cardId);
+  await deleteDoc(cardRef);
+}
+
+/**
+ * Get all SRS cards for a user
+ */
+export async function getAllCards(userId) {
+  const cardsQuery = query(
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId)
+  );
+
+  const snapshot = await getDocs(cardsQuery);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+}
+
+export async function getActiveCards(userId, options = {}) {
+  const max = Number(options?.limit);
+
+  if (!userId) return [];
+
+  // Index-safe: avoid requiring a composite index on (userId, isActive).
+  // We'll query by userId only and filter isActive client-side.
+  const queryParts = [collection(db, COLLECTIONS.CARDS), where('userId', '==', userId)];
+  if (Number.isFinite(max) && max > 0) queryParts.push(limit(max));
+
+  const q = query(...queryParts);
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((c) => c?.isActive === true);
+}
+
+export async function getCardsByQuestionIds(userId, questionIds = []) {
+  const ids = (Array.isArray(questionIds) ? questionIds : [])
+    .map((x) => String(x))
+    .filter(Boolean);
+
+  if (!userId || ids.length === 0) return [];
+
+  const chunkSize = 10;
+  const results = [];
+
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const q = query(
+      collection(db, COLLECTIONS.CARDS),
+      where('userId', '==', userId),
+      where('questionId', 'in', chunk)
+    );
+
+    const snap = await getDocs(q);
+    snap.docs.forEach((d) => results.push({ id: d.id, ...d.data() }));
+  }
+
+  return results;
+}
+
+/**
+ * Get recent review attempts for analytics
+ */
+export async function getRecentReviewAttempts(userId, days = 30) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const attemptsQuery = query(
+    collection(db, COLLECTIONS.ATTEMPTS),
+    where('userId', '==', userId)
+  );
+
+  const snapshot = await getDocs(attemptsQuery);
+
+  const sinceIso = since.toISOString();
+  return snapshot.docs
+    .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+    .filter((a) => {
+      const attemptedAt = a?.attemptedAt;
+      if (!attemptedAt || typeof attemptedAt !== 'string') return false;
+      return attemptedAt >= sinceIso;
+    })
+    .sort((a, b) => String(a?.attemptedAt || '').localeCompare(String(b?.attemptedAt || '')));
+}
+
+/**
+ * Get specific card by ID
+ * 
+ * @param {string} cardId - Card ID
+ * @returns {Promise<Object|null>} Card or null
+ */
+export async function getCard(cardId) {
+  const cardRef = doc(db, COLLECTIONS.CARDS, cardId);
+  const cardSnap = await getDoc(cardRef);
+  
+  if (!cardSnap.exists()) {
+    return null;
+  }
+  
+  return { id: cardSnap.id, ...cardSnap.data() };
+}
+
+/**
+ * Submit a review attempt (CORE SRS FUNCTION)
+ * 
+ * This is where the magic happens:
+ * 1. Records the attempt
+ * 2. Updates card state based on result
+ * 3. Calculates ONLY the next single review date
+ * 
+ * @param {string} cardId - Card ID
+ * @param {boolean} wasCorrect - Did user answer correctly?
+ * @param {Object} attemptData - Additional attempt data
+ * @returns {Promise<Object>} Updated card and attempt record
+ */
+export async function submitReview(cardId, wasCorrect, attemptData = {}) {
+  console.log(`📝 Processing review: ${cardId}, correct: ${wasCorrect}`);
+  
+  // 1. Get current card state
+  const card = await getCard(cardId);
+  if (!card) {
+    throw new Error(`Card not found: ${cardId}`);
+  }
+  
+  // 2. Create attempt record (for audit trail)
+  const attemptId = `attempt_${cardId}_${Date.now()}`;
+  const attempt = {
+    id: attemptId,
+    cardId,
+    userId: card.userId,
+    questionId: card.questionId,
+    
+    // Attempt details
+    attemptNumber: (card.currentAttemptNumber || 0) + 1,
+    wasCorrect,
+    userAnswer: attemptData.userAnswer || null,
+    correctAnswer: attemptData.correctAnswer || null,
+    
+    // Timing
+    timeSpent: attemptData.timeSpent || null,
+    attemptedAt: new Date().toISOString(),
+    
+    // State before attempt (audit)
+    stateBefore: {
+      interval: card.interval,
+      easeFactor: card.easeFactor,
+      repetitionCount: card.repetitionCount,
+      status: card.status
+    },
+    
+    // Review session
+    reviewSessionId: attemptData.reviewSessionId || null,
+    
+    // Audit
+    createdAt: new Date().toISOString()
+  };
+  
+  // 3. Calculate new card state
+  const updatedCard = updateCardAfterReview(card, wasCorrect);
+  
+  // Add state after to attempt record
+  attempt.stateAfter = {
+    interval: updatedCard.interval,
+    easeFactor: updatedCard.easeFactor,
+    repetitionCount: updatedCard.repetitionCount,
+    status: updatedCard.status
+  };
+  
+  // 4. Save both records in a batch
+  const batch = writeBatch(db);
+  
+  // Save attempt
+  batch.set(doc(db, COLLECTIONS.ATTEMPTS, attemptId), attempt);
+  
+  // Update card
+  batch.set(doc(db, COLLECTIONS.CARDS, cardId), updatedCard);
+  
+  await batch.commit();
+  
+  console.log(`✅ Review processed successfully:`, {
+    cardId,
+    wasCorrect,
+    nextReview: updatedCard.nextReviewDate,
+    newInterval: updatedCard.interval,
+    newStatus: updatedCard.status
+  });
+  
+  // 5. Archive if graduated
+  if (shouldArchiveCard(updatedCard)) {
+    console.log(`🎓 Card graduated! Archiving: ${cardId}`);
+    await archiveCard(cardId);
+  }
+
+  // Denormalize onto mistake index
+  try {
+    const fresh = shouldArchiveCard(updatedCard)
+      ? { ...updatedCard, isActive: false }
+      : updatedCard;
+    await upsertMistakeSrsMeta(fresh.userId, fresh.questionId, fresh);
+  } catch (e) {
+    console.error('⚠️ Failed to update mistake SRS meta:', e);
+  }
+  
+  return {
+    card: updatedCard,
+    attempt
+  };
+}
+
+/**
+ * Submit multiple reviews in one session
+ * 
+ * @param {string} userId - User ID
+ * @param {Array} reviews - Array of {cardId, wasCorrect, userAnswer}
+ * @param {string} sessionType - Session type identifier
+ * @returns {Promise<Object>} Session summary
+ */
+export async function submitReviewSession(userId, reviews, sessionType = 'spaced_repetition') {
+  const sessionId = `review_session_${Date.now()}`;
+  const startTime = new Date();
+  
+  console.log(`🎯 Starting review session: ${sessionId} with ${reviews.length} cards`);
+  
+  let cardsCorrect = 0;
+  let cardsFailed = 0;
+  const results = [];
+  
+  // Process each review
+  for (const review of reviews) {
+    try {
+      const result = await submitReview(review.cardId, review.wasCorrect, {
+        userAnswer: review.userAnswer,
+        correctAnswer: review.correctAnswer,
+        timeSpent: review.timeSpent,
+        reviewSessionId: sessionId
+      });
+      
+      results.push(result);
+      
+      if (review.wasCorrect) {
+        cardsCorrect++;
+      } else {
+        cardsFailed++;
+      }
+    } catch (error) {
+      console.error(`❌ Error processing review for card ${review.cardId}:`, error);
+      cardsFailed++;
+    }
+  }
+  
+  const endTime = new Date();
+  const totalTimeSpent = Math.floor((endTime - startTime) / 1000);
+  
+  // Create session record
+  const session = {
+    id: sessionId,
+    userId,
+    
+    // Stats
+    cardsReviewed: reviews.length,
+    cardsCorrect,
+    cardsFailed,
+    totalTimeSpent,
+    
+    // Metadata
+    sessionType,
+    startedAt: startTime.toISOString(),
+    completedAt: endTime.toISOString(),
+    
+    // Audit
+    createdAt: new Date().toISOString()
+  };
+  
+  // Save session
+  await setDoc(doc(db, COLLECTIONS.SESSIONS, sessionId), session);
+  
+  console.log(`✅ Review session completed:`, session);
+  
+  return {
+    session,
+    results
+  };
+}
+
+/**
+ * Archive a graduated card
+ * 
+ * @param {string} cardId - Card ID
+ */
+async function archiveCard(cardId) {
+  const cardRef = doc(db, COLLECTIONS.CARDS, cardId);
+  await updateDoc(cardRef, {
+    isActive: false,
+    archivedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+/**
+ * Get review statistics for a user
+ * 
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} Statistics
+ */
+export async function getReviewStats(userId) {
+  // Get all cards
+  const cardsQuery = query(
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId)
+  );
+  
+  const cardsSnapshot = await getDocs(cardsQuery);
+  const cards = cardsSnapshot.docs.map(doc => doc.data());
+  
+  const stats = {
+    total: cards.length,
+    active: cards.filter(c => c.isActive).length,
+    archived: cards.filter(c => !c.isActive).length,
+    
+    // By status
+    new: cards.filter(c => c.status === SRS_CONFIG.STATUS.NEW).length,
+    learning: cards.filter(c => c.status === SRS_CONFIG.STATUS.LEARNING).length,
+    review: cards.filter(c => c.status === SRS_CONFIG.STATUS.REVIEW).length,
+    graduated: cards.filter(c => c.status === SRS_CONFIG.STATUS.GRADUATED).length,
+    
+    // Due today
+    dueToday: cards.filter(c => c.isActive && c.isDue).length,
+    
+    // Performance
+    totalAttempts: cards.reduce((sum, c) => sum + (c.totalAttempts || 0), 0),
+    successRate: calculateSuccessRate(cards)
+  };
+  
+  return stats;
+}
+
+function calculateSuccessRate(cards) {
+  const totalAttempts = cards.reduce((sum, c) => sum + (c.totalAttempts || 0), 0);
+  const successfulAttempts = cards.reduce((sum, c) => sum + (c.successfulAttempts || 0), 0);
+  
+  if (totalAttempts === 0) return 0;
+  return Math.round((successfulAttempts / totalAttempts) * 100);
+}
+
+/**
+ * Update isDue flags for all cards (run daily)
+ * 
+ * @param {string} userId - User ID
+ */
+export async function updateDueFlags(userId) {
+  const today = new Date().toISOString().split('T')[0];
+  
+  const cardsQuery = query(
+    collection(db, COLLECTIONS.CARDS),
+    where('userId', '==', userId),
+    where('isActive', '==', true)
+  );
+  
+  const snapshot = await getDocs(cardsQuery);
+  const batch = writeBatch(db);
+  
+  snapshot.docs.forEach(docSnap => {
+    const card = docSnap.data();
+    const isDue = isCardDue(card.nextReviewDate, new Date(today));
+    
+    if (card.isDue !== isDue) {
+      batch.update(docSnap.ref, { isDue });
+    }
+  });
+  
+  await batch.commit();
+}
+
+export const srsService = {
+  createCardsFromMistakes,
+  getAllCards,
+  getActiveCards,
+  getCardsByQuestionIds,
+  getRecentReviewAttempts,
+  getDueCards,
+  getCardsDueOnDate,
+  getOverdueCount,
+  getCard,
+  submitReview,
+  submitReviewSession,
+  getReviewStats,
+  updateDueFlags,
+  archiveOverdueCards,
+  getArchivedCards,
+  restoreArchivedCard,
+  saveCard,
+  deleteCard
+};
+
+export default srsService;
+=== LanguageContext.jsx (grep hits) ===
+129:      masteryNewTitle: "New",
+130:      masteryNewDesc: "Not attempted yet.",
+133:      masteryMasteredTitle: "Mastered",
+134:      masteryMasteredDesc: "3+ correct answers.",
+173:      masteryNewTitle: "New",
+174:      masteryNewDesc: "Not attempted yet.",
+177:      masteryMasteredTitle: "Mastered",
+178:      masteryMasteredDesc: "3+ correct answers.",
+933:      masteryNotInSrs: "Not in SRS",
+934:      masteryNew: "New",
+935:      masteryDeveloping: "Developing",
+937:      masteryNear: "Near-Mastery",
+938:      masteryMastered: "Mastered",
+1072:      questionsHidden: "{count} questions hidden…",
+1073:      moreQuestionsHidden: "more questions hidden…",
+1396:      masteryNewTitle: "未開始",
+1397:      masteryNewDesc: "尚未嘗試。",
+1400:      masteryMasteredTitle: "已掌握",
+1401:      masteryMasteredDesc: "3+ 次答對。",
+1975:      masteryNew: "新",
+1976:      masteryNotInSrs: "未加入 SRS",
+1977:      masteryDeveloping: "發展中",
+1979:      masteryNear: "接近精通",
+1980:      masteryMastered: "已精通",
+2101:      questionsHidden: "{count} 條題目隱藏…",
+2102:      moreQuestionsHidden: "更多題目隱藏…",
