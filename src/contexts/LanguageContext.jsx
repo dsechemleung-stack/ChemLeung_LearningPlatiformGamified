@@ -874,6 +874,7 @@ const translations = {
       learningAnalytics: "Learning Analytics",
       archive: "Archive",
       masteryArchive: "Mastery Archive",
+      questionsHidden: "Questions are hidden on this page. Start a quiz to view them.",
 
       filterInfoTitle: "About Topic/Subtopic filters",
       filterInfoBody: "Topic/Subtopic filters search across all of your mistake questions, not only the first 40 shown on screen. Use \"Load more\" to display more results.",
@@ -934,6 +935,7 @@ const translations = {
       clearSelection: "Clear Selection",
       
       // Mastery Status Labels
+      masteryNotInSrs: "Not in SRS",
       masteryNew: "New",
       masteryDeveloping: "Developing",
       masteryProgressing: "Progressing",
@@ -1906,6 +1908,7 @@ const translations = {
       learningAnalytics: "學習分析",
       archive: "封存",
       masteryArchive: "精通封存",
+      questionsHidden: "此頁不顯示題目內容，請開始測驗查看。",
 
       filterInfoTitle: "關於主題/副題篩選",
       filterInfoBody: "主題/副題篩選會搜尋你所有的錯題記錄，不只限於畫面上顯示的首 40 題。你可以按 \"Load more\" 來顯示更多結果。",
@@ -1960,6 +1963,7 @@ const translations = {
       filteredFrom: "篩選自",
       clearSelection: "清除選擇",
 
+      masteryNotInSrs: "不在 SRS",
       masteryNew: "新",
       masteryDeveloping: "發展中",
       masteryProgressing: "進步中",
