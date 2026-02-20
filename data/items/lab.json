@@ -1,0 +1,130 @@
+[
+  {
+    "id": "item_water",
+    "name": "Water",
+    "chemicalFormula": "H₂O",
+    "emoji": "💧",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_cabinet",
+      "kitchen"
+    ],
+    "shopData": {
+      "coinCost": 300
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_everyday_chemistry",
+      "col_hydrogen_compounds"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_hydrochloric_acid",
+    "name": "Hydrochloric Acid",
+    "chemicalFormula": "HCl (dil.)",
+    "emoji": "🧪",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_cabinet"
+    ],
+    "shopData": {
+      "coinCost": 400
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_acids"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_sodium_hydroxide",
+    "name": "Sodium Hydroxide",
+    "chemicalFormula": "NaOH",
+    "emoji": "⚗️",
+    "rarity": "epic",
+    "rarityValue": 3,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_alkali_cabinet"
+    ],
+    "shopData": {
+      "coinCost": 700
+    },
+    "skillContribution": 3,
+    "collections": [
+      "col_ionic_compounds",
+      "col_acids"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_conc_h2so4",
+    "name": "Conc. Sulfuric Acid",
+    "chemicalFormula": "H₂SO₄ (conc.)",
+    "emoji": "☠️",
+    "rarity": "epic",
+    "rarityValue": 3,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_fume_cupboard"
+    ],
+    "shopData": {
+      "coinCost": 800
+    },
+    "skillContribution": 3,
+    "collections": [
+      "col_acids",
+      "col_industrial_chemistry"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_copper",
+    "name": "Copper",
+    "chemicalFormula": "Cu",
+    "emoji": "🟤",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf",
+      "kitchen"
+    ],
+    "shopData": {
+      "coinCost": 150
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_metals",
+      "col_transition_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_co2",
+    "name": "Carbon Dioxide",
+    "chemicalFormula": "CO₂",
+    "emoji": "🌫️",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tanks",
+      "kitchen"
+    ],
+    "shopData": {
+      "coinCost": 100
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_atmosphere",
+      "col_everyday_chemistry"
+    ],
+    "deprecated": false
+  }
+]

@@ -1,0 +1,166 @@
+[
+  {
+    "id": "lab",
+    "displayName": "🔬 Lab",
+    "emoji": "🔬",
+    "unlockCost": 0,
+    "skill": {
+      "description": "Multiplies your Garden passive income rate",
+      "formula": "multiplier = 1 + (totalBonus × 0.1)"
+    },
+    "slots": [
+      { "slotId": "lab_bench_1" },
+      { "slotId": "lab_bench_2" },
+      { "slotId": "lab_bench_3" },
+      { "slotId": "lab_bench_4" },
+      { "slotId": "lab_bench_5" },
+      { "slotId": "lab_bench_6" },
+      { "slotId": "lab_premium_1", "unlockCost": 300, "unlockCurrency": "diamonds" },
+      { "slotId": "lab_premium_2", "unlockCost": 300, "unlockCurrency": "diamonds" },
+      { "slotId": "lab_premium_3", "unlockCost": 300, "unlockCurrency": "diamonds" },
+      { "slotId": "lab_premium_4", "unlockCost": 300, "unlockCurrency": "diamonds" },
+      { "slotId": "lab_premium_5", "unlockCost": 300, "unlockCurrency": "diamonds" },
+      { "slotId": "lab_premium_6", "unlockCost": 300, "unlockCurrency": "diamonds" }
+    ]
+  },
+  {
+    "id": "kitchen",
+    "displayName": "🍳 Kitchen",
+    "emoji": "🍳",
+    "unlockCost": 500,
+    "skill": {
+      "description": "Flat diamond bonus per quiz completion",
+      "formula": "bonus_diamonds = totalBonus × random(1, 3)"
+    },
+    "slots": [
+      { "slotId": "kitchen_counter_1" },
+      { "slotId": "kitchen_counter_2" },
+      { "slotId": "kitchen_counter_3" },
+      { "slotId": "kitchen_counter_4" },
+      { "slotId": "kitchen_shelf_1", "unlockCost": 800, "unlockCurrency": "coins" },
+      { "slotId": "kitchen_shelf_2", "unlockCost": 800, "unlockCurrency": "coins" },
+      { "slotId": "kitchen_shelf_3", "unlockCost": 800, "unlockCurrency": "coins" },
+      { "slotId": "kitchen_shelf_4", "unlockCost": 800, "unlockCurrency": "coins" }
+    ]
+  },
+  {
+    "id": "toilet",
+    "displayName": "🚽 Toilet",
+    "emoji": "🚽",
+    "unlockCost": 300,
+    "skill": {
+      "description": "Boosts your daily login diamond reward",
+      "formula": "diamonds = 5 + (totalBonus × 2)"
+    },
+    "slots": [
+      { "slotId": "toilet_tank_1" },
+      { "slotId": "toilet_tank_2" },
+      { "slotId": "toilet_tank_3" },
+      { "slotId": "toilet_tank_4" },
+      { "slotId": "toilet_cabinet_1", "unlockCost": 500, "unlockCurrency": "coins" },
+      { "slotId": "toilet_cabinet_2", "unlockCost": 500, "unlockCurrency": "coins" },
+      { "slotId": "toilet_cabinet_3", "unlockCost": 500, "unlockCurrency": "coins" },
+      { "slotId": "toilet_cabinet_4", "unlockCost": 500, "unlockCurrency": "coins" }
+    ]
+  },
+  {
+    "id": "garden",
+    "displayName": "🌿 Garden",
+    "emoji": "🌿",
+    "unlockCost": 200,
+    "skill": {
+      "description": "Base passive coin income per hour",
+      "formula": "coins_per_hour = totalBonus × 10"
+    },
+    "slots": [
+      { "slotId": "garden_bed_1" },
+      { "slotId": "garden_bed_2" },
+      { "slotId": "garden_bed_3" },
+      { "slotId": "garden_bed_4" },
+      { "slotId": "garden_plot_1", "unlockCost": 400, "unlockCurrency": "coins" },
+      { "slotId": "garden_plot_2", "unlockCost": 400, "unlockCurrency": "coins" },
+      { "slotId": "garden_plot_3", "unlockCost": 400, "unlockCurrency": "coins" },
+      { "slotId": "garden_plot_4", "unlockCost": 400, "unlockCurrency": "coins" }
+    ]
+  },
+  {
+    "id": "gas_station",
+    "displayName": "⛽ Gas Station",
+    "emoji": "⛽",
+    "unlockCost": 600,
+    "skill": {
+      "description": "Unlocks extra slots across ALL places",
+      "formula": "extra_slots_count = totalBonus"
+    },
+    "slots": [
+      { "slotId": "gas_pump_1" },
+      { "slotId": "gas_pump_2" },
+      { "slotId": "gas_pump_3" },
+      { "slotId": "gas_pump_4" },
+      { "slotId": "gas_shelf_1", "unlockCost": 1000, "unlockCurrency": "coins" },
+      { "slotId": "gas_shelf_2", "unlockCost": 1000, "unlockCurrency": "coins" },
+      { "slotId": "gas_shelf_3", "unlockCost": 1000, "unlockCurrency": "coins" },
+      { "slotId": "gas_shelf_4", "unlockCost": 1000, "unlockCurrency": "coins" }
+    ]
+  },
+  {
+    "id": "lifestyle_boutique",
+    "displayName": "🛍️ Boutique",
+    "emoji": "🛍️",
+    "unlockCost": 400,
+    "skill": {
+      "description": "Percentage discount in ChemStore (capped at 50%)",
+      "formula": "discount% = min(totalBonus × 2, 50)"
+    },
+    "slots": [
+      { "slotId": "boutique_shelf_1" },
+      { "slotId": "boutique_shelf_2" },
+      { "slotId": "boutique_shelf_3" },
+      { "slotId": "boutique_shelf_4" },
+      { "slotId": "boutique_display_1", "unlockCost": 200, "unlockCurrency": "diamonds" },
+      { "slotId": "boutique_display_2", "unlockCost": 200, "unlockCurrency": "diamonds" }
+    ]
+  },
+  {
+    "id": "beach",
+    "displayName": "🏖️ Beach",
+    "emoji": "🏖️",
+    "unlockCost": 350,
+    "skill": {
+      "description": "Percentage chance to double quiz diamonds (capped at 100%)",
+      "formula": "chance% = min(totalBonus × 5, 100)"
+    },
+    "slots": [
+      { "slotId": "beach_sand_1" },
+      { "slotId": "beach_sand_2" },
+      { "slotId": "beach_sand_3" },
+      { "slotId": "beach_sand_4" },
+      { "slotId": "beach_pier_1", "unlockCost": 600, "unlockCurrency": "coins" },
+      { "slotId": "beach_pier_2", "unlockCost": 600, "unlockCurrency": "coins" },
+      { "slotId": "beach_pier_3", "unlockCost": 600, "unlockCurrency": "coins" },
+      { "slotId": "beach_pier_4", "unlockCost": 600, "unlockCurrency": "coins" }
+    ]
+  },
+  {
+    "id": "school",
+    "displayName": "🏫 School",
+    "emoji": "🏫",
+    "unlockCost": 150,
+    "skill": {
+      "description": "Diamond multiplier on all quiz rewards",
+      "formula": "multiplier = 1 + (totalBonus × 0.1)"
+    },
+    "slots": [
+      { "slotId": "school_desk_1" },
+      { "slotId": "school_desk_2" },
+      { "slotId": "school_desk_3" },
+      { "slotId": "school_desk_4" },
+      { "slotId": "school_desk_5" },
+      { "slotId": "school_locker_1", "unlockCost": 700, "unlockCurrency": "coins" },
+      { "slotId": "school_locker_2", "unlockCost": 700, "unlockCurrency": "coins" },
+      { "slotId": "school_locker_3", "unlockCost": 700, "unlockCurrency": "coins" },
+      { "slotId": "school_locker_4", "unlockCost": 700, "unlockCurrency": "coins" },
+      { "slotId": "school_locker_5", "unlockCost": 700, "unlockCurrency": "coins" }
+    ]
+  }
+]

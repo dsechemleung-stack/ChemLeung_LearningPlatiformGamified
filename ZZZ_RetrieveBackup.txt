@@ -47,3 +47,6 @@ _______
 backup 11: Shrinking reads of Firestore, use Algorila for search in Forum
 _______
 backup 12: SRS system page, Practice Panel
+
+______
+backup 14: Mistake deck removed, SRS graph fixed

@@ -7,6 +7,176 @@ const algoliasearch = require('algoliasearch');
 
 admin.initializeApp();
 
+function getChemCityDefaults(userId) {
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  return {
+    userId,
+    currencies: {
+      coins: 500,
+      diamonds: 20,
+    },
+    ownedItems: [],
+    equipped: {},
+    activeBonuses: {
+      passiveBaseCoinsPerHour: 0,
+      passiveMultiplier: 1,
+      quizFlatDiamondBonus: 0,
+      quizDiamondMultiplier: 1,
+      quizDoubleChancePercent: 0,
+      dailyLoginDiamonds: 5,
+      extraSlotsTotal: 0,
+      shopDiscountPercent: 0,
+    },
+    unlockedPlaces: ['lab'],
+    unlockedSlots: [],
+    extraSlotsBudget: 0,
+    passiveIncome: {
+      lastCollected: null,
+    },
+    streaks: {
+      currentStreak: 0,
+      longestStreak: 0,
+      lastLoginDate: '',
+      streakFreezeCount: 0,
+    },
+    cacheVersion: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function ensureChemCityInitialized(db, userId) {
+  const userRef = db.collection('users').doc(userId);
+  const snap = await userRef.get();
+  if (!snap.exists) {
+    throw new HttpsError('not-found', 'User profile not found.');
+  }
+  const userData = snap.data() || {};
+  if (userData.chemcity && typeof userData.chemcity === 'object') {
+    return;
+  }
+
+  const chemcity = getChemCityDefaults(userId);
+  const progressRef = userRef.collection('chemcity_progress').doc('data');
+  const batch = db.batch();
+  batch.set(userRef, { chemcity }, { merge: true });
+  batch.set(progressRef, { collections: {}, topicMastery: {} }, { merge: true });
+  await batch.commit();
+}
+
+function calcGardenCoinsPerHour(totalBonus) {
+  return totalBonus * 10;
+}
+
+function calcLabMultiplier(totalBonus) {
+  return 1 + totalBonus * 0.1;
+}
+
+function calcKitchenMaxDiamonds(totalBonus) {
+  return totalBonus * 3;
+}
+
+function calcSchoolMultiplier(totalBonus) {
+  return 1 + totalBonus * 0.1;
+}
+
+function calcBeachDoubleChance(totalBonus) {
+  return Math.min(totalBonus * 5, 100);
+}
+
+function calcToiletLoginDiamonds(totalBonus) {
+  return 5 + totalBonus * 2;
+}
+
+function calcGasStationExtraSlots(totalBonus) {
+  return totalBonus;
+}
+
+function calcBoutiqueDiscount(totalBonus) {
+  return Math.min(totalBonus * 2, 50);
+}
+
+function getTodayUtcDateKey() {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function rollKitchenBonusFromMax(maxBonus) {
+  const max = Number(maxBonus || 0);
+  if (!Number.isFinite(max) || max <= 0) return 0;
+  const totalBonus = Math.floor(max / 3);
+  if (totalBonus <= 0) return 0;
+  const min = totalBonus;
+  const mx = totalBonus * 3;
+  return Math.floor(Math.random() * (mx - min + 1)) + min;
+}
+
+function rollBeachDoubleFromPercent(percent) {
+  const p = Number(percent || 0);
+  if (!Number.isFinite(p) || p <= 0) return false;
+  return Math.random() * 100 < Math.min(p, 100);
+}
+
+function getDiscountedCoinCost(baseCost, shopDiscountPercent) {
+  const cost = Number(baseCost);
+  if (!Number.isFinite(cost) || cost <= 0) return 0;
+  const disc = Number(shopDiscountPercent || 0);
+  if (!Number.isFinite(disc) || disc <= 0) return cost;
+  const factor = 1 - Math.min(disc, 50) / 100;
+  return Math.max(1, Math.floor(cost * factor));
+}
+
+async function computeChemCityActiveBonuses(db, equipped) {
+  const itemIds = Object.values(equipped || {}).filter((x) => typeof x === 'string' && x.length > 0);
+  const uniqueIds = Array.from(new Set(itemIds));
+
+  const totals = {};
+  if (uniqueIds.length > 0) {
+    const refs = uniqueIds.map((id) => db.collection('items').doc(id));
+    const snaps = await db.getAll(...refs);
+
+    const itemMap = new Map();
+    snaps.forEach((s) => {
+      if (s.exists) itemMap.set(s.id, s.data() || {});
+    });
+
+    for (const id of itemIds) {
+      const item = itemMap.get(id);
+      if (!item || item.deprecated) continue;
+      const placeId = String(item.placeId || '');
+      const contrib = Number(item.skillContribution || 0);
+      if (!placeId || !Number.isFinite(contrib)) continue;
+      totals[placeId] = (totals[placeId] || 0) + contrib;
+    }
+  }
+
+  const gardenBonus = totals.garden || 0;
+  const labBonus = totals.lab || 0;
+  const kitchenBonus = totals.kitchen || 0;
+  const schoolBonus = totals.school || 0;
+  const beachBonus = totals.beach || 0;
+  const toiletBonus = totals.toilet || 0;
+  const gasStationBonus = totals.gas_station || 0;
+  const boutiqueBonus = totals.lifestyle_boutique || 0;
+
+  const gardenBase = calcGardenCoinsPerHour(gardenBonus);
+  const labMult = calcLabMultiplier(labBonus);
+
+  return {
+    passiveBaseCoinsPerHour: Math.round(gardenBase * labMult),
+    passiveMultiplier: labMult,
+    quizFlatDiamondBonus: calcKitchenMaxDiamonds(kitchenBonus),
+    quizDiamondMultiplier: calcSchoolMultiplier(schoolBonus),
+    quizDoubleChancePercent: calcBeachDoubleChance(beachBonus),
+    dailyLoginDiamonds: calcToiletLoginDiamonds(toiletBonus),
+    extraSlotsTotal: calcGasStationExtraSlots(gasStationBonus),
+    shopDiscountPercent: calcBoutiqueDiscount(boutiqueBonus),
+  };
+}
+
 function encodeKey(value) {
   const s = value == null ? '' : String(value);
   return encodeURIComponent(s);
@@ -213,6 +383,675 @@ exports.updateMistakeTopicStatsOnCreate = onDocumentCreated(
     if (!userId) return;
     const db = admin.firestore();
     await applyMistakeDocDelta(db, userId, null, after);
+  }
+);
+
+exports.chemcityPurchaseCard = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const itemId = request.data?.itemId;
+    const currency = request.data?.currency;
+    if (typeof itemId !== 'string' || !itemId) {
+      throw new HttpsError('invalid-argument', 'itemId must be a non-empty string.');
+    }
+    if (currency !== 'coins' && currency !== 'diamonds') {
+      throw new HttpsError('invalid-argument', 'currency must be "coins" or "diamonds".');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+    const itemRef = db.collection('items').doc(itemId);
+
+    const itemSnap = await itemRef.get();
+    if (!itemSnap.exists) {
+      throw new HttpsError('not-found', 'Item not found.');
+    }
+    const item = itemSnap.data() || {};
+    if (item.deprecated === true) {
+      throw new HttpsError('failed-precondition', 'Item is deprecated.');
+    }
+
+    const shopData = item.shopData && typeof item.shopData === 'object' ? item.shopData : {};
+    const baseCoinCost = shopData.coinCost;
+    const baseDiamondCost = shopData.diamondCost;
+
+    if (currency === 'coins' && !(Number.isFinite(Number(baseCoinCost)) && Number(baseCoinCost) > 0)) {
+      throw new HttpsError('failed-precondition', 'Item is not purchasable with coins.');
+    }
+    if (currency === 'diamonds' && !(Number.isFinite(Number(baseDiamondCost)) && Number(baseDiamondCost) > 0)) {
+      throw new HttpsError('failed-precondition', 'Item is not purchasable with diamonds.');
+    }
+
+    return db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+
+      const owned = Array.isArray(chemcity.ownedItems) ? chemcity.ownedItems : [];
+      if (owned.includes(itemId)) {
+        throw new HttpsError('already-exists', 'Item already owned.');
+      }
+
+      const bonuses = chemcity.activeBonuses || {};
+      const discountPercent = Number(bonuses.shopDiscountPercent || 0);
+
+      const currencies = chemcity.currencies || {};
+      const coins = Number(currencies.coins || 0);
+      const diamonds = Number(currencies.diamonds || 0);
+
+      const effectiveCoinCost = currency === 'coins'
+        ? getDiscountedCoinCost(baseCoinCost, discountPercent)
+        : 0;
+      const effectiveDiamondCost = currency === 'diamonds'
+        ? Number(baseDiamondCost)
+        : 0;
+
+      if (currency === 'coins') {
+        if (!Number.isFinite(effectiveCoinCost) || effectiveCoinCost <= 0) {
+          throw new HttpsError('failed-precondition', 'Invalid coin cost.');
+        }
+        if (coins < effectiveCoinCost) {
+          throw new HttpsError('failed-precondition', 'Insufficient coins.');
+        }
+      } else {
+        if (!Number.isFinite(effectiveDiamondCost) || effectiveDiamondCost <= 0) {
+          throw new HttpsError('failed-precondition', 'Invalid diamond cost.');
+        }
+        if (diamonds < effectiveDiamondCost) {
+          throw new HttpsError('failed-precondition', 'Insufficient diamonds.');
+        }
+      }
+
+      const update = {
+        'chemcity.ownedItems': [...owned, itemId],
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      if (currency === 'coins') {
+        update['chemcity.currencies.coins'] = coins - effectiveCoinCost;
+      } else {
+        update['chemcity.currencies.diamonds'] = diamonds - effectiveDiamondCost;
+      }
+
+      tx.update(userRef, update);
+
+      return {
+        ok: true,
+        itemId,
+        currency,
+        coinCost: currency === 'coins' ? effectiveCoinCost : null,
+        diamondCost: currency === 'diamonds' ? effectiveDiamondCost : null,
+      };
+    });
+  }
+);
+
+exports.chemcityUnlockPlace = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const placeId = request.data?.placeId;
+    if (typeof placeId !== 'string' || !placeId) {
+      throw new HttpsError('invalid-argument', 'placeId must be a non-empty string.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+    const placeRef = db.collection('places').doc(placeId);
+
+    const placeSnap = await placeRef.get();
+    if (!placeSnap.exists) {
+      throw new HttpsError('not-found', 'Place not found.');
+    }
+    const place = placeSnap.data() || {};
+    const unlockCost = Number(place.unlockCost || 0);
+    if (!Number.isFinite(unlockCost) || unlockCost < 0) {
+      throw new HttpsError('failed-precondition', 'Invalid place unlock cost.');
+    }
+
+    return db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+
+      const unlockedPlaces = Array.isArray(chemcity.unlockedPlaces) ? chemcity.unlockedPlaces : [];
+      if (unlockedPlaces.includes(placeId)) {
+        return { ok: true, alreadyUnlocked: true, placeId };
+      }
+
+      if (unlockCost === 0) {
+        tx.update(userRef, {
+          'chemcity.unlockedPlaces': [...unlockedPlaces, placeId],
+          'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { ok: true, placeId, cost: 0 };
+      }
+
+      const currencies = chemcity.currencies || {};
+      const coins = Number(currencies.coins || 0);
+      if (coins < unlockCost) {
+        throw new HttpsError('failed-precondition', 'Insufficient coins.');
+      }
+
+      tx.update(userRef, {
+        'chemcity.currencies.coins': coins - unlockCost,
+        'chemcity.unlockedPlaces': [...unlockedPlaces, placeId],
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: true, placeId, cost: unlockCost };
+    });
+  }
+);
+
+exports.chemcityUnlockSlot = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const placeId = request.data?.placeId;
+    const slotId = request.data?.slotId;
+    const useExtraSlotBudget = request.data?.useExtraSlotBudget === true;
+
+    if (typeof placeId !== 'string' || !placeId) {
+      throw new HttpsError('invalid-argument', 'placeId must be a non-empty string.');
+    }
+    if (typeof slotId !== 'string' || !slotId) {
+      throw new HttpsError('invalid-argument', 'slotId must be a non-empty string.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+    const placeRef = db.collection('places').doc(placeId);
+
+    const placeSnap = await placeRef.get();
+    if (!placeSnap.exists) {
+      throw new HttpsError('not-found', 'Place not found.');
+    }
+    const place = placeSnap.data() || {};
+    const slots = Array.isArray(place.slots) ? place.slots : [];
+    const slot = slots.find((s) => s && typeof s === 'object' && String(s.slotId || '') === slotId);
+    if (!slot) {
+      throw new HttpsError('failed-precondition', 'Invalid slotId.');
+    }
+
+    const unlockCost = slot.unlockCost == null ? null : Number(slot.unlockCost);
+    const unlockCurrency = slot.unlockCurrency == null ? 'coins' : String(slot.unlockCurrency);
+
+    return db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+
+      const unlockedPlaces = Array.isArray(chemcity.unlockedPlaces) ? chemcity.unlockedPlaces : [];
+      if (!unlockedPlaces.includes(placeId)) {
+        throw new HttpsError('failed-precondition', 'Place is locked.');
+      }
+
+      const unlockedSlots = Array.isArray(chemcity.unlockedSlots) ? chemcity.unlockedSlots : [];
+      if (unlockedSlots.includes(slotId)) {
+        return { ok: true, alreadyUnlocked: true, slotId };
+      }
+
+      if (unlockCost == null) {
+        tx.update(userRef, {
+          'chemcity.unlockedSlots': [...unlockedSlots, slotId],
+          'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { ok: true, slotId, cost: 0, currency: null };
+      }
+
+      if (useExtraSlotBudget) {
+        const budget = Number(chemcity.extraSlotsBudget || 0);
+        if (budget <= 0) {
+          throw new HttpsError('failed-precondition', 'No extra slot budget available.');
+        }
+        tx.update(userRef, {
+          'chemcity.extraSlotsBudget': budget - 1,
+          'chemcity.unlockedSlots': [...unlockedSlots, slotId],
+          'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { ok: true, slotId, usedExtraSlotBudget: true };
+      }
+
+      const currencies = chemcity.currencies || {};
+      const coins = Number(currencies.coins || 0);
+      const diamonds = Number(currencies.diamonds || 0);
+
+      if (unlockCurrency === 'diamonds') {
+        if (!Number.isFinite(unlockCost) || unlockCost <= 0) {
+          throw new HttpsError('failed-precondition', 'Invalid slot unlock cost.');
+        }
+        if (diamonds < unlockCost) {
+          throw new HttpsError('failed-precondition', 'Insufficient diamonds.');
+        }
+        tx.update(userRef, {
+          'chemcity.currencies.diamonds': diamonds - unlockCost,
+          'chemcity.unlockedSlots': [...unlockedSlots, slotId],
+          'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { ok: true, slotId, cost: unlockCost, currency: 'diamonds' };
+      }
+
+      if (!Number.isFinite(unlockCost) || unlockCost <= 0) {
+        throw new HttpsError('failed-precondition', 'Invalid slot unlock cost.');
+      }
+      if (coins < unlockCost) {
+        throw new HttpsError('failed-precondition', 'Insufficient coins.');
+      }
+      tx.update(userRef, {
+        'chemcity.currencies.coins': coins - unlockCost,
+        'chemcity.unlockedSlots': [...unlockedSlots, slotId],
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return { ok: true, slotId, cost: unlockCost, currency: 'coins' };
+    });
+  }
+);
+
+exports.chemcityGetDailyLoginBonus = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+
+    return db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+      const streaks = chemcity.streaks || {};
+
+      const today = getTodayUtcDateKey();
+      const lastLoginDate = typeof streaks.lastLoginDate === 'string' ? streaks.lastLoginDate : '';
+
+      if (lastLoginDate === today) {
+        return { ok: true, alreadyClaimed: true, date: today };
+      }
+
+      const prevStreak = Number(streaks.currentStreak || 0);
+
+      let nextStreak = 1;
+      if (lastLoginDate) {
+        const last = new Date(`${lastLoginDate}T00:00:00.000Z`);
+        const t = new Date(`${today}T00:00:00.000Z`);
+        const diffDays = Math.floor((t.getTime() - last.getTime()) / (24 * 3600 * 1000));
+        if (diffDays === 1) nextStreak = prevStreak + 1;
+        else nextStreak = 1;
+      }
+
+      const longestStreak = Math.max(Number(streaks.longestStreak || 0), nextStreak);
+
+      const bonuses = chemcity.activeBonuses || {};
+      const diamondsAwarded = Math.max(0, Math.floor(Number(bonuses.dailyLoginDiamonds || 5)));
+
+      tx.update(userRef, {
+        'chemcity.currencies.diamonds': admin.firestore.FieldValue.increment(diamondsAwarded),
+        'chemcity.streaks.currentStreak': nextStreak,
+        'chemcity.streaks.longestStreak': longestStreak,
+        'chemcity.streaks.lastLoginDate': today,
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return {
+        ok: true,
+        date: today,
+        diamondsAwarded,
+        currentStreak: nextStreak,
+        longestStreak,
+      };
+    });
+  }
+);
+
+exports.chemcityQuizReward = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const baseDiamonds = Number(request.data?.baseDiamonds || 0);
+    const baseCoins = Number(request.data?.baseCoins || 0);
+    const topicId = request.data?.topicId;
+    const correctAnswers = Number(request.data?.correctAnswers || 0);
+    const totalQuestions = Number(request.data?.totalQuestions || 0);
+
+    if (!Number.isFinite(baseDiamonds) || baseDiamonds < 0) {
+      throw new HttpsError('invalid-argument', 'baseDiamonds must be a non-negative number.');
+    }
+    if (!Number.isFinite(baseCoins) || baseCoins < 0) {
+      throw new HttpsError('invalid-argument', 'baseCoins must be a non-negative number.');
+    }
+    if (topicId != null && typeof topicId !== 'string') {
+      throw new HttpsError('invalid-argument', 'topicId must be a string.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+    const progressRef = userRef.collection('chemcity_progress').doc('data');
+
+    return db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+      const bonuses = chemcity.activeBonuses || {};
+
+      let diamonds = Math.floor(baseDiamonds);
+
+      const kitchenRoll = rollKitchenBonusFromMax(bonuses.quizFlatDiamondBonus);
+      diamonds += kitchenRoll;
+
+      const mult = Number(bonuses.quizDiamondMultiplier || 1);
+      if (Number.isFinite(mult) && mult > 0) {
+        diamonds = Math.floor(diamonds * mult);
+      }
+
+      if (rollBeachDoubleFromPercent(bonuses.quizDoubleChancePercent)) {
+        diamonds *= 2;
+      }
+
+      diamonds = Math.max(0, diamonds);
+
+      const updates = {
+        'chemcity.currencies.coins': admin.firestore.FieldValue.increment(Math.floor(baseCoins)),
+        'chemcity.currencies.diamonds': admin.firestore.FieldValue.increment(diamonds),
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      tx.update(userRef, updates);
+
+      if (typeof topicId === 'string' && topicId) {
+        const progressSnap = await tx.get(progressRef);
+        const progress = progressSnap.exists ? (progressSnap.data() || {}) : {};
+        const tm = progress.topicMastery && typeof progress.topicMastery === 'object' ? progress.topicMastery : {};
+        const prev = tm[topicId] && typeof tm[topicId] === 'object' ? tm[topicId] : {};
+
+        const next = {
+          quizzesCompleted: Number(prev.quizzesCompleted || 0) + 1,
+          correctAnswers: Number(prev.correctAnswers || 0) + (Number.isFinite(correctAnswers) ? correctAnswers : 0),
+          totalQuestions: Number(prev.totalQuestions || 0) + (Number.isFinite(totalQuestions) ? totalQuestions : 0),
+        };
+
+        const nextTm = { ...tm, [topicId]: next };
+        tx.set(progressRef, { topicMastery: nextTm }, { merge: true });
+      }
+
+      return {
+        ok: true,
+        coinsAwarded: Math.floor(baseCoins),
+        diamondsAwarded: diamonds,
+      };
+    });
+  }
+);
+
+exports.chemcityEquipCard = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const slotId = request.data?.slotId;
+    const itemId = request.data?.itemId;
+    if (typeof slotId !== 'string' || !slotId) {
+      throw new HttpsError('invalid-argument', 'slotId must be a non-empty string.');
+    }
+    if (typeof itemId !== 'string' || !itemId) {
+      throw new HttpsError('invalid-argument', 'itemId must be a non-empty string.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+    const itemRef = db.collection('items').doc(itemId);
+
+    const itemSnap = await itemRef.get();
+    if (!itemSnap.exists) {
+      throw new HttpsError('not-found', 'Item not found.');
+    }
+    const item = itemSnap.data() || {};
+    if (item.deprecated === true) {
+      throw new HttpsError('failed-precondition', 'Item is deprecated.');
+    }
+    const itemPlaceId = String(item.placeId || '');
+    const validSlots = Array.isArray(item.validSlots) ? item.validSlots.map(String) : [];
+    if (!validSlots.includes(slotId)) {
+      throw new HttpsError('failed-precondition', 'Item cannot be equipped in this slot.');
+    }
+
+    const placeRef = itemPlaceId ? db.collection('places').doc(itemPlaceId) : null;
+
+    return db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+
+      const owned = Array.isArray(chemcity.ownedItems) ? chemcity.ownedItems : [];
+      if (!owned.includes(itemId)) {
+        throw new HttpsError('failed-precondition', 'Item not owned.');
+      }
+
+      const unlockedPlaces = Array.isArray(chemcity.unlockedPlaces) ? chemcity.unlockedPlaces : [];
+      if (itemPlaceId && !unlockedPlaces.includes(itemPlaceId)) {
+        throw new HttpsError('failed-precondition', 'Place is locked.');
+      }
+
+      if (placeRef) {
+        const placeSnap = await tx.get(placeRef);
+        if (!placeSnap.exists) {
+          throw new HttpsError('failed-precondition', 'Place config missing.');
+        }
+        const place = placeSnap.data() || {};
+        const slots = Array.isArray(place.slots) ? place.slots : [];
+        const slot = slots.find((s) => s && typeof s === 'object' && String(s.slotId || '') === slotId);
+        if (!slot) {
+          throw new HttpsError('failed-precondition', 'Invalid slotId.');
+        }
+        const unlockedSlots = Array.isArray(chemcity.unlockedSlots) ? chemcity.unlockedSlots : [];
+        const isFree = slot.unlockCost == null;
+        if (!isFree && !unlockedSlots.includes(slotId)) {
+          throw new HttpsError('failed-precondition', 'Slot is locked.');
+        }
+      }
+
+      const prevEquipped = chemcity.equipped && typeof chemcity.equipped === 'object' ? chemcity.equipped : {};
+      const nextEquipped = { ...prevEquipped, [slotId]: itemId };
+
+      const nextBonuses = await computeChemCityActiveBonuses(db, nextEquipped);
+
+      tx.update(userRef, {
+        'chemcity.equipped': nextEquipped,
+        'chemcity.activeBonuses': nextBonuses,
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: true, equipped: nextEquipped, activeBonuses: nextBonuses };
+    });
+  }
+);
+
+exports.chemcityUnequipCard = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const slotId = request.data?.slotId;
+    if (typeof slotId !== 'string' || !slotId) {
+      throw new HttpsError('invalid-argument', 'slotId must be a non-empty string.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+
+    return db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+
+      const prevEquipped = chemcity.equipped && typeof chemcity.equipped === 'object' ? chemcity.equipped : {};
+      const nextEquipped = { ...prevEquipped };
+      delete nextEquipped[slotId];
+
+      const nextBonuses = await computeChemCityActiveBonuses(db, nextEquipped);
+
+      tx.update(userRef, {
+        'chemcity.equipped': nextEquipped,
+        'chemcity.activeBonuses': nextBonuses,
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: true, equipped: nextEquipped, activeBonuses: nextBonuses };
+    });
+  }
+);
+
+exports.chemcityInitUser = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+    return { ok: true };
+  }
+);
+
+exports.chemcityCollectPassiveIncome = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const db = admin.firestore();
+
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+    const MAX_HOURS = 24;
+
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+
+      const userData = snap.data() || {};
+      const chemcity = userData.chemcity || {};
+      const bonuses = chemcity.activeBonuses || {};
+      const passiveBase = Number(bonuses.passiveBaseCoinsPerHour || 0);
+
+      if (!Number.isFinite(passiveBase) || passiveBase <= 0) {
+        return {
+          coinsAwarded: 0,
+          message: 'No passive income yet — equip cards in the Garden and Lab.',
+        };
+      }
+
+      const serverNow = admin.firestore.Timestamp.now();
+      const lastCollected = chemcity.passiveIncome?.lastCollected || null;
+
+      let elapsedSeconds = 0;
+      if (lastCollected && typeof lastCollected.seconds === 'number') {
+        elapsedSeconds = serverNow.seconds - lastCollected.seconds;
+      }
+
+      const cappedSeconds = Math.min(elapsedSeconds, MAX_HOURS * 3600);
+      const elapsedHours = cappedSeconds / 3600;
+      const coinsAwarded = Math.floor(passiveBase * elapsedHours);
+
+      tx.update(userRef, {
+        'chemcity.currencies.coins': admin.firestore.FieldValue.increment(coinsAwarded),
+        'chemcity.passiveIncome.lastCollected': serverNow,
+        'chemcity.updatedAt': serverNow,
+      });
+
+      return {
+        coinsAwarded,
+        elapsedHours: Number(elapsedHours.toFixed(2)),
+        newLastCollected: serverNow.toDate().toISOString(),
+      };
+    });
   }
 );
 

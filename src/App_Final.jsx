@@ -24,6 +24,7 @@ import { useQuizData } from './hooks/useQuizData';
 import ChemistryLoading from './components/ChemistryLoading';
 import ChemStore from './components/ChemStore';
 import TokenLog from './components/TokenLog';
+import { ChemCityRoot } from './components/chemcity/ChemCityRoot';
 
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
 
@@ -31,6 +32,7 @@ function AppContent() {
   const location = useLocation();
   const { questions, loading, error } = useQuizData(SHEET_URL);
   const isNotebookRoute = location.pathname === '/notebook';
+  const isChemCityRoute = location.pathname === '/chemcity';
   const noShellRoutes = new Set(['/dashboard', '/login', '/register', '/millionaire']);
   const useNoShell = noShellRoutes.has(location.pathname);
   const hideHeaderRoutes = new Set(['/login', '/register', '/millionaire']);
@@ -58,7 +60,9 @@ function AppContent() {
   return (
     <>
       {showHeader && <Header />}
-      <div className={useNoShell ? '' : isNotebookRoute ? '' : 'container mx-auto px-4 py-6'}>
+      <div
+        className={`${showHeader ? (isChemCityRoute ? '' : 'pt-[76px]') : ''} ${isChemCityRoute ? 'bg-slate-950 min-h-screen' : ''} ${(useNoShell || isNotebookRoute || isChemCityRoute) ? '' : 'container mx-auto px-4 py-6'}`.trim()}
+      >
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
@@ -192,6 +196,15 @@ function AppContent() {
             element={
               <PrivateRoute>
                 <ChemStore />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/chemcity"
+            element={
+              <PrivateRoute>
+                <ChemCityRoot />
               </PrivateRoute>
             }
           />

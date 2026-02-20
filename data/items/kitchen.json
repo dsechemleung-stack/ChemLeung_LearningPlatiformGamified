@@ -1,0 +1,46 @@
+[
+  {
+    "id": "item_sodium_chloride",
+    "name": "Sodium Chloride",
+    "chemicalFormula": "NaCl",
+    "emoji": "🧂",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "kitchen",
+    "validSlots": [
+      "kitchen_pantry",
+      "lab"
+    ],
+    "shopData": {
+      "coinCost": 100
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_ionic_compounds",
+      "col_everyday_chemistry"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_methane",
+    "name": "Methane",
+    "chemicalFormula": "CH₄",
+    "emoji": "🔥",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "kitchen",
+    "validSlots": [
+      "kitchen_oven",
+      "lab"
+    ],
+    "shopData": {
+      "coinCost": 120
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_organic_compounds",
+      "col_fossil_fuels"
+    ],
+    "deprecated": false
+  }
+]

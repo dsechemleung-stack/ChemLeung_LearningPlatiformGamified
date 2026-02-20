@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Beaker, Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle } from 'lucide-react';
+import { Beaker, Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle, Building2 } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 import { forumService } from '../services/forumService';
 import Avatar from './Avatar';
@@ -164,7 +164,7 @@ export default function Header() {
 
     return (
         <>
-            <header className="sticky top-0 z-40 py-2">
+            <header className="fixed top-0 left-0 right-0 z-50 py-2">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="floating-island island-amber w-full md:mx-auto px-3 sm:px-3 py-1">
                         <div className="floating-island-content flex justify-between items-center h-12 gap-4 min-w-0">
@@ -237,6 +237,16 @@ export default function Header() {
                                 >
                                     <Trophy size={20} />
                                     <span className="nav-orb-label font-extrabold text-slate-900">{t('leaderboard.title')}</span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleNavigation('/chemcity')}
+                                    className={`nav-orb ${isActive('/chemcity') ? 'bg-sky-600 text-white' : 'bg-white/70 text-slate-800 hover:bg-white/80'}`}
+                                    aria-label="ChemCity"
+                                    title="ChemCity"
+                                >
+                                    <Building2 size={20} />
+                                    <span className="nav-orb-label font-extrabold text-slate-900">ChemCity</span>
                                 </button>
 
                                 {/* TOKENS */}
@@ -537,6 +547,17 @@ export default function Header() {
                                 >
                                     <Trophy size={20} />
                                     <span>{t('leaderboard.title')}</span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleNavigation('/chemcity')}
+                                    className={`flex items-center gap-3 px-4 py-3 rounded-lg font-bold transition-all active:scale-[0.99] ${isActive('/chemcity')
+                                            ? 'bg-sky-600 text-white'
+                                            : 'text-slate-900 hover:bg-slate-100'
+                                        }`}
+                                >
+                                    <Building2 size={20} />
+                                    <span>ChemCity</span>
                                 </button>
                                 <button
                                     onClick={() => handleNavigation('/history')}

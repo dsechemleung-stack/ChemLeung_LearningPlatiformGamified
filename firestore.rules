@@ -68,13 +68,22 @@ service cloud.firestore {
       && data.sessionType is string;
     }
 
+    function isChemCityWriteBlocked(userId) {
+      return (
+        (!exists(/databases/$(database)/documents/users/$(userId)) && ('chemcity' in request.resource.data))
+        ||
+        (exists(/databases/$(database)/documents/users/$(userId))
+          && request.resource.data.diff(resource.data).affectedKeys().hasAny(['chemcity']))
+      );
+    }
+
     // ============================================
     // USER PROFILE & ECONOMY
     // ============================================
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) && !isChemCityWriteBlocked(userId);
 
       match /tokenHistory/{historyId} {
         allow read, create: if isOwner(userId);
@@ -112,6 +121,37 @@ service cloud.firestore {
         allow read: if isOwner(userId);
         allow write: if false;
       }
+
+      // ChemCity progress sub-doc (read-only for client; writes via Cloud Functions)
+      match /chemcity_progress/{docId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+    }
+
+    match /items/{itemId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /places/{placeId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /collections/{colId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /topics/{topicId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /meta/cacheVersion {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
 
     // ============================================

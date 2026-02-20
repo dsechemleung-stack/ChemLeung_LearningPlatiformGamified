@@ -12,6 +12,7 @@ import ChemistryLoading from '../components/ChemistryLoading';
 import { formatHKDateKey } from '../utils/hkTime';
 import { srsService } from '../services/srsService';
 import { HelpCircle } from 'lucide-react';
+import { useChemCityStore } from '../store/chemcityStore';
 
 /**
  * ResultsPage - OPTIMIZED VERSION with SRS Review Support
@@ -27,6 +28,8 @@ export default function ResultsPage() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { t } = useLanguage();
+
+  const awardQuizReward = useChemCityStore((s) => s.awardQuizReward);
   
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -182,6 +185,24 @@ export default function ResultsPage() {
 
         // STEP 2: Run ALL operations in parallel (MUCH FASTER!)
         const parallelOperations = [];
+
+        // ChemCity Phase 3 — award Coins + Diamonds (non-blocking)
+        // Note: ChemCity uses its own currency system; existing token rewards remain unchanged.
+        parallelOperations.push(
+          (async () => {
+            try {
+              await awardQuizReward({
+                baseCoins: correctAnswers * 10,
+                baseDiamonds: 5,
+                topicId: topics?.[0],
+                correctAnswers,
+                totalQuestions,
+              });
+            } catch (e) {
+              console.error('⚠️ ChemCity quizReward error:', e);
+            }
+          })()
+        );
 
         // Operation 0: Token rewards (per-question + quiz bonus)
         parallelOperations.push(
