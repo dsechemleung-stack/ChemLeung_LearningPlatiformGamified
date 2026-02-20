@@ -1,3 +1,6 @@
+// ==============================
+// FILE: src/components/chemcity/PlaceView.tsx
+// ==============================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { ChemCard } from './ChemCard';
@@ -188,6 +191,130 @@ const FIXED_SLOT_LAYOUTS: Record<
   },
 };
 
+// ─── Compact equip strip slot item ───────────────────────────────────────────
+interface StripSlotProps {
+  slotId: string;
+  label: string;
+  isLocked: boolean;
+  isUnlocking: boolean;
+  canAfford: boolean;
+  costLabel: string;
+  slimItem: { id: string; name: string; emoji: string; imageUrl?: string } | undefined;
+  onEquip: () => void;
+  onUnlock: () => void;
+  onDetail: (id: string) => void;
+}
+
+const StripSlot: React.FC<StripSlotProps> = ({
+  slotId,
+  label,
+  isLocked,
+  isUnlocking,
+  canAfford,
+  costLabel,
+  slimItem,
+  onEquip,
+  onUnlock,
+  onDetail,
+}) => {
+  if (isLocked) {
+    return (
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        <button
+          onClick={canAfford ? onUnlock : undefined}
+          disabled={!canAfford || isUnlocking}
+          className={`
+            w-14 h-14 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-0.5
+            transition-all active:scale-95
+            ${canAfford && !isUnlocking
+              ? 'bg-yellow-500/10 border-yellow-500/60 hover:bg-yellow-500/20 cursor-pointer'
+              : 'bg-slate-900/60 border-slate-700 cursor-not-allowed opacity-60'
+            }
+          `}
+          title={`Unlock for ${costLabel}`}
+        >
+          <span className="text-base leading-none">{isUnlocking ? '⏳' : '🔒'}</span>
+          <span className="text-[9px] text-slate-400 leading-none">{costLabel}</span>
+        </button>
+        <span className="text-[10px] text-slate-600 max-w-[3.5rem] truncate text-center leading-tight">
+          {label}
+        </span>
+      </div>
+    );
+  }
+
+  if (slimItem) {
+    return (
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        <button
+          onClick={() => onDetail(slimItem.id)}
+          className="
+            w-14 h-14 rounded-xl border-2 border-indigo-500/70
+            overflow-hidden bg-slate-800
+            hover:border-indigo-400 transition-all active:scale-95
+            relative
+          "
+          title={slimItem.name}
+        >
+          {slimItem.imageUrl ? (
+            <img
+              src={slimItem.imageUrl}
+              alt={slimItem.name}
+              className="w-full h-full object-cover"
+              loading="lazy"
+              onError={(ev) => {
+                (ev.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : (
+            <span className="text-2xl flex items-center justify-center w-full h-full">
+              {slimItem.emoji}
+            </span>
+          )}
+          {/* Change indicator */}
+          <span
+            className="
+              absolute bottom-0 right-0
+              w-4 h-4 rounded-tl-md
+              bg-slate-900/80 text-[8px]
+              flex items-center justify-center text-indigo-300
+            "
+            onClick={(e) => { e.stopPropagation(); onEquip(); }}
+          >
+            ✎
+          </span>
+        </button>
+        <span className="text-[10px] text-slate-400 max-w-[3.5rem] truncate text-center leading-tight">
+          {label}
+        </span>
+      </div>
+    );
+  }
+
+  // Empty slot
+  return (
+    <div className="flex flex-col items-center gap-1 shrink-0">
+      <button
+        onClick={onEquip}
+        className="
+          w-14 h-14 rounded-xl border-2 border-dashed border-slate-600
+          bg-slate-800/60 hover:bg-slate-700/60 hover:border-indigo-500
+          flex items-center justify-center
+          text-slate-500 hover:text-indigo-400
+          transition-all active:scale-95
+        "
+        title={`Equip card to ${label}`}
+      >
+        <span className="text-xl font-bold leading-none">+</span>
+      </button>
+      <span className="text-[10px] text-slate-500 max-w-[3.5rem] truncate text-center leading-tight">
+        {label}
+      </span>
+    </div>
+  );
+};
+
+// ─── Main PlaceView ───────────────────────────────────────────────────────────
 export const PlaceView: React.FC = () => {
   const user = useChemCityStore((s) => s.user);
   const places = useChemCityStore((s) => s.places);
@@ -198,6 +325,9 @@ export const PlaceView: React.FC = () => {
   const unlockSlot = useChemCityStore((s) => s.unlockSlot);
 
   const [unlockingSlotId, setUnlockingSlotId] = useState<string | null>(null);
+
+  // Dev editor (disabled in production)
+  const isDevEditorEnabled = false;
   const [editSlotsMode, setEditSlotsMode] = useState(false);
   const [selectedSlotIdForEdit, setSelectedSlotIdForEdit] = useState<string | null>(null);
   const [slotPositions, setSlotPositions] = useState<Record<string, { leftPct: number; topPct: number }>>({});
@@ -208,35 +338,30 @@ export const PlaceView: React.FC = () => {
   const [placeImageNaturalWidth, setPlaceImageNaturalWidth] = useState<number>(0);
   const [placeImageRenderedWidth, setPlaceImageRenderedWidth] = useState<number>(0);
 
-  const place = useMemo(() => places.find((p) => p.id === selectedPlaceId) ?? null, [places, selectedPlaceId]);
+  const place = useMemo(
+    () => places.find((p) => p.id === selectedPlaceId) ?? null,
+    [places, selectedPlaceId],
+  );
+
   if (!place || !user) return null;
 
   const fixedLayout = FIXED_SLOT_LAYOUTS[place.id] ?? null;
-  const isDevEditorEnabled = false;
 
   const placeImageSrc = (() => {
     switch (place.id) {
-      case 'toilet':
-        return '/Place1_Toilet.png';
-      case 'kitchen':
-        return '/Place2_Kitchen.png';
-      case 'beach':
-        return '/Place3_Beach.png';
-      case 'gas_station':
-        return '/Place4_GasStation.png';
-      case 'lab':
-        return '/Place5_Lab.png';
-      case 'garden':
-        return '/Place6_Garden.png';
-      case 'lifestyle_boutique':
-        return '/Place7_Boutique.png';
-      case 'school':
-        return '/Place8_School.png';
-      default:
-        return null;
+      case 'toilet':           return '/Place1_Toilet.png';
+      case 'kitchen':          return '/Place2_Kitchen.png';
+      case 'beach':            return '/Place3_Beach.png';
+      case 'gas_station':      return '/Place4_GasStation.png';
+      case 'lab':              return '/Place5_Lab.png';
+      case 'garden':           return '/Place6_Garden.png';
+      case 'lifestyle_boutique': return '/Place7_Boutique.png';
+      case 'school':           return '/Place8_School.png';
+      default:                 return null;
     }
   })();
 
+  // Track rendered image width for slot sizing
   useEffect(() => {
     const img = placeImageRef.current;
     if (!img) return;
@@ -266,12 +391,14 @@ export const PlaceView: React.FC = () => {
     placeImageNaturalWidth > 0 && placeImageRenderedWidth > 0
       ? placeImageRenderedWidth / placeImageNaturalWidth
       : 1;
-
   const tunedSlotSizeScale = slotSizeScale * 1.35;
 
-  const effectiveSlotPositions = (isDevEditorEnabled && editSlotsMode ? slotPositions : fixedLayout?.slotPositions) ?? slotPositions;
-  const effectiveSlotLabels = (isDevEditorEnabled && editSlotsMode ? slotLabels : fixedLayout?.slotLabels) ?? slotLabels;
-  const effectiveSlotSizesPx = (isDevEditorEnabled && editSlotsMode ? slotSizesPx : fixedLayout?.slotSizesPx) ?? slotSizesPx;
+  const effectiveSlotPositions =
+    (isDevEditorEnabled && editSlotsMode ? slotPositions : fixedLayout?.slotPositions) ?? slotPositions;
+  const effectiveSlotLabels =
+    (isDevEditorEnabled && editSlotsMode ? slotLabels : fixedLayout?.slotLabels) ?? slotLabels;
+  const effectiveSlotSizesPx =
+    (isDevEditorEnabled && editSlotsMode ? slotSizesPx : fixedLayout?.slotSizesPx) ?? slotSizesPx;
 
   const exportSlotCoords = async () => {
     const payload = {
@@ -283,22 +410,17 @@ export const PlaceView: React.FC = () => {
         ...(slotPositions[s.slotId] ? slotPositions[s.slotId] : {}),
       })),
     };
-
     const text = JSON.stringify(payload, null, 2);
     console.log('[PlaceView] Slot coords export:\n' + text);
-
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
       }
-    } catch {
-      // ignore clipboard errors
-    }
+    } catch { /* ignore */ }
   };
 
   const coins = user.currencies.coins;
   const diamonds = user.currencies.diamonds;
-
   const isPlaceUnlocked = place.unlockCost === 0 || user.unlockedPlaces.includes(place.id);
 
   const handleUnlockSlot = async (slotId: string) => {
@@ -312,183 +434,90 @@ export const PlaceView: React.FC = () => {
 
   const skillValue = (() => {
     switch (place.id) {
-      case 'garden':
-        return `${user.activeBonuses.passiveBaseCoinsPerHour.toLocaleString()} 🪙/hr`;
-      case 'lab':
-        return `${user.activeBonuses.passiveMultiplier.toFixed(1)}× multiplier`;
-      case 'kitchen':
-        return `+${user.activeBonuses.quizFlatDiamondBonus} 💎 max bonus`;
-      case 'school':
-        return `${user.activeBonuses.quizDiamondMultiplier.toFixed(1)}× quiz diamonds`;
-      case 'beach':
-        return `${user.activeBonuses.quizDoubleChancePercent}% double chance`;
-      case 'toilet':
-        return `${user.activeBonuses.dailyLoginDiamonds} 💎 daily`;
-      case 'gas_station':
-        return `${user.activeBonuses.extraSlotsTotal} bonus slots`;
-      case 'lifestyle_boutique':
-        return `${user.activeBonuses.shopDiscountPercent}% store discount`;
-      default:
-        return '—';
+      case 'garden':     return `${user.activeBonuses.passiveBaseCoinsPerHour.toLocaleString()} 🪙/hr`;
+      case 'lab':        return `${user.activeBonuses.passiveMultiplier.toFixed(1)}× multiplier`;
+      case 'kitchen':    return `+${user.activeBonuses.quizFlatDiamondBonus} 💎 max bonus`;
+      case 'school':     return `${user.activeBonuses.quizDiamondMultiplier.toFixed(1)}× quiz diamonds`;
+      case 'beach':      return `${user.activeBonuses.quizDoubleChancePercent}% double chance`;
+      case 'toilet':     return `${user.activeBonuses.dailyLoginDiamonds} 💎 daily`;
+      case 'gas_station': return `${user.activeBonuses.extraSlotsTotal} bonus slots`;
+      case 'lifestyle_boutique': return `${user.activeBonuses.shopDiscountPercent}% store discount`;
+      default:           return '—';
     }
   })();
 
+  const equippedCount = place.slots.filter((s) => !!user.equipped?.[s.slotId]).length;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // LAYOUT
+  //
+  //  The outer wrapper fills the full viewport height.
+  //  pt-[76px] pushes content below the fixed main site header.
+  //  flex-col + overflow-hidden = no page scroll ever.
+  //
+  //   ┌───────────────────────────────────┐  ← 76px (main header, behind)
+  //   │  IMAGE  (flex-1, maximised)       │
+  //   │  ┌── info overlay (bottom) ──┐   │
+  //   │  └───────────────────────────┘   │
+  //   ├───────────────────────────────────┤
+  //   │  EQUIP STRIP (shrink-0, ~90px)    │
+  //   └───────────────────────────────────┘
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col min-h-0">
-      <div className="mx-4 mt-3 mb-2 bg-slate-800 border border-slate-600 rounded-xl p-3">
-        <div className="flex items-center gap-3">
-          <span className="text-4xl">{place.emoji}</span>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-white font-bold text-base leading-tight">{place.displayName}</h2>
-            <p className="text-slate-400 text-xs">{place.skill.description}</p>
-          </div>
-          <div className="text-right shrink-0">
-            <p className="text-indigo-300 font-bold text-sm">{skillValue}</p>
-            <p className="text-slate-500 text-xs">
-              {place.slots.filter((s) => !!user.equipped?.[s.slotId]).length}/{place.slots.length} cards
-            </p>
-          </div>
-        </div>
-
-        {isDevEditorEnabled && (
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setEditSlotsMode((v) => !v);
-                setSelectedSlotIdForEdit(null);
-                if (!editSlotsMode) {
-                  setSlotPositions(fixedLayout?.slotPositions ?? {});
-                  setSlotLabels(fixedLayout?.slotLabels ?? {});
-                  setSlotSizesPx(fixedLayout?.slotSizesPx ?? {});
-                }
-              }}
-              className={`text-xs font-bold rounded-lg px-3 py-2 border transition-colors ${
-                editSlotsMode
-                  ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-300 text-white'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
-              }`}
-            >
-              {editSlotsMode ? 'Editing Slots' : 'Edit slots'}
-            </button>
-
-            {editSlotsMode && (
-              <button
-                type="button"
-                onClick={() => exportSlotCoords()}
-                className="text-xs font-bold rounded-lg px-3 py-2 border bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200 transition-colors"
-              >
-                Export coords
-              </button>
-            )}
-          </div>
-        )}
-
-        {isDevEditorEnabled && editSlotsMode && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {place.slots.map((s) => (
-              <button
-                key={s.slotId}
-                type="button"
-                onClick={() => setSelectedSlotIdForEdit(s.slotId)}
-                className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-colors ${
-                  selectedSlotIdForEdit === s.slotId
-                    ? 'bg-indigo-600 border-indigo-300 text-white'
-                    : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                {s.slotId}
-              </button>
-            ))}
-            <div className="ml-auto text-slate-400 text-xs">
-              {selectedSlotIdForEdit
-                ? `Click image to set ${selectedSlotIdForEdit}`
-                : 'Select a slotId to place'}
-            </div>
-          </div>
-        )}
-
-        {isDevEditorEnabled && editSlotsMode && selectedSlotIdForEdit && (
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-slate-400 text-xs shrink-0">Label</span>
-            <input
-              value={slotLabels[selectedSlotIdForEdit] ?? ''}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSlotLabels((prev) => ({ ...prev, [selectedSlotIdForEdit]: value }));
-              }}
-              placeholder="e.g. Front desk"
-              className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-400"
-            />
-          </div>
-        )}
-
-        {isDevEditorEnabled && editSlotsMode && selectedSlotIdForEdit && (
-          <div className="mt-2 flex items-center gap-3">
-            <span className="text-slate-400 text-xs shrink-0">Size</span>
-            <input
-              type="range"
-              min={32}
-              max={120}
-              value={slotSizesPx[selectedSlotIdForEdit] ?? 64}
-              onChange={(e) => {
-                const v = Number(e.target.value || 64);
-                setSlotSizesPx((prev) => ({ ...prev, [selectedSlotIdForEdit]: v }));
-              }}
-              className="flex-1"
-            />
-            <span className="text-slate-400 text-xs w-10 text-right">
-              {slotSizesPx[selectedSlotIdForEdit] ?? 64}px
-            </span>
-          </div>
-        )}
-      </div>
-
-      {placeImageSrc && (
-        <div className="mx-4 mb-3">
+    <div
+      className="flex flex-col overflow-hidden"
+      style={{ height: '100vh', paddingTop: 76 }}
+    >
+      {/* ── Image area (flex-1) ── */}
+      {placeImageSrc ? (
+        <div className="flex-1 flex justify-center items-start overflow-hidden px-3 pt-2 pb-1 min-h-0">
+          {/*
+            Inner wrapper sizes to the image naturally.
+            - h-full: fills flex-1 height
+            - width: fit-content + max-w-full: stays inside horizontal bounds
+            - Slots and overlay are positioned relative to this wrapper,
+              which exactly matches the rendered image dimensions.
+          */}
           <div
-            className="relative w-full max-w-5xl mx-auto"
+            className="relative h-full"
+            style={{ width: 'fit-content', maxWidth: '100%' }}
             onClick={(e) => {
-              if (!isDevEditorEnabled) return;
-              if (!editSlotsMode) return;
-              if (!selectedSlotIdForEdit) return;
-
+              if (!isDevEditorEnabled || !editSlotsMode || !selectedSlotIdForEdit) return;
               const target = e.currentTarget;
               const rect = target.getBoundingClientRect();
-              const leftPct = ((e.clientX - rect.left) / rect.width) * 100;
-              const topPct = ((e.clientY - rect.top) / rect.height) * 100;
-              const leftRounded = Math.round(leftPct * 10) / 10;
-              const topRounded = Math.round(topPct * 10) / 10;
-
+              const leftPct = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+              const topPct = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
               setSlotPositions((prev) => ({
                 ...prev,
-                [selectedSlotIdForEdit]: { leftPct: leftRounded, topPct: topRounded },
+                [selectedSlotIdForEdit]: { leftPct, topPct },
               }));
-
-              console.log(
-                `[PlaceView] ${place.id} set ${selectedSlotIdForEdit}: leftPct=${leftRounded}, topPct=${topRounded}`,
-              );
+              console.log(`[PlaceView] ${place.id} set ${selectedSlotIdForEdit}: leftPct=${leftPct}, topPct=${topPct}`);
             }}
           >
             <img
               src={placeImageSrc}
               alt={place.displayName}
               ref={placeImageRef}
-              className="w-full h-auto rounded-2xl border border-slate-700 bg-slate-950"
+              className="h-full w-auto max-w-full rounded-2xl border border-slate-700 bg-slate-950 block"
               loading="lazy"
               onLoad={(e) => {
                 const el = e.currentTarget;
                 if (el.naturalWidth) setPlaceImageNaturalWidth(el.naturalWidth);
+                // Also update rendered width immediately after load
+                const rect = el.getBoundingClientRect();
+                setPlaceImageRenderedWidth(rect.width);
               }}
             />
 
+            {/* ── Slot overlay buttons ── */}
             {place.slots.map((slot) => {
               const slotId = slot.slotId;
               const pos = effectiveSlotPositions[slotId];
               if (!pos) return null;
 
               const baseSizePx = effectiveSlotSizesPx[slotId] ?? 64;
-              const sizePx = Math.max(44, Math.min(110, Math.round(baseSizePx * tunedSlotSizeScale)));
+              const sizePx = Math.max(38, Math.min(100, Math.round(baseSizePx * tunedSlotSizeScale)));
+
               const equippedItemId = user.equipped?.[slotId];
               const slimItem = equippedItemId ? slimItems.find((i) => i.id === equippedItemId) : undefined;
 
@@ -513,14 +542,25 @@ export const PlaceView: React.FC = () => {
                   }}
                   title={label}
                   aria-label={label}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed flex items-center justify-center shadow transition-all active:scale-95 ${
-                    isLocked
+                  className={`
+                    absolute -translate-x-1/2 -translate-y-1/2
+                    rounded-full border-2 border-dashed
+                    flex items-center justify-center
+                    shadow-lg shadow-black/40
+                    transition-all active:scale-95
+                    ${isLocked
                       ? 'bg-slate-900/70 border-slate-700 text-slate-500 cursor-not-allowed'
                       : isDevEditorEnabled && editSlotsMode && selectedSlotIdForEdit === slotId
                         ? 'bg-indigo-600/60 border-indigo-300 text-white'
-                        : 'bg-slate-900/60 border-slate-300/60 text-white hover:border-indigo-300'
-                  }`}
-                  style={{ left: `${pos.leftPct}%`, top: `${pos.topPct}%`, width: sizePx, height: sizePx }}
+                        : 'bg-slate-900/60 border-slate-300/60 text-white hover:border-indigo-300 hover:bg-slate-800/70'
+                    }
+                  `}
+                  style={{
+                    left: `${pos.leftPct}%`,
+                    top: `${pos.topPct}%`,
+                    width: sizePx,
+                    height: sizePx,
+                  }}
                 >
                   {isLocked ? (
                     <span className="text-xs font-bold">🔒</span>
@@ -546,17 +586,117 @@ export const PlaceView: React.FC = () => {
                 </button>
               );
             })}
+
+            {/* ── Place info overlay (bottom of image) ── */}
+            <div className="
+              absolute bottom-2 left-2 right-2
+              flex items-center justify-between gap-2
+              bg-slate-900/85 backdrop-blur-md
+              rounded-xl px-3 py-2
+              border border-slate-700/60
+              pointer-events-none
+            ">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-2xl leading-none">{place.emoji}</span>
+                <div className="min-w-0">
+                  <h2 className="text-white font-bold text-sm leading-tight truncate">
+                    {place.displayName}
+                  </h2>
+                  <p className="text-slate-400 text-xs truncate leading-tight">
+                    {place.skill.description}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-indigo-300 font-bold text-sm leading-tight">{skillValue}</p>
+                <p className="text-slate-500 text-xs leading-tight">
+                  {equippedCount}/{place.slots.length} cards
+                </p>
+              </div>
+            </div>
+
+            {/* Locked place notice (overlay) */}
+            {!isPlaceUnlocked && (
+              <div className="
+                absolute inset-0 flex items-center justify-center
+                bg-slate-950/60 backdrop-blur-sm rounded-2xl
+                pointer-events-none
+              ">
+                <div className="bg-slate-900/90 border border-slate-600 rounded-xl px-4 py-3 text-center">
+                  <p className="text-slate-300 text-sm font-semibold">Place Locked</p>
+                  <p className="text-slate-500 text-xs mt-1">Return to the map to unlock it.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      )}
-
-      {!isPlaceUnlocked && (
-        <div className="mx-4 mb-3 bg-slate-900 border border-slate-700 rounded-xl p-3 text-slate-400 text-sm">
-          This place is locked. Return to the map to unlock it.
+      ) : (
+        // Fallback if no image
+        <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
+          No image available
         </div>
       )}
 
-      <div className="flex flex-wrap gap-3 px-4 pb-4 overflow-y-auto justify-center">
+      {/* ── Dev editor toolbar ── */}
+      {isDevEditorEnabled && (
+        <div className="shrink-0 px-3 pb-1 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEditSlotsMode((v) => !v);
+              setSelectedSlotIdForEdit(null);
+              if (!editSlotsMode) {
+                setSlotPositions(fixedLayout?.slotPositions ?? {});
+                setSlotLabels(fixedLayout?.slotLabels ?? {});
+                setSlotSizesPx(fixedLayout?.slotSizesPx ?? {});
+              }
+            }}
+            className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors ${
+              editSlotsMode
+                ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-300 text-white'
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+            }`}
+          >
+            {editSlotsMode ? 'Editing Slots' : 'Edit slots'}
+          </button>
+          {editSlotsMode && (
+            <button
+              type="button"
+              onClick={exportSlotCoords}
+              className="text-xs font-bold rounded-lg px-3 py-1.5 border bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200 transition-colors"
+            >
+              Export coords
+            </button>
+          )}
+          {editSlotsMode && (
+            <div className="flex flex-wrap gap-1.5 ml-2">
+              {place.slots.map((s) => (
+                <button
+                  key={s.slotId}
+                  type="button"
+                  onClick={() => setSelectedSlotIdForEdit(s.slotId)}
+                  className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-colors ${
+                    selectedSlotIdForEdit === s.slotId
+                      ? 'bg-indigo-600 border-indigo-300 text-white'
+                      : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  {s.slotId}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Compact equip strip ── */}
+      <div className="
+        shrink-0
+        flex gap-3 items-end
+        px-3 pb-3 pt-1
+        overflow-x-auto
+        border-t border-slate-800/60
+      ">
         {place.slots.map((slot) => {
           const slotId = slot.slotId;
           const equippedItemId = user.equipped?.[slotId];
@@ -566,67 +706,33 @@ export const PlaceView: React.FC = () => {
           const isUnlockedSlot = isFreeSlot || user.unlockedSlots.includes(slotId);
           const isLocked = isPlaceUnlocked && !isUnlockedSlot;
 
-          const canAfford = slot.unlockCurrency === 'diamonds'
-            ? diamonds >= (slot.unlockCost ?? 0)
-            : coins >= (slot.unlockCost ?? 0);
+          const canAfford =
+            slot.unlockCurrency === 'diamonds'
+              ? diamonds >= (slot.unlockCost ?? 0)
+              : coins >= (slot.unlockCost ?? 0);
 
-          if (isLocked) {
-            const costLabel = slot.unlockCurrency === 'diamonds'
-              ? `${slot.unlockCost?.toLocaleString() ?? 0} 💎`
-              : `${slot.unlockCost?.toLocaleString() ?? 0} 🪙`;
+          const costLabel =
+            slot.unlockCurrency === 'diamonds'
+              ? `${slot.unlockCost?.toLocaleString() ?? 0}💎`
+              : `${slot.unlockCost?.toLocaleString() ?? 0}🪙`;
 
-            return (
-              <div key={slotId} className="flex flex-col items-center gap-1">
-                <div className="w-28 h-40 rounded-xl bg-slate-900 border-2 border-dashed border-slate-700 flex flex-col items-center justify-center gap-2 p-2">
-                  <span className="text-2xl">🔒</span>
-                  <p className="text-slate-500 text-xs text-center">{costLabel}</p>
-                  <button
-                    onClick={() => handleUnlockSlot(slotId)}
-                    disabled={!canAfford || unlockingSlotId === slotId}
-                    className={`text-xs font-bold rounded-lg px-2 py-1 transition-all ${
-                      canAfford && unlockingSlotId !== slotId
-                        ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-900'
-                        : 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                    }`}
-                  >
-                    {unlockingSlotId === slotId ? '...' : 'Unlock'}
-                  </button>
-                </div>
-                <span className="text-slate-600 text-xs truncate max-w-[7rem]">{slotId}</span>
-              </div>
-            );
-          }
-
-          if (slimItem) {
-            return (
-              <div key={slotId} className="flex flex-col items-center gap-1">
-                <ChemCard
-                  item={slimItem}
-                  size="md"
-                  isEquipped
-                  onClick={() => openCardDetail(slimItem.id)}
-                />
-                <button
-                  onClick={() => openCardPicker(slotId)}
-                  className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
-                >
-                  Change
-                </button>
-              </div>
-            );
-          }
+          const label =
+            (effectiveSlotLabels[slotId]?.trim() ? effectiveSlotLabels[slotId] : slotId);
 
           return (
-            <div key={slotId} className="flex flex-col items-center gap-1">
-              <button
-                onClick={() => openCardPicker(slotId)}
-                className="w-28 h-40 rounded-xl bg-slate-800 border-2 border-dashed border-slate-600 hover:border-indigo-500 flex flex-col items-center justify-center gap-2 text-slate-500 hover:text-indigo-400 transition-all active:scale-95"
-              >
-                <span className="text-3xl">+</span>
-                <span className="text-xs">Equip</span>
-              </button>
-              <span className="text-slate-500 text-xs truncate max-w-[7rem]">{slotId}</span>
-            </div>
+            <StripSlot
+              key={slotId}
+              slotId={slotId}
+              label={label}
+              isLocked={isLocked}
+              isUnlocking={unlockingSlotId === slotId}
+              canAfford={canAfford}
+              costLabel={costLabel}
+              slimItem={slimItem}
+              onEquip={() => openCardPicker(slotId)}
+              onUnlock={() => handleUnlockSlot(slotId)}
+              onDetail={(id) => openCardDetail(id)}
+            />
           );
         })}
       </div>

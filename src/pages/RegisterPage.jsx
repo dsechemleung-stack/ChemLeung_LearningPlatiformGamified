@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Beaker, Mail, Lock, User, UserPlus, AlertCircle, Sparkles, Languages } from 'lucide-react';
+import { TreeDeciduous, Mail, Lock, User, UserPlus, AlertCircle, Sparkles, Languages } from 'lucide-react';
 
 export default function RegisterPage() {
   const [displayName, setDisplayName] = useState('');
@@ -85,13 +85,16 @@ export default function RegisterPage() {
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl blur-xl opacity-75 animate-pulse"></div>
               <div className="relative bg-gradient-to-r from-green-500 to-emerald-600 p-5 rounded-2xl shadow-2xl transform hover:scale-110 transition-transform duration-300">
-                <Beaker className="text-white" size={56} strokeWidth={2.5} />
+                <TreeDeciduous className="text-white" size={56} strokeWidth={2.5} />
               </div>
             </div>
           </div>
           <h1 className="text-4xl font-black text-white mb-2 tracking-tight">
-            ChemLeung
+            Chemistree
           </h1>
+          <div className="text-slate-200 text-sm font-bold -mt-1">
+            by ChemLeung
+          </div>
           <p className="text-emerald-200 text-lg font-medium">
             {t('tagline')}
           </p>

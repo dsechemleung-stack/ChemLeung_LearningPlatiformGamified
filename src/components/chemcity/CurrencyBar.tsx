@@ -1,3 +1,6 @@
+// ==============================
+// FILE: src/components/chemcity/CurrencyBar.tsx
+// ==============================
 import React, { useMemo, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
 
@@ -31,12 +34,25 @@ export const CurrencyBar: React.FC = () => {
 
   return (
     <>
-      <div className="fixed top-3 left-3 right-3 z-50 flex items-start justify-between gap-3 pointer-events-none">
-        <div className="flex items-center gap-2 pointer-events-auto">
+      {/*
+        Positioned BELOW the main site header (~76px tall).
+        Using top-[84px] = 76px header + 8px breathing room.
+      */}
+      <div className="fixed top-[84px] left-3 right-3 z-50 flex items-center justify-between gap-2 pointer-events-none">
+        {/* Left: back button */}
+        <div className="flex items-center pointer-events-auto">
           {view !== 'map' && (
             <button
               onClick={navigateToMap}
-              className="flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 backdrop-blur transition-colors text-white text-sm"
+              className="
+                flex items-center justify-center
+                w-9 h-9 rounded-xl
+                bg-slate-900/90 hover:bg-slate-800
+                border border-slate-600
+                backdrop-blur-md shadow-lg
+                transition-all active:scale-95
+                text-white text-base
+              "
               aria-label="Back to map"
             >
               ←
@@ -44,32 +60,66 @@ export const CurrencyBar: React.FC = () => {
           )}
         </div>
 
+        {/* Right: currency + action buttons */}
         <div className="flex items-center gap-2 pointer-events-auto">
-          <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-700 backdrop-blur rounded-full px-3 py-2">
-            <span className="text-yellow-400 text-sm">🪙</span>
-            <span className="text-white text-sm font-semibold tabular-nums">{coins.toLocaleString()}</span>
-          </div>
-          <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-700 backdrop-blur rounded-full px-3 py-2">
-            <span className="text-cyan-400 text-sm">💎</span>
-            <span className="text-white text-sm font-semibold tabular-nums">{diamonds.toLocaleString()}</span>
+          {/* Coins pill */}
+          <div className="
+            flex items-center gap-1.5
+            bg-slate-900/90 border border-slate-600
+            backdrop-blur-md shadow-lg
+            rounded-full px-3 py-1.5
+          ">
+            <span className="text-yellow-400 text-sm leading-none">🪙</span>
+            <span className="text-white text-sm font-bold tabular-nums leading-none">
+              {coins.toLocaleString()}
+            </span>
           </div>
 
+          {/* Diamonds pill */}
+          <div className="
+            flex items-center gap-1.5
+            bg-slate-900/90 border border-slate-600
+            backdrop-blur-md shadow-lg
+            rounded-full px-3 py-1.5
+          ">
+            <span className="text-cyan-400 text-sm leading-none">💎</span>
+            <span className="text-white text-sm font-bold tabular-nums leading-none">
+              {diamonds.toLocaleString()}
+            </span>
+          </div>
+
+          {/* Skills button */}
           <button
             onClick={() => setSkillsOpen(true)}
-            className="flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 backdrop-blur transition-colors text-sm text-slate-200"
+            className="
+              flex items-center justify-center
+              w-9 h-9 rounded-xl
+              bg-slate-900/90 hover:bg-slate-800
+              border border-slate-600
+              backdrop-blur-md shadow-lg
+              transition-all active:scale-95
+              text-sm text-slate-200
+            "
             aria-label="Skill boosts"
             title="Skill boosts"
           >
             ✨
           </button>
 
+          {/* Inventory button */}
           <button
             onClick={navigateToInventory}
-            className={`flex items-center justify-center w-10 h-10 rounded-xl border backdrop-blur transition-colors text-sm ${
-              view === 'inventory'
-                ? 'bg-indigo-600/90 border-indigo-300 text-white'
-                : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700 text-slate-200'
-            }`}
+            className={`
+              flex items-center justify-center
+              w-9 h-9 rounded-xl
+              border backdrop-blur-md shadow-lg
+              transition-all active:scale-95
+              text-sm
+              ${view === 'inventory'
+                ? 'bg-indigo-600/90 border-indigo-400 text-white'
+                : 'bg-slate-900/90 hover:bg-slate-800 border-slate-600 text-slate-200'
+              }
+            `}
             aria-label="Card inventory"
             title="Card Inventory"
           >
@@ -78,6 +128,7 @@ export const CurrencyBar: React.FC = () => {
         </div>
       </div>
 
+      {/* Skills modal */}
       {skillsOpen && (
         <div
           className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4"
@@ -94,7 +145,7 @@ export const CurrencyBar: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSkillsOpen(false)}
-                className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200"
+                className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 transition-colors"
                 aria-label="Close"
               >
                 ✕
@@ -103,7 +154,10 @@ export const CurrencyBar: React.FC = () => {
 
             <div className="space-y-2 max-h-[70vh] overflow-y-auto">
               {places.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-800/60 border border-slate-700 px-3 py-2">
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-slate-800/60 border border-slate-700 px-3 py-2"
+                >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-xl">{p.emoji}</span>
                     <div className="min-w-0">

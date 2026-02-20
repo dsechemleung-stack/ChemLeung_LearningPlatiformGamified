@@ -34,7 +34,7 @@ import {
   ArrowLeft, Play, Target, CheckCircle, ChevronDown,
   Calendar, Hash, Tag, Clock, Zap, TrendingUp, Brain,
   BarChart2, Layers, X, Flame, PlusCircle, Archive,
-  ChevronRight, Check, Activity, SlidersHorizontal,
+  ChevronRight, Check, Activity, SlidersHorizontal, Info,
 } from 'lucide-react';
 import { srsService } from '../services/srsService';
 
@@ -290,6 +290,17 @@ function StarDoodle() {
 
 function CalendarHeatmapFromSummaries({ summaries }) {
   const { t, tf } = useLanguage();
+  const [infoOpen, setInfoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!infoOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setInfoOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [infoOpen]);
+
   const activityMap = useMemo(() => {
     const map = {};
     for (let i = 0; i < 30; i++) {
@@ -318,8 +329,55 @@ function CalendarHeatmapFromSummaries({ summaries }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
       <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-        <Calendar size={20} className="text-blue-600" />{t('notebook.mistakeClearingActivity')}
+        <Calendar size={20} className="text-blue-600" />
+        <span>{t('notebook.mistakeClearingActivity')}</span>
+        <button
+          type="button"
+          onClick={() => setInfoOpen(true)}
+          className="ml-1 inline-flex items-center justify-center w-7 h-7 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+          aria-label={t('notebook.srsClearingInfoAria')}
+          title="Info"
+        >
+          <Info size={16} />
+        </button>
       </h3>
+
+      {infoOpen && createPortal(
+        <div className="fixed inset-0 z-[9999]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setInfoOpen(false)} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-slate-200">
+              <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-100">
+                <div>
+                  <div className="text-base font-bold text-slate-900">{t('notebook.srsClearingTitle')}</div>
+                  <div className="text-xs text-slate-500 mt-1">{t('notebook.srsClearingSubtitle')}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(false)}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-full hover:bg-slate-50 text-slate-600"
+                  aria-label={t('notebook.close')}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-4 text-sm text-slate-700">
+                <div>
+                  <div className="font-semibold text-slate-900 mb-1">{t('notebook.srsClearingPurposeTitle')}</div>
+                  <div>{t('notebook.srsClearingPurposeBody')}</div>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900 mb-1">{t('notebook.srsClearingMechanicsTitle')}</div>
+                  <div>{t('notebook.srsClearingMechanicsBody')}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       <div className="grid grid-cols-7 gap-1">
         {[t('notebook.weekdaySunShort'), t('notebook.weekdayMonShort'), t('notebook.weekdayTueShort'), t('notebook.weekdayWedShort'), t('notebook.weekdayThuShort'), t('notebook.weekdayFriShort'), t('notebook.weekdaySatShort')]
           .map((d, i) => <div key={i} className="text-center text-xs font-bold text-slate-400 h-6">{d}</div>)}
@@ -441,6 +499,17 @@ function RetentionDashboardFromSummaries({ cards = [], summaries = [] }) {
 
 function ImprovementTrendChartFromSummaries({ summaries }) {
   const { t } = useLanguage();
+  const [infoOpen, setInfoOpen] = useState(false);
+
+  useEffect(() => {
+    if (!infoOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setInfoOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [infoOpen]);
+
   const trendData = useMemo(() => {
     const now  = new Date();
     const days = Array.from({ length: 14 }, (_, i) => {
@@ -522,11 +591,71 @@ function ImprovementTrendChartFromSummaries({ summaries }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
       <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
-        <TrendingUp size={20} className="text-purple-600" />{t('notebook.improvementTrend')}
+        <TrendingUp size={20} className="text-purple-600" />
+        <span>{t('notebook.improvementTrend')}</span>
+        <button
+          type="button"
+          onClick={() => setInfoOpen(true)}
+          className="ml-1 inline-flex items-center justify-center w-7 h-7 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+          aria-label={t('notebook.srsTrendInfoAria')}
+          title="Info"
+        >
+          <Info size={16} />
+        </button>
       </h3>
-      <div className="text-xs text-slate-500 mb-4">
-        New = first-time reviews of never-reviewed cards. After you answer, cards typically move to Developing (wrong or first correct), then Near‑Mastery (2+ correct), and Mastered after 5 correct reviews.
-      </div>
+
+      {infoOpen && createPortal(
+        <div className="fixed inset-0 z-[9999]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setInfoOpen(false)} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-slate-200">
+              <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-100">
+                <div>
+                  <div className="text-base font-bold text-slate-900">{t('notebook.srsTrendTitle')}</div>
+                  <div className="text-xs text-slate-500 mt-1">{t('notebook.srsTrendSubtitle')}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(false)}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-full hover:bg-slate-50 text-slate-600"
+                  aria-label={t('notebook.close')}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-4 text-sm text-slate-700">
+                <div>
+                  <div className="font-semibold text-slate-900 mb-1">{t('notebook.srsTrendPurposeTitle')}</div>
+                  <div>{t('notebook.srsTrendPurposeBody')}</div>
+                </div>
+
+                <div>
+                  <div className="font-semibold text-slate-900 mb-1">{t('notebook.srsTrendMechanicsTitle')}</div>
+                  <div>{t('notebook.srsTrendMechanicsBody')}</div>
+                </div>
+
+                <div>
+                  <div className="font-semibold text-slate-900 mb-2">{t('notebook.srsTrendBucketsTitle')}</div>
+                  <div className="space-y-2">
+                    <div><span className="font-semibold text-red-600">{t('notebook.masteryNew')}</span>: {t('notebook.srsTrendNewDesc')}</div>
+                    <div><span className="font-semibold text-amber-600">{t('notebook.masteryDeveloping')}</span>: {t('notebook.srsTrendDevelopingDesc')}</div>
+                    <div><span className="font-semibold text-yellow-600">{t('notebook.masteryNear')}</span>: {t('notebook.srsTrendNearDesc')}</div>
+                    <div><span className="font-semibold text-green-600">{t('notebook.masteryMastered')}</span>: {t('notebook.srsTrendMasteredDesc')}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="font-semibold text-slate-900 mb-1">{t('notebook.srsTrendHowToReadTitle')}</div>
+                  <div>{t('notebook.srsTrendHowToReadBody')}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       <ResponsiveContainer width="100%" height={300}>
         <AreaChart data={trendData}>
           <CartesianGrid strokeDasharray="3 3" />

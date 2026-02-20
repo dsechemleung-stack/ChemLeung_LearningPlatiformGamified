@@ -1,0 +1,2610 @@
+
+
+===== FILE: functions/chemcity/collectPassiveIncome.ts =====
+
+// ============================================================
+// ChemCity — collectPassiveIncome Cloud Function
+//
+// CRITICAL: Server-side timestamp only. Client clock is IGNORED.
+// Changing device clock to the future earns nothing.
+//
+// Algorithm:
+//   1. Read user.passiveIncome.lastCollected from Firestore
+//   2. Get current time from Firestore server timestamp
+//   3. elapsed = serverNow - lastCollected
+//   4. Cap elapsed at 24 hours
+//   5. coins = passiveBaseCoinsPerHour × elapsed_in_hours
+//   6. Add coins, write lastCollected = serverNow
+//
+// Called by client tap on "Collect" button.
+// The client's displayed ticker is cosmetic only.
+// ============================================================
+
+import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions';
+
+const db = admin.firestore();
+
+const MAX_HOURS = 24; // passive income cap
+
+export const collectPassiveIncome = functions.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'User must be signed in.',
+      );
+    }
+
+    const userId = context.auth.uid;
+    const userRef = db.collection('users').doc(userId);
+
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists) {
+        throw new functions.https.HttpsError('not-found', 'User not initialised.');
+      }
+
+      const userData = snap.data()!;
+      const bonuses = userData.activeBonuses;
+      const passiveBase: number = bonuses.passiveBaseCoinsPerHour ?? 0;
+
+      if (passiveBase === 0) {
+        return { coinsAwarded: 0, message: 'No passive income yet — equip cards in the Garden and Lab.' };
+      }
+
+      // Server-side time only — client clock is irrelevant
+      const serverNow = admin.firestore.Timestamp.now();
+      const lastCollected: admin.firestore.Timestamp | null =
+        userData.passiveIncome?.lastCollected ?? null;
+
+      let elapsedSeconds = 0;
+      if (lastCollected) {
+        elapsedSeconds = serverNow.seconds - lastCollected.seconds;
+      } else {
+        // First ever collection — treat as if collected right now
+        elapsedSeconds = 0;
+      }
+
+      // Cap at 24 hours
+      const cappedSeconds = Math.min(elapsedSeconds, MAX_HOURS * 3600);
+      const elapsedHours = cappedSeconds / 3600;
+
+      const coinsAwarded = Math.floor(passiveBase * elapsedHours);
+
+      // Write new balance + timestamp
+      tx.update(userRef, {
+        'currencies.coins': admin.firestore.FieldValue.increment(coinsAwarded),
+        'passiveIncome.lastCollected': serverNow,
+        updatedAt: serverNow,
+      });
+
+      return {
+        coinsAwarded,
+        elapsedHours: elapsedHours.toFixed(2),
+        newLastCollected: serverNow.toDate().toISOString(),
+      };
+    });
+  },
+);
+
+
+===== FILE: functions/chemcity/initChemCityUser.ts =====
+
+// ============================================================
+// ChemCity — User Initialization
+// Creates the user doc + progress sub-document with defaults.
+// Called by the initChemCityUser Cloud Function.
+//
+// NOTE: This function must run server-side (Cloud Function).
+//       It writes currencies — clients cannot do this.
+// ============================================================
+
+import * as admin from 'firebase-admin';
+import type { UserChemCityData, UserProgressData } from '../../src/lib/chemcity/types';
+
+const db = admin.firestore();
+
+/**
+ * Creates a fresh ChemCity user doc and progress sub-document.
+ * Called once per user on their first ChemCity session.
+ *
+ * Starter state:
+ *  - 500 coins, 20 diamonds (enough to unlock Garden + Kitchen)
+ *  - Lab unlocked by default (free)
+ *  - No cards, no equipped items
+ */
+export async function initChemCityUser(userId: string): Promise<void> {
+  const userRef = db.collection('users').doc(userId);
+  const progressRef = userRef.collection('progress').doc('data');
+
+  // Check if already initialised
+  const existing = await userRef.get();
+  if (existing.exists) {
+    console.warn(`[initChemCityUser] User ${userId} already initialised — skipping.`);
+    return;
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const userDoc: Omit<UserChemCityData, 'createdAt' | 'updatedAt' | 'passiveIncome'> & {
+    createdAt: admin.firestore.FieldValue;
+    updatedAt: admin.firestore.FieldValue;
+    passiveIncome: { lastCollected: null };
+  } = {
+    userId,
+    currencies: {
+      coins: 500,
+      diamonds: 20,
+    },
+    ownedItems: [],
+    equipped: {},
+    activeBonuses: {
+      passiveBaseCoinsPerHour: 0,
+      passiveMultiplier: 1,
+      quizFlatDiamondBonus: 0,
+      quizDiamondMultiplier: 1,
+      quizDoubleChancePercent: 0,
+      dailyLoginDiamonds: 5, // base Toilet: 5 + (0 × 2)
+      extraSlotsTotal: 0,
+      shopDiscountPercent: 0,
+    },
+    unlockedPlaces: ['lab'], // Lab is free — unlocked from the start
+    unlockedSlots: [],
+    extraSlotsBudget: 0,
+    passiveIncome: {
+      lastCollected: null,
+    },
+    streaks: {
+      currentStreak: 0,
+      longestStreak: 0,
+      lastLoginDate: '',
+      streakFreezeCount: 0,
+    },
+    cacheVersion: 0, // will be updated on first client load
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const progressDoc: UserProgressData = {
+    collections: {},
+    topicMastery: {},
+  };
+
+  // Write both docs in a single batch
+  const batch = db.batch();
+  batch.set(userRef, userDoc);
+  batch.set(progressRef, progressDoc);
+  await batch.commit();
+
+  console.info(`[initChemCityUser] User ${userId} initialised successfully.`);
+}
+
+
+===== FILE: src/components/chemcity/CardDetail.tsx =====
+
+import React from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+
+const DetailSkeleton: React.FC = () => (
+  <div className="animate-pulse flex flex-col gap-4 p-4">
+    <div className="w-full h-48 bg-slate-700 rounded-xl" />
+    <div className="h-6 bg-slate-700 rounded w-3/4" />
+    <div className="h-4 bg-slate-700 rounded w-1/2" />
+    {[1, 2, 3].map((i) => (
+      <div key={i} className="flex flex-col gap-2">
+        <div className="h-3 bg-slate-700 rounded w-1/4" />
+        <div className="h-4 bg-slate-700 rounded" />
+        <div className="h-4 bg-slate-700 rounded w-4/5" />
+      </div>
+    ))}
+  </div>
+);
+
+const RARITY_BG: Record<string, string> = {
+  common: 'from-slate-700 to-slate-600',
+  rare: 'from-blue-800 to-indigo-700',
+  epic: 'from-purple-800 to-pink-700',
+  legendary: 'from-amber-700 to-yellow-500',
+};
+
+export const CardDetail: React.FC = () => {
+  const cardDetailItemId = useChemCityStore((s) => s.cardDetailItemId);
+  const cardDetailData = useChemCityStore((s) => s.cardDetailData);
+  const cardDetailLoading = useChemCityStore((s) => s.cardDetailLoading);
+  const slimItems = useChemCityStore((s) => s.slimItems);
+  const closeCardDetail = useChemCityStore((s) => s.closeCardDetail);
+
+  const isOpen = !!cardDetailItemId;
+  if (!isOpen) return null;
+
+  const slim = slimItems.find((i) => i.id === cardDetailItemId);
+  const full = cardDetailData;
+  const rarity = slim?.rarity ?? 'common';
+  const gradBg = RARITY_BG[rarity] ?? RARITY_BG.common;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/70 z-50" onClick={closeCardDetail} />
+
+      <div className="fixed inset-x-4 top-12 bottom-4 z-50 bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden flex flex-col shadow-2xl">
+        <button
+          onClick={closeCardDetail}
+          className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-slate-800/80 text-slate-300 hover:text-white text-lg"
+          aria-label="Close"
+        >
+          ×
+        </button>
+
+        <div className="overflow-y-auto flex-1">
+          {cardDetailLoading ? (
+            <DetailSkeleton />
+          ) : (
+            <>
+              <div className={`w-full bg-gradient-to-b ${gradBg} p-6 flex flex-col items-center gap-3`}>
+                {full?.imageUrl ? (
+                  <img
+                    src={full.imageUrl}
+                    alt={full.name}
+                    className="w-32 h-32 object-contain rounded-xl shadow-lg"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <span className="text-7xl">{slim?.emoji}</span>
+                )}
+
+                <div className="text-center">
+                  <h2 className="text-white font-bold text-xl leading-tight">
+                    {full?.displayName || slim?.name || 'Unknown'}
+                  </h2>
+                  <p className="text-white/70 font-mono text-lg mt-0.5">{slim?.chemicalFormula}</p>
+                  <div className="flex items-center justify-center gap-2 mt-2">
+                    <span className="bg-white/20 text-white text-xs font-semibold rounded-full px-3 py-0.5 capitalize">
+                      {rarity}
+                    </span>
+                    {slim?.placeId && (
+                      <span className="bg-white/20 text-white text-xs rounded-full px-3 py-0.5">
+                        {slim.placeId.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 flex flex-col gap-4">
+                {full?.description && (
+                  <p className="text-slate-300 text-sm leading-relaxed">{full.description}</p>
+                )}
+
+                {full?.educational?.funFact && (
+                  <div className="bg-indigo-900/40 border border-indigo-700 rounded-xl p-3">
+                    <p className="text-indigo-300 text-xs font-semibold mb-1">🔬 Fun Fact</p>
+                    <p className="text-slate-200 text-sm leading-relaxed">{full.educational.funFact}</p>
+                  </div>
+                )}
+
+                {full?.educational?.everydayUses && full.educational.everydayUses.length > 0 && (
+                  <div>
+                    <p className="text-slate-400 text-xs font-semibold mb-2">🏠 Everyday Uses</p>
+                    <div className="flex flex-wrap gap-2">
+                      {full.educational.everydayUses.map((use) => (
+                        <span key={use} className="bg-slate-700 text-slate-200 text-xs rounded-full px-3 py-1">
+                          {use}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {full?.topicConnections && full.topicConnections.length > 0 && (
+                  <div>
+                    <p className="text-slate-400 text-xs font-semibold mb-2">📚 DSE Topics</p>
+                    <div className="flex flex-wrap gap-2">
+                      {full.topicConnections.map((tid) => (
+                        <span
+                          key={tid}
+                          className="bg-emerald-900/50 text-emerald-300 text-xs rounded-full px-3 py-1 border border-emerald-800"
+                        >
+                          {tid}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {full?.albumMetadata?.flavorText && (
+                  <div className="border-t border-slate-700 pt-3">
+                    <p className="text-slate-500 text-xs italic leading-relaxed">"{full.albumMetadata.flavorText}"</p>
+                  </div>
+                )}
+
+                {slim?.skillContribution !== undefined && slim.skillContribution > 0 && (
+                  <div className="bg-slate-800 rounded-xl p-3 flex items-center justify-between">
+                    <span className="text-slate-400 text-sm">Skill Contribution</span>
+                    <span className="text-white font-bold">+{slim.skillContribution}</span>
+                  </div>
+                )}
+
+                {!full && (
+                  <div className="text-slate-500 text-sm">Card details unavailable.</div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+
+===== FILE: src/components/chemcity/CardInventory.tsx =====
+
+import React, { useMemo, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+import { ChemCard } from './ChemCard';
+
+type RarityFilter = 'all' | 'common' | 'rare' | 'epic' | 'legendary';
+
+type PlaceFilter = 'all' | string;
+
+export const CardInventory: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const slimItems = useChemCityStore((s) => s.slimItems);
+  const places = useChemCityStore((s) => s.places);
+  const openCardDetail = useChemCityStore((s) => s.openCardDetail);
+
+  const [placeFilter, setPlaceFilter] = useState<PlaceFilter>('all');
+  const [rarityFilter, setRarityFilter] = useState<RarityFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const ownedItems = useMemo(() => {
+    if (!user) return [];
+    return slimItems.filter((item) => !item.deprecated && user.ownedItems.includes(item.id));
+  }, [slimItems, user]);
+
+  const filtered = useMemo(() => {
+    return ownedItems.filter((item) => {
+      if (placeFilter !== 'all' && item.placeId !== placeFilter) return false;
+      if (rarityFilter !== 'all' && item.rarity !== rarityFilter) return false;
+      if (
+        searchQuery &&
+        !item.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+        !item.chemicalFormula.toLowerCase().includes(searchQuery.toLowerCase())
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [ownedItems, placeFilter, rarityFilter, searchQuery]);
+
+  const equippedSet = new Set(Object.values(user?.equipped ?? {}));
+  const rarities: RarityFilter[] = ['all', 'common', 'rare', 'epic', 'legendary'];
+
+  return (
+    <div className="flex flex-col min-h-0">
+      <div className="px-4 pt-3 pb-2">
+        <h2 className="text-white font-bold text-lg">Card Inventory</h2>
+        <p className="text-slate-400 text-xs">{ownedItems.length} cards owned</p>
+      </div>
+
+      <div className="px-4 pb-2">
+        <input
+          type="text"
+          placeholder="Search cards..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 outline-none focus:border-indigo-500"
+        />
+      </div>
+
+      <div className="flex gap-2 px-4 pb-2 overflow-x-auto">
+        <button
+          onClick={() => setPlaceFilter('all')}
+          className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+            placeFilter === 'all'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+          }`}
+        >
+          All Places
+        </button>
+        {places.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => setPlaceFilter(p.id)}
+            className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+              placeFilter === p.id
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            {p.emoji} {p.displayName}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
+        {rarities.map((r) => (
+          <button
+            key={r}
+            onClick={() => setRarityFilter(r)}
+            className={`px-3 py-1 rounded-full text-xs font-semibold capitalize whitespace-nowrap transition-colors ${
+              rarityFilter === r
+                ? 'bg-indigo-600 text-white'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+
+      <div className="overflow-y-auto flex-1 px-4 pb-4">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+            <span className="text-5xl mb-3">🃏</span>
+            <p className="text-sm">{ownedItems.length === 0 ? 'No cards yet — visit ChemStore!' : 'No cards match your filter'}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            {filtered.map((item) => (
+              <ChemCard
+                key={item.id}
+                item={item}
+                size="md"
+                isEquipped={equippedSet.has(item.id)}
+                onClick={() => openCardDetail(item.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+===== FILE: src/components/chemcity/CardPicker.tsx =====
+
+import React, { useMemo, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+import { ChemCard } from './ChemCard';
+import type { SlimItemDocument } from '../../lib/chemcity/types';
+
+export const CardPicker: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const slimItems = useChemCityStore((s) => s.slimItems);
+  const cardPickerSlotId = useChemCityStore((s) => s.cardPickerSlotId);
+  const closeCardPicker = useChemCityStore((s) => s.closeCardPicker);
+  const equipCard = useChemCityStore((s) => s.equipCard);
+  const unequipCard = useChemCityStore((s) => s.unequipCard);
+  const openCardDetail = useChemCityStore((s) => s.openCardDetail);
+
+  const [equipping, setEquipping] = useState<string | null>(null);
+  const [filterRarity, setFilterRarity] = useState<string>('all');
+
+  const isOpen = !!cardPickerSlotId;
+
+  const validCards = useMemo<SlimItemDocument[]>(() => {
+    if (!cardPickerSlotId || !user) return [];
+    return slimItems.filter(
+      (item) =>
+        !item.deprecated &&
+        user.ownedItems.includes(item.id) &&
+        item.validSlots.includes(cardPickerSlotId)
+    );
+  }, [cardPickerSlotId, slimItems, user]);
+
+  const filteredCards = useMemo(() => {
+    if (filterRarity === 'all') return validCards;
+    return validCards.filter((c) => c.rarity === filterRarity);
+  }, [validCards, filterRarity]);
+
+  const currentlyEquipped = cardPickerSlotId ? user?.equipped?.[cardPickerSlotId] : undefined;
+
+  const handleSelect = async (itemId: string) => {
+    if (!cardPickerSlotId || equipping) return;
+    setEquipping(itemId);
+    try {
+      if (currentlyEquipped === itemId) {
+        await unequipCard(cardPickerSlotId);
+      } else {
+        await equipCard(cardPickerSlotId, itemId);
+      }
+      closeCardPicker();
+    } finally {
+      setEquipping(null);
+    }
+  };
+
+  const handleUnequipCurrent = async () => {
+    if (!cardPickerSlotId || !currentlyEquipped) return;
+    setEquipping('__unequip__');
+    try {
+      await unequipCard(cardPickerSlotId);
+      closeCardPicker();
+    } finally {
+      setEquipping(null);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const rarities = ['all', 'common', 'rare', 'epic', 'legendary'];
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 z-40" onClick={closeCardPicker} />
+
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 border-t border-slate-700 rounded-t-2xl max-h-[80vh] flex flex-col">
+        <div className="flex flex-col items-center pt-3 px-4 pb-2 border-b border-slate-700">
+          <div className="w-10 h-1 bg-slate-600 rounded-full mb-3" />
+          <div className="flex items-center justify-between w-full">
+            <div>
+              <h3 className="text-white font-bold text-base">Choose a Card</h3>
+              <p className="text-slate-400 text-xs">
+                Slot: <span className="font-mono">{cardPickerSlotId}</span>
+              </p>
+            </div>
+            <button
+              onClick={closeCardPicker}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 text-slate-400 hover:text-white text-lg"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div className="flex gap-2 px-4 py-2 overflow-x-auto">
+          {rarities.map((r) => (
+            <button
+              key={r}
+              onClick={() => setFilterRarity(r)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold capitalize whitespace-nowrap transition-colors ${
+                filterRarity === r
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+
+        {currentlyEquipped && (
+          <div className="px-4 py-2 border-b border-slate-700">
+            <button
+              onClick={handleUnequipCurrent}
+              disabled={!!equipping}
+              className="w-full flex items-center justify-center gap-2 bg-red-900/40 hover:bg-red-900/60 border border-red-800 rounded-lg py-2 text-red-300 text-sm font-semibold transition-colors"
+            >
+              {equipping === '__unequip__' ? 'Removing...' : '↩ Remove equipped card'}
+            </button>
+          </div>
+        )}
+
+        <div className="overflow-y-auto flex-1 px-4 py-3">
+          {filteredCards.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+              <span className="text-4xl mb-3">🃏</span>
+              <p className="text-sm">{validCards.length === 0 ? 'No cards owned for this slot yet' : 'No cards match the filter'}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {filteredCards.map((item) => {
+                const isEquipped = user?.equipped?.[cardPickerSlotId!] === item.id;
+                return (
+                  <div key={item.id} className="flex flex-col items-center gap-1">
+                    <ChemCard
+                      item={item}
+                      size="md"
+                      isEquipped={isEquipped}
+                      onClick={() => handleSelect(item.id)}
+                    />
+                    <button
+                      onClick={() => openCardDetail(item.id)}
+                      className="text-slate-500 hover:text-slate-300 text-xs transition-colors"
+                    >
+                      details →
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+
+===== FILE: src/components/chemcity/ChemCard.tsx =====
+
+import React from 'react';
+import type { SlimItemDocument } from '../../lib/chemcity/types';
+
+const RARITY_STYLES: Record<string, { bg: string; border: string; badge: string }> = {
+  common: { bg: 'from-slate-700 to-slate-600', border: 'border-slate-500', badge: 'bg-slate-500 text-white' },
+  rare: { bg: 'from-blue-700 to-indigo-600', border: 'border-blue-400', badge: 'bg-blue-500 text-white' },
+  epic: { bg: 'from-purple-700 to-pink-600', border: 'border-purple-400', badge: 'bg-purple-500 text-white' },
+  legendary: { bg: 'from-amber-600 to-yellow-400', border: 'border-yellow-300', badge: 'bg-yellow-400 text-slate-900' },
+};
+
+interface ChemCardProps {
+  item: SlimItemDocument;
+  isEquipped?: boolean;
+  isOwned?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+  onClick?: () => void;
+  showDetailHint?: boolean;
+}
+
+export const ChemCard: React.FC<ChemCardProps> = ({
+  item,
+  isEquipped = false,
+  isOwned = true,
+  size = 'md',
+  onClick,
+}) => {
+  const style = RARITY_STYLES[item.rarity] ?? RARITY_STYLES.common;
+
+  const sizeClasses = {
+    sm: 'w-20 h-28 text-xs',
+    md: 'w-28 h-40 text-sm',
+    lg: 'w-36 h-52 text-base',
+  }[size];
+
+  const emojiSize = { sm: 'text-2xl', md: 'text-3xl', lg: 'text-4xl' }[size];
+  const formulaSize = { sm: 'text-xs', md: 'text-xs', lg: 'text-sm' }[size];
+  const imageSize = { sm: 'w-10 h-10', md: 'w-14 h-14', lg: 'w-16 h-16' }[size];
+
+  return (
+    <button
+      onClick={onClick}
+      className={`relative flex flex-col items-center justify-between ${sizeClasses} bg-gradient-to-b ${style.bg} border-2 ${style.border} rounded-xl p-2 cursor-pointer transition-transform duration-150 active:scale-95 ${
+        isEquipped ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-slate-900' : ''
+      } ${!isOwned ? 'opacity-50 grayscale' : ''} ${size === 'lg' ? 'shadow-lg' : 'shadow-md'}`}
+      aria-label={`${item.name} card`}
+    >
+      <span className={`absolute top-1 right-1 text-xs font-bold rounded px-1 py-0.5 ${style.badge} ${size === 'sm' ? 'hidden' : ''}`}>
+        {item.rarityValue === 4 ? '★★★' : item.rarityValue === 3 ? '★★' : item.rarityValue === 2 ? '★' : '·'}
+      </span>
+
+      {isEquipped && (
+        <span className="absolute top-1 left-1 bg-green-400 text-slate-900 text-xs font-bold rounded px-1">
+          ✓
+        </span>
+      )}
+
+      {item.imageUrl ? (
+        <img
+          src={item.imageUrl}
+          alt={item.name}
+          className={`${imageSize} mt-2 object-contain rounded-lg shadow-sm`}
+          loading="lazy"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
+        />
+      ) : (
+        <span className={`${emojiSize} mt-2`}>{item.emoji}</span>
+      )}
+
+      <div className="text-center mt-auto w-full">
+        <p className="text-white font-semibold leading-tight truncate px-1">{item.name}</p>
+        <p className={`${formulaSize} text-white/70 font-mono`}>{item.chemicalFormula}</p>
+      </div>
+    </button>
+  );
+};
+
+
+===== FILE: src/components/chemcity/ChemCityMap.tsx =====
+
+import React, { useEffect, useRef, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+import { PassiveIncomeCollector } from './PassiveIncomeCollector';
+
+export const ChemCityMap: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const places = useChemCityStore((s) => s.places);
+  const navigateToPlace = useChemCityStore((s) => s.navigateToPlace);
+  const [mapLevel, setMapLevel] = useState<'world' | 'home'>('world');
+
+  const isHotspotEditorEnabled = false;
+  const [editMode, setEditMode] = useState(false);
+  const [selectedHotspotKey, setSelectedHotspotKey] = useState<string | null>(null);
+
+  const mapImgRef = useRef<HTMLImageElement | null>(null);
+  const [mapNaturalWidth, setMapNaturalWidth] = useState(0);
+  const [mapRenderedWidth, setMapRenderedWidth] = useState(0);
+  const [worldHotspots, setWorldHotspots] = useState<
+    Array<{
+      key: string;
+      label: string;
+      placeId?: string;
+      leftPct: number;
+      topPct: number;
+      action?: 'home';
+    }>
+  >([
+    { key: 'school', label: 'School', placeId: 'school', leftPct: 32.372, topPct: 34.495 },
+    { key: 'beach', label: 'Beach', placeId: 'beach', leftPct: 44.952, topPct: 74.039 },
+    { key: 'boutique', label: 'Boutique', placeId: 'lifestyle_boutique', leftPct: 29.487, topPct: 63.241 },
+    { key: 'gas_station', label: 'Gas Station', placeId: 'gas_station', leftPct: 67.147, topPct: 50.761 },
+    { key: 'home', label: 'Home', leftPct: 48.958, topPct: 50.06, action: 'home' },
+  ]);
+
+  const [homeHotspots, setHomeHotspots] = useState<
+    Array<{
+      key: string;
+      label: string;
+      placeId: string;
+      leftPct: number;
+      topPct: number;
+    }>
+  >([
+    { key: 'toilet', label: 'Toilet', placeId: 'toilet', leftPct: 29.728, topPct: 49.079 },
+    { key: 'kitchen', label: 'Kitchen', placeId: 'kitchen', leftPct: 29.728, topPct: 73.057 },
+    { key: 'garden', label: 'Garden', placeId: 'garden', leftPct: 12.26, topPct: 72.496 },
+    { key: 'lab', label: 'Lab', placeId: 'lab', leftPct: 73.397, topPct: 49.079 },
+  ]);
+
+  const worldHotspotsSnapshot: Array<{
+    key: string;
+    label: string;
+    placeId?: string;
+    leftPct: number;
+    topPct: number;
+    action?: 'home';
+  }> = worldHotspots;
+
+  const homeHotspotsSnapshot: Array<{
+    key: string;
+    label: string;
+    placeId: string;
+    leftPct: number;
+    topPct: number;
+  }> = homeHotspots;
+
+  if (!user) return null;
+
+  const placeById = (id: string) => places.find((p) => p.id === id) ?? null;
+
+  const mapSrc = mapLevel === 'world' ? '/Map1.png' : '/Map2.png';
+
+  const activeHotspots = mapLevel === 'world' ? worldHotspots : homeHotspots;
+
+  useEffect(() => {
+    const img = mapImgRef.current;
+    if (!img) return;
+
+    const update = () => {
+      const rect = img.getBoundingClientRect();
+      setMapRenderedWidth(rect.width);
+    };
+
+    update();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => update());
+      ro.observe(img);
+    } else {
+      window.addEventListener('resize', update);
+    }
+
+    return () => {
+      if (ro) ro.disconnect();
+      else window.removeEventListener('resize', update);
+    };
+  }, [mapSrc]);
+
+  const hotspotScale = (() => {
+    if (!mapNaturalWidth || !mapRenderedWidth) return 1;
+    const scale = mapRenderedWidth / mapNaturalWidth;
+    return Math.max(0.65, Math.min(1.25, scale * 1.1));
+  })();
+
+  const exportHotspotCoords = async () => {
+    const payload = {
+      mapLevel,
+      hotspots: activeHotspots.map((h) => ({
+        key: h.key,
+        label: h.label,
+        leftPct: h.leftPct,
+        topPct: h.topPct,
+      })),
+    };
+
+    const text = JSON.stringify(payload, null, 2);
+    console.log('[ChemCityMap] Hotspot coords export:\n' + text);
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+    } catch {
+      // ignore clipboard errors
+    }
+  };
+
+  const HotspotButton: React.FC<{
+    label: string;
+    leftPct: number;
+    topPct: number;
+    scale: number;
+    onClick: () => void;
+    disabled?: boolean;
+  }> = ({ label, leftPct, topPct, scale, onClick, disabled }) => {
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (disabled) return;
+          onClick();
+        }}
+        disabled={disabled}
+        className={`absolute rounded-full border font-bold shadow-md transition-all px-4 py-2 text-xs ${
+          disabled
+            ? 'bg-slate-800/80 border-slate-700 text-slate-500 cursor-not-allowed'
+            : 'bg-indigo-500/90 hover:bg-indigo-400 border-indigo-200 text-white active:scale-95'
+        }`}
+        style={{
+          left: `${leftPct}%`,
+          top: `${topPct}%`,
+          transform: `translate(-50%, -50%) scale(${scale})`,
+          transformOrigin: 'center',
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  return (
+    <div className="relative w-full h-full flex-1">
+      <PassiveIncomeCollector />
+
+      <div className="absolute inset-0 overflow-auto">
+        <div
+          className="relative w-full"
+          onClick={(e) => {
+            if (!isHotspotEditorEnabled) return;
+            if (!editMode) return;
+            if (!selectedHotspotKey) return;
+
+            const target = e.currentTarget;
+            const rect = target.getBoundingClientRect();
+            const leftPct = ((e.clientX - rect.left) / rect.width) * 100;
+            const topPct = ((e.clientY - rect.top) / rect.height) * 100;
+            const leftRounded = Math.round(leftPct * 1000) / 1000;
+            const topRounded = Math.round(topPct * 1000) / 1000;
+
+            const leftClamped = Math.max(0, Math.min(100, leftRounded));
+            const topClamped = Math.max(0, Math.min(100, topRounded));
+
+            if (mapLevel === 'world') {
+              setWorldHotspots((hs) =>
+                hs.map((h) => (h.key === selectedHotspotKey ? { ...h, leftPct: leftClamped, topPct: topClamped } : h)),
+              );
+            } else {
+              setHomeHotspots((hs) =>
+                hs.map((h) => (h.key === selectedHotspotKey ? { ...h, leftPct: leftClamped, topPct: topClamped } : h)),
+              );
+            }
+
+            console.log(
+              `[ChemCityMap] ${mapLevel} set ${selectedHotspotKey}: leftPct=${leftClamped}, topPct=${topClamped}`,
+            );
+          }}
+        >
+          <img
+            ref={mapImgRef}
+            src={mapSrc}
+            alt={mapLevel === 'world' ? 'ChemCity world map' : 'ChemCity home map'}
+            className="w-full h-auto"
+            loading="lazy"
+            onLoad={(e) => {
+              const el = e.currentTarget;
+              if (el.naturalWidth) setMapNaturalWidth(el.naturalWidth);
+              const rect = el.getBoundingClientRect();
+              setMapRenderedWidth(rect.width);
+            }}
+          />
+
+        {mapLevel === 'world'
+          ? worldHotspotsSnapshot.map((h) => (
+            <HotspotButton
+              key={h.key}
+              label={h.label}
+              leftPct={h.leftPct}
+              topPct={h.topPct}
+              scale={hotspotScale}
+              onClick={() => {
+                if (isHotspotEditorEnabled && editMode) {
+                  setSelectedHotspotKey(h.key);
+                  return;
+                }
+                if (h.action === 'home') {
+                  setMapLevel('home');
+                  return;
+                }
+                if (h.placeId) navigateToPlace(h.placeId);
+              }}
+              disabled={h.placeId ? !placeById(h.placeId) : false}
+            />
+          ))
+          : homeHotspotsSnapshot.map((h) => (
+            <HotspotButton
+              key={h.key}
+              label={h.label}
+              leftPct={h.leftPct}
+              topPct={h.topPct}
+              scale={hotspotScale}
+              onClick={() => {
+                if (isHotspotEditorEnabled && editMode) {
+                  setSelectedHotspotKey(h.key);
+                  return;
+                }
+                navigateToPlace(h.placeId);
+              }}
+              disabled={!placeById(h.placeId)}
+            />
+          ))}
+
+        {isHotspotEditorEnabled && (
+          <div
+            className="absolute left-3 bottom-3 z-20 pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditMode((v) => !v);
+                  setSelectedHotspotKey(null);
+                }}
+                className={`text-xs font-bold rounded-xl px-3 py-2 border backdrop-blur transition-colors ${
+                  editMode
+                    ? 'bg-indigo-600/90 border-indigo-300 text-white'
+                    : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700 text-slate-200'
+                }`}
+              >
+                {editMode ? 'Editing' : 'Edit hotspots'}
+              </button>
+              {editMode && (
+                <button
+                  type="button"
+                  onClick={() => exportHotspotCoords()}
+                  className="text-xs font-bold rounded-xl px-3 py-2 border bg-slate-900/80 hover:bg-slate-800 border-slate-700 text-slate-200 backdrop-blur transition-colors"
+                >
+                  Export
+                </button>
+              )}
+            </div>
+
+            {editMode && (
+              <div className="mt-2 p-2 rounded-xl bg-slate-900/80 border border-slate-700 backdrop-blur max-w-[86vw]">
+                <div className="flex flex-wrap gap-1.5">
+                  {activeHotspots.map((h) => (
+                    <button
+                      key={h.key}
+                      type="button"
+                      onClick={() => setSelectedHotspotKey(h.key)}
+                      className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-colors ${
+                        selectedHotspotKey === h.key
+                          ? 'bg-indigo-600 border-indigo-300 text-white'
+                          : 'bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700'
+                      }`}
+                    >
+                      {h.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-1 text-slate-300/80 text-[11px]">
+                  {selectedHotspotKey
+                    ? `Click map to set: ${selectedHotspotKey}`
+                    : 'Select a hotspot, then click on the map'}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {mapLevel === 'home' && (
+          <button
+            type="button"
+            onClick={() => setMapLevel('world')}
+            className="absolute left-3 bottom-[4.5rem] z-10 w-12 h-12 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 backdrop-blur text-white font-bold"
+            aria-label="Back to city map"
+            title="Back"
+          >
+            ←
+          </button>
+        )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+===== FILE: src/components/chemcity/ChemCityRoot.tsx =====
+
+import React, { useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { useChemCityStore } from '../../store/chemcityStore';
+import { CurrencyBar } from './CurrencyBar';
+import { ChemCityMap } from './ChemCityMap';
+import { PlaceView } from './PlaceView';
+import { CardInventory } from './CardInventory';
+import { CardPicker } from './CardPicker';
+import { CardDetail } from './CardDetail';
+import { DailyLoginModal } from './DailyLoginModal';
+import { QuizRewardModal } from './QuizRewardModal';
+
+export const ChemCityRoot: React.FC = () => {
+  const { currentUser } = useAuth();
+
+  const view = useChemCityStore((s) => s.view);
+  const isLoading = useChemCityStore((s) => s.isLoading);
+  const error = useChemCityStore((s) => s.error);
+  const loadAll = useChemCityStore((s) => s.loadAll);
+  const teardown = useChemCityStore((s) => s.teardown);
+  const dailyLoginOpen = useChemCityStore((s) => s.dailyLogin.showModal);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    loadAll(currentUser.uid);
+    return () => {
+      teardown();
+    };
+  }, [currentUser?.uid, loadAll, teardown]);
+
+  if (!currentUser) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-950 items-center justify-center gap-4 px-8">
+        <span className="text-5xl">🧪</span>
+        <p className="text-slate-400 text-sm text-center">Please sign in to access ChemCity.</p>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-950 items-center justify-center gap-4">
+        <span className="text-5xl animate-pulse">🧪</span>
+        <p className="text-slate-400 text-sm">Loading ChemCity...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col min-h-screen bg-slate-950 items-center justify-center gap-4 px-8">
+        <span className="text-4xl">⚠️</span>
+        <p className="text-red-400 text-sm text-center">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-4 py-2 text-sm"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex flex-col min-h-screen bg-slate-950 text-white overflow-hidden">
+      <CurrencyBar />
+
+      <main className="flex-1 overflow-hidden flex flex-col">
+        {view === 'map' && <ChemCityMap />}
+        {view === 'place' && <PlaceView />}
+        {view === 'inventory' && <CardInventory />}
+      </main>
+
+      <CardPicker />
+      <CardDetail />
+
+      <DailyLoginModal />
+      {!dailyLoginOpen && <QuizRewardModal />}
+    </div>
+  );
+};
+
+
+===== FILE: src/components/chemcity/CurrencyBar.tsx =====
+
+// ==============================
+// FILE: src/components/chemcity/CurrencyBar.tsx
+// ==============================
+import React, { useMemo, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+
+export const CurrencyBar: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const places = useChemCityStore((s) => s.places);
+  const view = useChemCityStore((s) => s.view);
+  const navigateToMap = useChemCityStore((s) => s.navigateToMap);
+  const navigateToInventory = useChemCityStore((s) => s.navigateToInventory);
+
+  const [skillsOpen, setSkillsOpen] = useState(false);
+
+  const coins = user?.currencies.coins ?? 0;
+  const diamonds = user?.currencies.diamonds ?? 0;
+
+  const skillSummaryByPlaceId = useMemo(() => {
+    const bonuses = user?.activeBonuses;
+    if (!bonuses) return {} as Record<string, string>;
+
+    return {
+      garden: `${bonuses.passiveBaseCoinsPerHour.toLocaleString()} 🪙/hr`,
+      lab: `${bonuses.passiveMultiplier.toFixed(1)}× multiplier`,
+      kitchen: `+${bonuses.quizFlatDiamondBonus} 💎 max bonus`,
+      school: `${bonuses.quizDiamondMultiplier.toFixed(1)}× quiz diamonds`,
+      beach: `${bonuses.quizDoubleChancePercent}% double chance`,
+      toilet: `${bonuses.dailyLoginDiamonds} 💎 daily`,
+      gas_station: `${bonuses.extraSlotsTotal} bonus slots`,
+      lifestyle_boutique: `${bonuses.shopDiscountPercent}% store discount`,
+    };
+  }, [user?.activeBonuses]);
+
+  return (
+    <>
+      {/*
+        Positioned BELOW the main site header (~76px tall).
+        Using top-[84px] = 76px header + 8px breathing room.
+      */}
+      <div className="fixed top-[84px] left-3 right-3 z-50 flex items-center justify-between gap-2 pointer-events-none">
+        {/* Left: back button */}
+        <div className="flex items-center pointer-events-auto">
+          {view !== 'map' && (
+            <button
+              onClick={navigateToMap}
+              className="
+                flex items-center justify-center
+                w-9 h-9 rounded-xl
+                bg-slate-900/90 hover:bg-slate-800
+                border border-slate-600
+                backdrop-blur-md shadow-lg
+                transition-all active:scale-95
+                text-white text-base
+              "
+              aria-label="Back to map"
+            >
+              ←
+            </button>
+          )}
+        </div>
+
+        {/* Right: currency + action buttons */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          {/* Coins pill */}
+          <div className="
+            flex items-center gap-1.5
+            bg-slate-900/90 border border-slate-600
+            backdrop-blur-md shadow-lg
+            rounded-full px-3 py-1.5
+          ">
+            <span className="text-yellow-400 text-sm leading-none">🪙</span>
+            <span className="text-white text-sm font-bold tabular-nums leading-none">
+              {coins.toLocaleString()}
+            </span>
+          </div>
+
+          {/* Diamonds pill */}
+          <div className="
+            flex items-center gap-1.5
+            bg-slate-900/90 border border-slate-600
+            backdrop-blur-md shadow-lg
+            rounded-full px-3 py-1.5
+          ">
+            <span className="text-cyan-400 text-sm leading-none">💎</span>
+            <span className="text-white text-sm font-bold tabular-nums leading-none">
+              {diamonds.toLocaleString()}
+            </span>
+          </div>
+
+          {/* Skills button */}
+          <button
+            onClick={() => setSkillsOpen(true)}
+            className="
+              flex items-center justify-center
+              w-9 h-9 rounded-xl
+              bg-slate-900/90 hover:bg-slate-800
+              border border-slate-600
+              backdrop-blur-md shadow-lg
+              transition-all active:scale-95
+              text-sm text-slate-200
+            "
+            aria-label="Skill boosts"
+            title="Skill boosts"
+          >
+            ✨
+          </button>
+
+          {/* Inventory button */}
+          <button
+            onClick={navigateToInventory}
+            className={`
+              flex items-center justify-center
+              w-9 h-9 rounded-xl
+              border backdrop-blur-md shadow-lg
+              transition-all active:scale-95
+              text-sm
+              ${view === 'inventory'
+                ? 'bg-indigo-600/90 border-indigo-400 text-white'
+                : 'bg-slate-900/90 hover:bg-slate-800 border-slate-600 text-slate-200'
+              }
+            `}
+            aria-label="Card inventory"
+            title="Card Inventory"
+          >
+            🃏
+          </button>
+        </div>
+      </div>
+
+      {/* Skills modal */}
+      {skillsOpen && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setSkillsOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="w-full max-w-xl rounded-2xl border border-slate-700 bg-slate-900 p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-white font-bold">Skill Boosts</h3>
+              <button
+                type="button"
+                onClick={() => setSkillsOpen(false)}
+                className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 transition-colors"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[70vh] overflow-y-auto">
+              {places.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-slate-800/60 border border-slate-700 px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xl">{p.emoji}</span>
+                    <div className="min-w-0">
+                      <div className="text-white text-sm font-bold truncate">{p.displayName}</div>
+                      <div className="text-slate-400 text-xs truncate">{p.skill.description}</div>
+                    </div>
+                  </div>
+                  <div className="text-indigo-200 text-sm font-bold shrink-0">
+                    {skillSummaryByPlaceId[p.id] ?? '—'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+===== FILE: src/components/chemcity/DailyLoginModal.tsx =====
+
+import React, { useMemo } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+
+function milestoneMessage(streak: number): string {
+  if (streak === 1) return 'Welcome back! 👋';
+  if (streak === 7) return '7-day streak! 🎉';
+  if (streak === 30) return '30-day legend! 🏆';
+  if (streak % 10 === 0) return `${streak} days strong! ⚡`;
+  return `${streak}-day streak! 🔥`;
+}
+
+export const DailyLoginModal: React.FC = () => {
+  const dailyLogin = useChemCityStore((s) => s.dailyLogin);
+  const dismissDailyLogin = useChemCityStore((s) => s.dismissDailyLogin);
+
+  const msg = useMemo(() => milestoneMessage(dailyLogin.streak || 0), [dailyLogin.streak]);
+
+  const isOpen = dailyLogin.showModal;
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/70 z-[70]" onClick={dismissDailyLogin} />
+      <div className="fixed inset-x-4 top-20 z-[80] bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+          <div>
+            <h3 className="text-white font-bold text-base">Daily Login Bonus</h3>
+            <p className="text-slate-400 text-xs">{msg}</p>
+          </div>
+          <button
+            onClick={dismissDailyLogin}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 text-slate-400 hover:text-white text-lg"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-4 flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+              <p className="text-slate-400 text-xs">Coins</p>
+              <p className="text-yellow-300 font-black text-2xl tabular-nums">+{Number(dailyLogin.coins || 0).toLocaleString()} 🪙</p>
+            </div>
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+              <p className="text-slate-400 text-xs">Diamonds</p>
+              <p className="text-cyan-300 font-black text-2xl tabular-nums">+{Number(dailyLogin.diamonds || 0).toLocaleString()} 💎</p>
+            </div>
+          </div>
+
+          <div className="bg-indigo-900/30 border border-indigo-800 rounded-xl p-3">
+            <p className="text-indigo-200 text-xs">
+              Tip: Equip cards in the <span className="font-bold">🚽 Toilet</span> to boost daily login diamonds.
+            </p>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              onClick={dismissDailyLogin}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-4 py-2 text-sm font-bold"
+            >
+              Nice
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+
+===== FILE: src/components/chemcity/PassiveIncomeCollector.tsx =====
+
+import React, { useEffect, useRef, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+import { formatCoinsPerHour } from '../../lib/chemcity/income';
+
+export const PassiveIncomeCollector: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const passiveDisplayCoins = useChemCityStore((s) => s.passiveDisplayCoins);
+  const collectIncome = useChemCityStore((s) => s.collectIncome);
+  const tickPassiveDisplay = useChemCityStore((s) => s.tickPassiveDisplay);
+
+  const [collecting, setCollecting] = useState(false);
+  const [lastCollected, setLastCollected] = useState<number | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const rate = user?.activeBonuses.passiveBaseCoinsPerHour ?? 0;
+
+  useEffect(() => {
+    if (rate > 0) {
+      tickPassiveDisplay();
+      intervalRef.current = setInterval(tickPassiveDisplay, 1000);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [rate, tickPassiveDisplay]);
+
+  const handleCollect = async () => {
+    if (collecting) return;
+    setCollecting(true);
+    try {
+      const { coinsAwarded } = await collectIncome();
+      setLastCollected(coinsAwarded);
+      setTimeout(() => setLastCollected(null), 3000);
+    } finally {
+      setCollecting(false);
+    }
+  };
+
+  if (rate === 0) return null;
+
+  return (
+    <div className="mx-4 my-2 bg-slate-800 border border-slate-600 rounded-xl p-3 flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-slate-400 text-xs">{formatCoinsPerHour(rate)}</p>
+        <div className="flex items-center gap-1 mt-0.5">
+          <span className="text-yellow-300 font-bold text-base tabular-nums">
+            🪙 {passiveDisplayCoins.toLocaleString()}
+          </span>
+          <span className="text-slate-500 text-xs">pending</span>
+        </div>
+      </div>
+
+      {lastCollected !== null ? (
+        <div className="flex items-center gap-1 bg-green-600 rounded-lg px-3 py-1.5 text-white font-bold text-sm">
+          +{lastCollected.toLocaleString()} 🪙
+        </div>
+      ) : (
+        <button
+          onClick={handleCollect}
+          disabled={collecting || passiveDisplayCoins < 1}
+          className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-bold transition-all ${
+            collecting || passiveDisplayCoins < 1
+              ? 'bg-slate-600 text-slate-400 cursor-not-allowed'
+              : 'bg-yellow-500 hover:bg-yellow-400 text-slate-900 active:scale-95'
+          }`}
+        >
+          {collecting ? <span className="inline-block animate-spin">⟳</span> : 'Collect'}
+        </button>
+      )}
+    </div>
+  );
+};
+
+
+===== FILE: src/components/chemcity/PlaceView.tsx =====
+
+// ==============================
+// FILE: src/components/chemcity/PlaceView.tsx
+// ==============================
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+import { ChemCard } from './ChemCard';
+
+const FIXED_SLOT_LAYOUTS: Record<
+  string,
+  {
+    slotPositions?: Record<string, { leftPct: number; topPct: number }>;
+    slotLabels?: Record<string, string>;
+    slotSizesPx?: Record<string, number>;
+  }
+> = {
+  school: {
+    slotPositions: {
+      school_desk_1: { leftPct: 44.8, topPct: 82.9 },
+      school_desk_2: { leftPct: 39.7, topPct: 48.3 },
+      school_desk_3: { leftPct: 24.1, topPct: 34.8 },
+      school_desk_4: { leftPct: 92.4, topPct: 29.2 },
+      school_desk_5: { leftPct: 39.5, topPct: 33.1 },
+      school_locker_1: { leftPct: 66.3, topPct: 43.2 },
+      school_locker_2: { leftPct: 88.5, topPct: 68.3 },
+    },
+    slotLabels: {
+      school_desk_1: 'Student Desk 1',
+      school_desk_2: 'Teacher Desk',
+      school_desk_3: 'Blackboard',
+      school_desk_4: 'Science Corner',
+      school_desk_5: 'Poster',
+      school_locker_1: 'Window-side Table',
+      school_locker_2: 'Student Desk 2',
+    },
+    slotSizesPx: {
+      school_desk_1: 64,
+    },
+  },
+  gas_station: {
+    slotPositions: {
+      gas_pump_1: { leftPct: 24.1, topPct: 61.9 },
+      gas_pump_2: { leftPct: 87.9, topPct: 79.1 },
+      gas_pump_3: { leftPct: 63.7, topPct: 32.1 },
+      gas_pump_4: { leftPct: 61.5, topPct: 57.8 },
+      gas_shelf_1: { leftPct: 51.8, topPct: 61 },
+      gas_shelf_2: { leftPct: 38.5, topPct: 48.4 },
+      gas_shelf_3: { leftPct: 78.4, topPct: 37.2 },
+      gas_shelf_4: { leftPct: 85.1, topPct: 17.1 },
+    },
+    slotLabels: {
+      gas_pump_1: 'Car 1',
+      gas_pump_2: 'Construction Site',
+      gas_pump_3: 'Factory',
+      gas_pump_4: 'Petrol Pump',
+      gas_shelf_1: 'Car 2',
+      gas_shelf_2: 'Motel',
+      gas_shelf_3: 'Street Light',
+      gas_shelf_4: 'Firework',
+    },
+  },
+  lab: {
+    slotPositions: {
+      lab_bench_1: { leftPct: 50.7, topPct: 51.3 },
+      lab_bench_2: { leftPct: 28.7, topPct: 36 },
+      lab_bench_3: { leftPct: 46.4, topPct: 32.2 },
+      lab_bench_4: { leftPct: 75.3, topPct: 78.9 },
+      lab_bench_5: { leftPct: 81.4, topPct: 10.9 },
+      lab_bench_6: { leftPct: 92.2, topPct: 21.3 },
+      lab_premium_1: { leftPct: 60.4, topPct: 31.5 },
+      lab_premium_2: { leftPct: 50.1, topPct: 84.1 },
+      lab_premium_3: { leftPct: 80.5, topPct: 36.7 },
+      lab_premium_4: { leftPct: 9.5, topPct: 46.9 },
+    },
+    slotLabels: {
+      lab_bench_1: 'Bench',
+      lab_bench_2: 'Fume Hood',
+      lab_bench_3: 'Acid & Alkali Cabinet',
+      lab_bench_4: 'Apparatus 1',
+      lab_bench_5: 'Metal Shelf',
+      lab_bench_6: 'Salt Shelf',
+      lab_premium_1: 'Hazardous Chemical Shelf',
+      lab_premium_2: 'Apparatus 2',
+      lab_premium_3: 'Chemical Shelf',
+      lab_premium_4: 'Gas Tank',
+      lab_premium_5: 'Apparatus 3',
+      lab_premium_6: 'Apparatus 4',
+    },
+  },
+  kitchen: {
+    slotPositions: {
+      kitchen_counter_1: { leftPct: 60.5, topPct: 72.4 },
+      kitchen_counter_2: { leftPct: 12.6, topPct: 40.2 },
+      kitchen_counter_3: { leftPct: 67, topPct: 44.4 },
+      kitchen_counter_4: { leftPct: 28.3, topPct: 88.8 },
+      kitchen_shelf_1: { leftPct: 42.3, topPct: 41.2 },
+      kitchen_shelf_2: { leftPct: 12.6, topPct: 17.4 },
+      kitchen_shelf_3: { leftPct: 88.1, topPct: 87.8 },
+      kitchen_shelf_4: { leftPct: 89.6, topPct: 41.2 },
+    },
+    slotLabels: {
+      kitchen_counter_1: 'Cutlery Drawer',
+      kitchen_counter_2: 'Pantry 1',
+      kitchen_counter_3: 'Stove & Oven',
+      kitchen_counter_4: 'Dinette',
+      kitchen_shelf_1: 'Fridge',
+      kitchen_shelf_2: 'Pantry 2',
+      kitchen_shelf_3: 'Base Cabinet',
+      kitchen_shelf_4: 'Countertop',
+    },
+  },
+  toilet: {
+    slotPositions: {
+      toilet_tank_1: { leftPct: 24.1, topPct: 47.6 },
+      toilet_tank_2: { leftPct: 40.8, topPct: 83.8 },
+      toilet_tank_3: { leftPct: 80.3, topPct: 51.1 },
+      toilet_tank_4: { leftPct: 21.3, topPct: 15.4 },
+      toilet_cabinet_1: { leftPct: 58.1, topPct: 63.3 },
+      toilet_cabinet_2: { leftPct: 37.4, topPct: 48.4 },
+      toilet_cabinet_3: { leftPct: 45.5, topPct: 14.6 },
+    },
+    slotLabels: {
+      toilet_tank_1: 'Faucet',
+      toilet_tank_2: 'Vanity Cabinet',
+      toilet_tank_3: 'Bathtub',
+      toilet_tank_4: 'Mirror Cabinet 1',
+      toilet_cabinet_1: 'Toilet',
+      toilet_cabinet_2: 'Vanity Top',
+      toilet_cabinet_3: 'Mirror Cabinet 2',
+      toilet_cabinet_4: 'Mirror Cabinet 3',
+    },
+  },
+  garden: {
+    slotPositions: {
+      garden_bed_1: { leftPct: 20.6, topPct: 47.6 },
+      garden_bed_2: { leftPct: 65.2, topPct: 85.8 },
+      garden_bed_3: { leftPct: 56.8, topPct: 40.7 },
+      garden_bed_4: { leftPct: 76.7, topPct: 45.6 },
+      garden_plot_1: { leftPct: 22.3, topPct: 79.1 },
+      garden_plot_2: { leftPct: 48.6, topPct: 68.2 },
+      garden_plot_3: { leftPct: 20.7, topPct: 18.6 },
+    },
+    slotLabels: {
+      garden_bed_1: 'Shed 1',
+      garden_bed_2: 'Lawn',
+      garden_bed_3: 'Greenhouse',
+      garden_bed_4: 'Flower Bed',
+      garden_plot_1: 'Mole Hill',
+      garden_plot_2: 'Broadcast Spreader',
+      garden_plot_3: 'Shed 2',
+      garden_plot_4: 'Garden Plot',
+    },
+  },
+  lifestyle_boutique: {
+    slotPositions: {
+      boutique_shelf_1: { leftPct: 40.1, topPct: 82.6 },
+      boutique_shelf_2: { leftPct: 29.1, topPct: 43.7 },
+      boutique_shelf_3: { leftPct: 77.6, topPct: 54.8 },
+      boutique_shelf_4: { leftPct: 85.7, topPct: 82.4 },
+      boutique_display_1: { leftPct: 86.8, topPct: 27.8 },
+      boutique_display_2: { leftPct: 52.8, topPct: 82.6 },
+    },
+    slotLabels: {
+      boutique_shelf_1: 'Poseur Table 1',
+      boutique_shelf_2: 'Service Desk',
+      boutique_shelf_3: 'Jewellery Display',
+      boutique_shelf_4: 'Power Essentials',
+      boutique_display_1: 'Apparel Gallery',
+      boutique_display_2: 'Poseur Table 2',
+    },
+  },
+  beach: {
+    slotPositions: {
+      beach_sand_1: { leftPct: 60.1, topPct: 14.6 },
+      beach_sand_2: { leftPct: 81.7, topPct: 37.2 },
+      beach_sand_3: { leftPct: 13.2, topPct: 40.7 },
+      beach_sand_4: { leftPct: 33.7, topPct: 76.6 },
+      beach_pier_1: { leftPct: 72.3, topPct: 68.2 },
+      beach_pier_2: { leftPct: 36.1, topPct: 44.6 },
+      beach_pier_3: { leftPct: 27.7, topPct: 23.3 },
+    },
+    slotLabels: {
+      beach_sand_1: 'Sky',
+      beach_sand_2: 'Sea',
+      beach_sand_3: 'Rock 1',
+      beach_sand_4: 'Dry Sand',
+      beach_pier_1: 'Strandline',
+      beach_pier_2: 'Rock 2',
+      beach_pier_3: 'Cliffside',
+      beach_pier_4: 'Pier',
+    },
+  },
+};
+
+// ─── Compact equip strip slot item ───────────────────────────────────────────
+interface StripSlotProps {
+  slotId: string;
+  label: string;
+  isLocked: boolean;
+  isUnlocking: boolean;
+  canAfford: boolean;
+  costLabel: string;
+  slimItem: { id: string; name: string; emoji: string; imageUrl?: string } | undefined;
+  onEquip: () => void;
+  onUnlock: () => void;
+  onDetail: (id: string) => void;
+}
+
+const StripSlot: React.FC<StripSlotProps> = ({
+  slotId,
+  label,
+  isLocked,
+  isUnlocking,
+  canAfford,
+  costLabel,
+  slimItem,
+  onEquip,
+  onUnlock,
+  onDetail,
+}) => {
+  if (isLocked) {
+    return (
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        <button
+          onClick={canAfford ? onUnlock : undefined}
+          disabled={!canAfford || isUnlocking}
+          className={`
+            w-14 h-14 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-0.5
+            transition-all active:scale-95
+            ${canAfford && !isUnlocking
+              ? 'bg-yellow-500/10 border-yellow-500/60 hover:bg-yellow-500/20 cursor-pointer'
+              : 'bg-slate-900/60 border-slate-700 cursor-not-allowed opacity-60'
+            }
+          `}
+          title={`Unlock for ${costLabel}`}
+        >
+          <span className="text-base leading-none">{isUnlocking ? '⏳' : '🔒'}</span>
+          <span className="text-[9px] text-slate-400 leading-none">{costLabel}</span>
+        </button>
+        <span className="text-[10px] text-slate-600 max-w-[3.5rem] truncate text-center leading-tight">
+          {label}
+        </span>
+      </div>
+    );
+  }
+
+  if (slimItem) {
+    return (
+      <div className="flex flex-col items-center gap-1 shrink-0">
+        <button
+          onClick={() => onDetail(slimItem.id)}
+          className="
+            w-14 h-14 rounded-xl border-2 border-indigo-500/70
+            overflow-hidden bg-slate-800
+            hover:border-indigo-400 transition-all active:scale-95
+            relative
+          "
+          title={slimItem.name}
+        >
+          {slimItem.imageUrl ? (
+            <img
+              src={slimItem.imageUrl}
+              alt={slimItem.name}
+              className="w-full h-full object-cover"
+              loading="lazy"
+              onError={(ev) => {
+                (ev.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : (
+            <span className="text-2xl flex items-center justify-center w-full h-full">
+              {slimItem.emoji}
+            </span>
+          )}
+          {/* Change indicator */}
+          <span
+            className="
+              absolute bottom-0 right-0
+              w-4 h-4 rounded-tl-md
+              bg-slate-900/80 text-[8px]
+              flex items-center justify-center text-indigo-300
+            "
+            onClick={(e) => { e.stopPropagation(); onEquip(); }}
+          >
+            ✎
+          </span>
+        </button>
+        <span className="text-[10px] text-slate-400 max-w-[3.5rem] truncate text-center leading-tight">
+          {label}
+        </span>
+      </div>
+    );
+  }
+
+  // Empty slot
+  return (
+    <div className="flex flex-col items-center gap-1 shrink-0">
+      <button
+        onClick={onEquip}
+        className="
+          w-14 h-14 rounded-xl border-2 border-dashed border-slate-600
+          bg-slate-800/60 hover:bg-slate-700/60 hover:border-indigo-500
+          flex items-center justify-center
+          text-slate-500 hover:text-indigo-400
+          transition-all active:scale-95
+        "
+        title={`Equip card to ${label}`}
+      >
+        <span className="text-xl font-bold leading-none">+</span>
+      </button>
+      <span className="text-[10px] text-slate-500 max-w-[3.5rem] truncate text-center leading-tight">
+        {label}
+      </span>
+    </div>
+  );
+};
+
+// ─── Main PlaceView ───────────────────────────────────────────────────────────
+export const PlaceView: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const places = useChemCityStore((s) => s.places);
+  const slimItems = useChemCityStore((s) => s.slimItems);
+  const selectedPlaceId = useChemCityStore((s) => s.selectedPlaceId);
+  const openCardPicker = useChemCityStore((s) => s.openCardPicker);
+  const openCardDetail = useChemCityStore((s) => s.openCardDetail);
+  const unlockSlot = useChemCityStore((s) => s.unlockSlot);
+
+  const [unlockingSlotId, setUnlockingSlotId] = useState<string | null>(null);
+
+  // Dev editor (disabled in production)
+  const isDevEditorEnabled = false;
+  const [editSlotsMode, setEditSlotsMode] = useState(false);
+  const [selectedSlotIdForEdit, setSelectedSlotIdForEdit] = useState<string | null>(null);
+  const [slotPositions, setSlotPositions] = useState<Record<string, { leftPct: number; topPct: number }>>({});
+  const [slotLabels, setSlotLabels] = useState<Record<string, string>>({});
+  const [slotSizesPx, setSlotSizesPx] = useState<Record<string, number>>({});
+
+  const placeImageRef = useRef<HTMLImageElement | null>(null);
+  const [placeImageNaturalWidth, setPlaceImageNaturalWidth] = useState<number>(0);
+  const [placeImageRenderedWidth, setPlaceImageRenderedWidth] = useState<number>(0);
+
+  const place = useMemo(
+    () => places.find((p) => p.id === selectedPlaceId) ?? null,
+    [places, selectedPlaceId],
+  );
+
+  if (!place || !user) return null;
+
+  const fixedLayout = FIXED_SLOT_LAYOUTS[place.id] ?? null;
+
+  const placeImageSrc = (() => {
+    switch (place.id) {
+      case 'toilet':           return '/Place1_Toilet.png';
+      case 'kitchen':          return '/Place2_Kitchen.png';
+      case 'beach':            return '/Place3_Beach.png';
+      case 'gas_station':      return '/Place4_GasStation.png';
+      case 'lab':              return '/Place5_Lab.png';
+      case 'garden':           return '/Place6_Garden.png';
+      case 'lifestyle_boutique': return '/Place7_Boutique.png';
+      case 'school':           return '/Place8_School.png';
+      default:                 return null;
+    }
+  })();
+
+  // Track rendered image width for slot sizing
+  useEffect(() => {
+    const img = placeImageRef.current;
+    if (!img) return;
+
+    const updateRendered = () => {
+      const rect = img.getBoundingClientRect();
+      setPlaceImageRenderedWidth(rect.width);
+    };
+
+    updateRendered();
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => updateRendered());
+      ro.observe(img);
+    } else {
+      window.addEventListener('resize', updateRendered);
+    }
+
+    return () => {
+      if (ro) ro.disconnect();
+      else window.removeEventListener('resize', updateRendered);
+    };
+  }, [placeImageSrc, selectedPlaceId]);
+
+  const slotSizeScale =
+    placeImageNaturalWidth > 0 && placeImageRenderedWidth > 0
+      ? placeImageRenderedWidth / placeImageNaturalWidth
+      : 1;
+  const tunedSlotSizeScale = slotSizeScale * 1.35;
+
+  const effectiveSlotPositions =
+    (isDevEditorEnabled && editSlotsMode ? slotPositions : fixedLayout?.slotPositions) ?? slotPositions;
+  const effectiveSlotLabels =
+    (isDevEditorEnabled && editSlotsMode ? slotLabels : fixedLayout?.slotLabels) ?? slotLabels;
+  const effectiveSlotSizesPx =
+    (isDevEditorEnabled && editSlotsMode ? slotSizesPx : fixedLayout?.slotSizesPx) ?? slotSizesPx;
+
+  const exportSlotCoords = async () => {
+    const payload = {
+      placeId: place.id,
+      slots: place.slots.map((s) => ({
+        slotId: s.slotId,
+        label: slotLabels[s.slotId] || undefined,
+        sizePx: slotSizesPx[s.slotId] || undefined,
+        ...(slotPositions[s.slotId] ? slotPositions[s.slotId] : {}),
+      })),
+    };
+    const text = JSON.stringify(payload, null, 2);
+    console.log('[PlaceView] Slot coords export:\n' + text);
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      }
+    } catch { /* ignore */ }
+  };
+
+  const coins = user.currencies.coins;
+  const diamonds = user.currencies.diamonds;
+  const isPlaceUnlocked = place.unlockCost === 0 || user.unlockedPlaces.includes(place.id);
+
+  const handleUnlockSlot = async (slotId: string) => {
+    setUnlockingSlotId(slotId);
+    try {
+      await unlockSlot(place.id, slotId);
+    } finally {
+      setUnlockingSlotId(null);
+    }
+  };
+
+  const skillValue = (() => {
+    switch (place.id) {
+      case 'garden':     return `${user.activeBonuses.passiveBaseCoinsPerHour.toLocaleString()} 🪙/hr`;
+      case 'lab':        return `${user.activeBonuses.passiveMultiplier.toFixed(1)}× multiplier`;
+      case 'kitchen':    return `+${user.activeBonuses.quizFlatDiamondBonus} 💎 max bonus`;
+      case 'school':     return `${user.activeBonuses.quizDiamondMultiplier.toFixed(1)}× quiz diamonds`;
+      case 'beach':      return `${user.activeBonuses.quizDoubleChancePercent}% double chance`;
+      case 'toilet':     return `${user.activeBonuses.dailyLoginDiamonds} 💎 daily`;
+      case 'gas_station': return `${user.activeBonuses.extraSlotsTotal} bonus slots`;
+      case 'lifestyle_boutique': return `${user.activeBonuses.shopDiscountPercent}% store discount`;
+      default:           return '—';
+    }
+  })();
+
+  const equippedCount = place.slots.filter((s) => !!user.equipped?.[s.slotId]).length;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // LAYOUT
+  //
+  //  The outer wrapper fills the full viewport height.
+  //  pt-[76px] pushes content below the fixed main site header.
+  //  flex-col + overflow-hidden = no page scroll ever.
+  //
+  //   ┌───────────────────────────────────┐  ← 76px (main header, behind)
+  //   │  IMAGE  (flex-1, maximised)       │
+  //   │  ┌── info overlay (bottom) ──┐   │
+  //   │  └───────────────────────────┘   │
+  //   ├───────────────────────────────────┤
+  //   │  EQUIP STRIP (shrink-0, ~90px)    │
+  //   └───────────────────────────────────┘
+  // ─────────────────────────────────────────────────────────────────────────────
+  return (
+    <div
+      className="flex flex-col overflow-hidden"
+      style={{ height: '100vh', paddingTop: 76 }}
+    >
+      {/* ── Image area (flex-1) ── */}
+      {placeImageSrc ? (
+        <div className="flex-1 flex justify-center items-start overflow-hidden px-3 pt-2 pb-1 min-h-0">
+          {/*
+            Inner wrapper sizes to the image naturally.
+            - h-full: fills flex-1 height
+            - width: fit-content + max-w-full: stays inside horizontal bounds
+            - Slots and overlay are positioned relative to this wrapper,
+              which exactly matches the rendered image dimensions.
+          */}
+          <div
+            className="relative h-full"
+            style={{ width: 'fit-content', maxWidth: '100%' }}
+            onClick={(e) => {
+              if (!isDevEditorEnabled || !editSlotsMode || !selectedSlotIdForEdit) return;
+              const target = e.currentTarget;
+              const rect = target.getBoundingClientRect();
+              const leftPct = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;
+              const topPct = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+              setSlotPositions((prev) => ({
+                ...prev,
+                [selectedSlotIdForEdit]: { leftPct, topPct },
+              }));
+              console.log(`[PlaceView] ${place.id} set ${selectedSlotIdForEdit}: leftPct=${leftPct}, topPct=${topPct}`);
+            }}
+          >
+            <img
+              src={placeImageSrc}
+              alt={place.displayName}
+              ref={placeImageRef}
+              className="h-full w-auto max-w-full rounded-2xl border border-slate-700 bg-slate-950 block"
+              loading="lazy"
+              onLoad={(e) => {
+                const el = e.currentTarget;
+                if (el.naturalWidth) setPlaceImageNaturalWidth(el.naturalWidth);
+                // Also update rendered width immediately after load
+                const rect = el.getBoundingClientRect();
+                setPlaceImageRenderedWidth(rect.width);
+              }}
+            />
+
+            {/* ── Slot overlay buttons ── */}
+            {place.slots.map((slot) => {
+              const slotId = slot.slotId;
+              const pos = effectiveSlotPositions[slotId];
+              if (!pos) return null;
+
+              const baseSizePx = effectiveSlotSizesPx[slotId] ?? 64;
+              const sizePx = Math.max(38, Math.min(100, Math.round(baseSizePx * tunedSlotSizeScale)));
+
+              const equippedItemId = user.equipped?.[slotId];
+              const slimItem = equippedItemId ? slimItems.find((i) => i.id === equippedItemId) : undefined;
+
+              const isFreeSlot = slot.unlockCost == null;
+              const isUnlockedSlot = isFreeSlot || user.unlockedSlots.includes(slotId);
+              const isLocked = isPlaceUnlocked && !isUnlockedSlot;
+
+              const label = effectiveSlotLabels[slotId]?.trim() ? effectiveSlotLabels[slotId] : slotId;
+
+              return (
+                <button
+                  key={slotId}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isDevEditorEnabled && editSlotsMode) {
+                      setSelectedSlotIdForEdit(slotId);
+                      return;
+                    }
+                    if (isLocked) return;
+                    openCardPicker(slotId);
+                  }}
+                  title={label}
+                  aria-label={label}
+                  className={`
+                    absolute -translate-x-1/2 -translate-y-1/2
+                    rounded-full border-2 border-dashed
+                    flex items-center justify-center
+                    shadow-lg shadow-black/40
+                    transition-all active:scale-95
+                    ${isLocked
+                      ? 'bg-slate-900/70 border-slate-700 text-slate-500 cursor-not-allowed'
+                      : isDevEditorEnabled && editSlotsMode && selectedSlotIdForEdit === slotId
+                        ? 'bg-indigo-600/60 border-indigo-300 text-white'
+                        : 'bg-slate-900/60 border-slate-300/60 text-white hover:border-indigo-300 hover:bg-slate-800/70'
+                    }
+                  `}
+                  style={{
+                    left: `${pos.leftPct}%`,
+                    top: `${pos.topPct}%`,
+                    width: sizePx,
+                    height: sizePx,
+                  }}
+                >
+                  {isLocked ? (
+                    <span className="text-xs font-bold">🔒</span>
+                  ) : slimItem ? (
+                    <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+                      {slimItem.imageUrl ? (
+                        <img
+                          src={slimItem.imageUrl}
+                          alt={slimItem.name}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                          onError={(ev) => {
+                            (ev.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <span className="text-2xl">{slimItem.emoji}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-3xl font-bold leading-none">+</span>
+                  )}
+                </button>
+              );
+            })}
+
+            {/* ── Place info overlay (bottom of image) ── */}
+            <div className="
+              absolute bottom-2 left-2 right-2
+              flex items-center justify-between gap-2
+              bg-slate-900/85 backdrop-blur-md
+              rounded-xl px-3 py-2
+              border border-slate-700/60
+              pointer-events-none
+            ">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-2xl leading-none">{place.emoji}</span>
+                <div className="min-w-0">
+                  <h2 className="text-white font-bold text-sm leading-tight truncate">
+                    {place.displayName}
+                  </h2>
+                  <p className="text-slate-400 text-xs truncate leading-tight">
+                    {place.skill.description}
+                  </p>
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-indigo-300 font-bold text-sm leading-tight">{skillValue}</p>
+                <p className="text-slate-500 text-xs leading-tight">
+                  {equippedCount}/{place.slots.length} cards
+                </p>
+              </div>
+            </div>
+
+            {/* Locked place notice (overlay) */}
+            {!isPlaceUnlocked && (
+              <div className="
+                absolute inset-0 flex items-center justify-center
+                bg-slate-950/60 backdrop-blur-sm rounded-2xl
+                pointer-events-none
+              ">
+                <div className="bg-slate-900/90 border border-slate-600 rounded-xl px-4 py-3 text-center">
+                  <p className="text-slate-300 text-sm font-semibold">Place Locked</p>
+                  <p className="text-slate-500 text-xs mt-1">Return to the map to unlock it.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        // Fallback if no image
+        <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
+          No image available
+        </div>
+      )}
+
+      {/* ── Dev editor toolbar ── */}
+      {isDevEditorEnabled && (
+        <div className="shrink-0 px-3 pb-1 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEditSlotsMode((v) => !v);
+              setSelectedSlotIdForEdit(null);
+              if (!editSlotsMode) {
+                setSlotPositions(fixedLayout?.slotPositions ?? {});
+                setSlotLabels(fixedLayout?.slotLabels ?? {});
+                setSlotSizesPx(fixedLayout?.slotSizesPx ?? {});
+              }
+            }}
+            className={`text-xs font-bold rounded-lg px-3 py-1.5 border transition-colors ${
+              editSlotsMode
+                ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-300 text-white'
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+            }`}
+          >
+            {editSlotsMode ? 'Editing Slots' : 'Edit slots'}
+          </button>
+          {editSlotsMode && (
+            <button
+              type="button"
+              onClick={exportSlotCoords}
+              className="text-xs font-bold rounded-lg px-3 py-1.5 border bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200 transition-colors"
+            >
+              Export coords
+            </button>
+          )}
+          {editSlotsMode && (
+            <div className="flex flex-wrap gap-1.5 ml-2">
+              {place.slots.map((s) => (
+                <button
+                  key={s.slotId}
+                  type="button"
+                  onClick={() => setSelectedSlotIdForEdit(s.slotId)}
+                  className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-colors ${
+                    selectedSlotIdForEdit === s.slotId
+                      ? 'bg-indigo-600 border-indigo-300 text-white'
+                      : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  {s.slotId}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Compact equip strip ── */}
+      <div className="
+        shrink-0
+        flex gap-3 items-end
+        px-3 pb-3 pt-1
+        overflow-x-auto
+        border-t border-slate-800/60
+      ">
+        {place.slots.map((slot) => {
+          const slotId = slot.slotId;
+          const equippedItemId = user.equipped?.[slotId];
+          const slimItem = equippedItemId ? slimItems.find((i) => i.id === equippedItemId) : undefined;
+
+          const isFreeSlot = slot.unlockCost == null;
+          const isUnlockedSlot = isFreeSlot || user.unlockedSlots.includes(slotId);
+          const isLocked = isPlaceUnlocked && !isUnlockedSlot;
+
+          const canAfford =
+            slot.unlockCurrency === 'diamonds'
+              ? diamonds >= (slot.unlockCost ?? 0)
+              : coins >= (slot.unlockCost ?? 0);
+
+          const costLabel =
+            slot.unlockCurrency === 'diamonds'
+              ? `${slot.unlockCost?.toLocaleString() ?? 0}💎`
+              : `${slot.unlockCost?.toLocaleString() ?? 0}🪙`;
+
+          const label =
+            (effectiveSlotLabels[slotId]?.trim() ? effectiveSlotLabels[slotId] : slotId);
+
+          return (
+            <StripSlot
+              key={slotId}
+              slotId={slotId}
+              label={label}
+              isLocked={isLocked}
+              isUnlocking={unlockingSlotId === slotId}
+              canAfford={canAfford}
+              costLabel={costLabel}
+              slimItem={slimItem}
+              onEquip={() => openCardPicker(slotId)}
+              onUnlock={() => handleUnlockSlot(slotId)}
+              onDetail={(id) => openCardDetail(id)}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+===== FILE: src/components/chemcity/QuizRewardModal.tsx =====
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function animateNumber(from: number, to: number, durationMs: number, onTick: (v: number) => void) {
+  const start = performance.now();
+  const delta = to - from;
+
+  function step(now: number) {
+    const t = clamp((now - start) / durationMs, 0, 1);
+    const eased = 1 - Math.pow(1 - t, 3);
+    onTick(Math.floor(from + delta * eased));
+    if (t < 1) requestAnimationFrame(step);
+  }
+
+  requestAnimationFrame(step);
+}
+
+export const QuizRewardModal: React.FC = () => {
+  const quizReward = useChemCityStore((s) => s.quizReward);
+  const clearQuizReward = useChemCityStore((s) => s.clearQuizReward);
+
+  const isOpen = !!quizReward?.result;
+  const result = quizReward.result;
+
+  const [coinsDisplay, setCoinsDisplay] = useState(0);
+  const [diamondsDisplay, setDiamondsDisplay] = useState(0);
+
+  const coinsFinal = result?.coinsAwarded ?? 0;
+  const diamondsFinal = result?.diamondsAwarded ?? 0;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCoinsDisplay(0);
+    setDiamondsDisplay(0);
+
+    animateNumber(0, coinsFinal, 700, setCoinsDisplay);
+    animateNumber(0, diamondsFinal, 900, setDiamondsDisplay);
+  }, [coinsFinal, diamondsFinal, isOpen]);
+
+  const breakdown = useMemo(() => {
+    const b = (result as any)?.breakdown;
+    if (!b || typeof b !== 'object') return null;
+    return {
+      flatBonus: Number(b.flatBonus ?? 0),
+      afterSchool: Number(b.afterSchool ?? 0),
+      afterBeach: Number(b.afterBeach ?? 0),
+      didDouble: Boolean((result as any)?.didDouble),
+    };
+  }, [result]);
+
+  if (!isOpen || !result) return null;
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/70 z-[60]" onClick={clearQuizReward} />
+      <div className="fixed inset-x-4 top-24 z-[70] bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+          <div>
+            <h3 className="text-white font-bold text-base">Quiz Rewards</h3>
+            <p className="text-slate-400 text-xs">No cards drop from quizzes</p>
+          </div>
+          <button
+            onClick={clearQuizReward}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 text-slate-400 hover:text-white text-lg"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-4 flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+              <p className="text-slate-400 text-xs">Coins</p>
+              <p className="text-yellow-300 font-black text-2xl tabular-nums">{coinsDisplay.toLocaleString()} 🪙</p>
+            </div>
+            <div className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+              <p className="text-slate-400 text-xs">Diamonds</p>
+              <p className="text-cyan-300 font-black text-2xl tabular-nums">{diamondsDisplay.toLocaleString()} 💎</p>
+            </div>
+          </div>
+
+          {breakdown && (
+            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3">
+              <p className="text-slate-300 text-xs font-semibold mb-2">Diamond breakdown</p>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="text-slate-400">Kitchen flat bonus</div>
+                <div className="text-right text-slate-200 tabular-nums">+{breakdown.flatBonus}</div>
+                <div className="text-slate-400">After School multiplier</div>
+                <div className="text-right text-slate-200 tabular-nums">{breakdown.afterSchool}</div>
+                <div className="text-slate-400">After Beach</div>
+                <div className="text-right text-slate-200 tabular-nums">{breakdown.afterBeach}</div>
+              </div>
+              {breakdown.didDouble && (
+                <div className="mt-2 text-emerald-300 text-xs font-semibold">Beach doubled your diamonds!</div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <button
+              onClick={clearQuizReward}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-4 py-2 text-sm font-bold"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+
+===== FILE: tests/chemcity/bonuses.test.ts =====
+
+import {
+  calcGardenCoinsPerHour,
+  calcLabMultiplier,
+  calcKitchenMaxDiamonds,
+  calcSchoolMultiplier,
+  calcBeachDoubleChance,
+  calcToiletLoginDiamonds,
+  calcGasStationExtraSlots,
+  calcBoutiqueDiscount,
+  computeActiveBonuses,
+  computeQuizDiamonds,
+  rollKitchenBonus,
+  rollBeachDouble,
+  getShopPrice,
+} from "../../src/lib/chemcity/bonuses";
+
+import type { SlimItemDocument, ActiveBonuses } from "../../src/lib/chemcity/types";
+
+function makeItem(
+  id: string,
+  placeId: SlimItemDocument["placeId"],
+  skillContribution: number
+): SlimItemDocument {
+  return {
+    id,
+    name: id,
+    chemicalFormula: "X",
+    emoji: "🧪",
+    rarity: "common",
+    rarityValue: 1,
+    placeId,
+    validSlots: [`${placeId}_slot_1`],
+    shopData: { coinCost: 100 },
+    skillContribution,
+    collections: [],
+    deprecated: false,
+  };
+}
+
+describe("Garden coins per hour", () => {
+  it("0 cards = 0 coins/hr", () => expect(calcGardenCoinsPerHour(0)).toBe(0));
+  it("bonus 32 → 320 coins/hr", () => expect(calcGardenCoinsPerHour(32)).toBe(320));
+  it("linear with bonus", () => expect(calcGardenCoinsPerHour(10)).toBe(100));
+});
+
+describe("Lab multiplier", () => {
+  it("0 cards = 1.0×", () => expect(calcLabMultiplier(0)).toBe(1));
+  it("bonus 12 → 2.2×", () => expect(calcLabMultiplier(12)).toBeCloseTo(2.2));
+  it("bonus 10 → 2.0×", () => expect(calcLabMultiplier(10)).toBe(2.0));
+});
+
+describe("Kitchen max diamonds", () => {
+  it("0 bonus = 0", () => expect(calcKitchenMaxDiamonds(0)).toBe(0));
+  it("bonus 16 → 48", () => expect(calcKitchenMaxDiamonds(16)).toBe(48));
+});
+
+describe("School multiplier", () => {
+  it("0 bonus = 1.0×", () => expect(calcSchoolMultiplier(0)).toBe(1));
+  it("bonus 20 → 3.0×", () => expect(calcSchoolMultiplier(20)).toBe(3.0));
+});
+
+describe("Beach double chance (capped at 100)", () => {
+  it("0 bonus = 0%", () => expect(calcBeachDoubleChance(0)).toBe(0));
+  it("bonus 10 = 50%", () => expect(calcBeachDoubleChance(10)).toBe(50));
+  it("bonus 20 = 100% (cap)", () => expect(calcBeachDoubleChance(20)).toBe(100));
+  it("bonus 30 = 100% (cap enforced)", () => expect(calcBeachDoubleChance(30)).toBe(100));
+  it("never exceeds 100", () => {
+    for (let b = 0; b <= 50; b++) {
+      expect(calcBeachDoubleChance(b)).toBeLessThanOrEqual(100);
+    }
+  });
+});
+
+describe("Toilet daily login", () => {
+  it("0 bonus = 5 diamonds (base)", () => expect(calcToiletLoginDiamonds(0)).toBe(5));
+  it("bonus 24 → 53", () => expect(calcToiletLoginDiamonds(24)).toBe(53));
+  it("bonus 1 → 7", () => expect(calcToiletLoginDiamonds(1)).toBe(7));
+});
+
+describe("Gas Station extra slots", () => {
+  it("0 bonus = 0 extra slots", () => expect(calcGasStationExtraSlots(0)).toBe(0));
+  it("bonus 16 = 16 slots", () => expect(calcGasStationExtraSlots(16)).toBe(16));
+});
+
+describe("Boutique discount (capped at 50%)", () => {
+  it("0 bonus = 0%", () => expect(calcBoutiqueDiscount(0)).toBe(0));
+  it("bonus 10 = 20%", () => expect(calcBoutiqueDiscount(10)).toBe(20));
+  it("bonus 24 = 48%", () => expect(calcBoutiqueDiscount(24)).toBe(48));
+  it("bonus 25 = 50% (exactly at cap)", () => expect(calcBoutiqueDiscount(25)).toBe(50));
+  it("bonus 30 = 50% (cap enforced)", () => expect(calcBoutiqueDiscount(30)).toBe(50));
+  it("never exceeds 50%", () => {
+    for (let b = 0; b <= 100; b++) {
+      expect(calcBoutiqueDiscount(b)).toBeLessThanOrEqual(50);
+    }
+  });
+});
+
+describe("computeActiveBonuses", () => {
+  it("empty equipped → defaults", () => {
+    const bonuses = computeActiveBonuses({}, []);
+    expect(bonuses.passiveBaseCoinsPerHour).toBe(0);
+    expect(bonuses.passiveMultiplier).toBe(1);
+    expect(bonuses.quizFlatDiamondBonus).toBe(0);
+    expect(bonuses.quizDiamondMultiplier).toBe(1);
+    expect(bonuses.quizDoubleChancePercent).toBe(0);
+    expect(bonuses.dailyLoginDiamonds).toBe(5);
+    expect(bonuses.extraSlotsTotal).toBe(0);
+    expect(bonuses.shopDiscountPercent).toBe(0);
+  });
+
+  it("garden card contribution adds coins/hr", () => {
+    const items: SlimItemDocument[] = [makeItem("item_plant", "garden", 10)];
+    const bonuses = computeActiveBonuses({ garden_bed_1: "item_plant" }, items);
+    expect(bonuses.passiveBaseCoinsPerHour).toBe(100);
+    expect(bonuses.passiveMultiplier).toBe(1);
+  });
+
+  it("lab card multiplies garden income", () => {
+    const items: SlimItemDocument[] = [
+      makeItem("item_plant", "garden", 10),
+      makeItem("item_flask", "lab", 10),
+    ];
+    const bonuses = computeActiveBonuses(
+      { garden_bed_1: "item_plant", lab_bench_1: "item_flask" },
+      items
+    );
+    expect(bonuses.passiveBaseCoinsPerHour).toBe(200);
+    expect(bonuses.passiveMultiplier).toBe(2.0);
+  });
+
+  it("boutique discount is capped at 50", () => {
+    const items: SlimItemDocument[] = [];
+    const equipped: Record<string, string> = {};
+    for (let i = 1; i <= 26; i++) {
+      const id = `item_b${i}`;
+      items.push(makeItem(id, "lifestyle_boutique", 1));
+      equipped[`lifestyle_boutique_slot_${i}`] = id;
+    }
+    const bonuses = computeActiveBonuses(equipped, items);
+    expect(bonuses.shopDiscountPercent).toBe(50);
+  });
+
+  it("deprecated cards do not contribute", () => {
+    const item = makeItem("item_old", "garden", 10);
+    item.deprecated = true;
+    const bonuses = computeActiveBonuses({ garden_bed_1: "item_old" }, [item]);
+    expect(bonuses.passiveBaseCoinsPerHour).toBe(0);
+  });
+});
+
+describe("rollKitchenBonus", () => {
+  it("0 kitchen bonus → 0", () => {
+    expect(rollKitchenBonus(0)).toBe(0);
+  });
+
+  it("kitchen bonus 10 → value between 10 and 30", () => {
+    for (let i = 0; i < 100; i++) {
+      const result = rollKitchenBonus(10);
+      expect(result).toBeGreaterThanOrEqual(10);
+      expect(result).toBeLessThanOrEqual(30);
+    }
+  });
+});
+
+describe("rollBeachDouble", () => {
+  it("0% chance → never doubles", () => {
+    for (let i = 0; i < 50; i++) {
+      const doubled = rollBeachDouble(0);
+      expect(doubled).toBe(false);
+    }
+  });
+});
+
+describe("computeQuizDiamonds", () => {
+  it("no bonuses: base 5 diamonds", () => {
+    const ab: ActiveBonuses = {
+      passiveBaseCoinsPerHour: 0,
+      passiveMultiplier: 1,
+      quizFlatDiamondBonus: 0,
+      quizDiamondMultiplier: 1,
+      quizDoubleChancePercent: 0,
+      dailyLoginDiamonds: 5,
+      extraSlotsTotal: 0,
+      shopDiscountPercent: 0,
+    };
+    const r = computeQuizDiamonds(5, ab);
+    expect(r).toBe(5);
+  });
+
+  it("school 2× multiplier doubles diamonds", () => {
+    const ab: ActiveBonuses = {
+      passiveBaseCoinsPerHour: 0,
+      passiveMultiplier: 1,
+      quizFlatDiamondBonus: 0,
+      quizDiamondMultiplier: 2,
+      quizDoubleChancePercent: 0,
+      dailyLoginDiamonds: 5,
+      extraSlotsTotal: 0,
+      shopDiscountPercent: 0,
+    };
+    const r = computeQuizDiamonds(5, ab);
+    expect(r).toBe(10);
+  });
+});
+
+describe("getShopPrice", () => {
+  it("diamonds not discounted", () => {
+    const ab: ActiveBonuses = {
+      passiveBaseCoinsPerHour: 0,
+      passiveMultiplier: 1,
+      quizFlatDiamondBonus: 0,
+      quizDiamondMultiplier: 1,
+      quizDoubleChancePercent: 0,
+      dailyLoginDiamonds: 5,
+      extraSlotsTotal: 0,
+      shopDiscountPercent: 50,
+    };
+    expect(getShopPrice(200, "diamonds", ab)).toBe(200);
+  });
+
+  it("50% discount halves coin price", () => {
+    const ab: ActiveBonuses = {
+      passiveBaseCoinsPerHour: 0,
+      passiveMultiplier: 1,
+      quizFlatDiamondBonus: 0,
+      quizDiamondMultiplier: 1,
+      quizDoubleChancePercent: 0,
+      dailyLoginDiamonds: 5,
+      extraSlotsTotal: 0,
+      shopDiscountPercent: 50,
+    };
+    expect(getShopPrice(200, "coins", ab)).toBe(100);
+  });
+});
+
+
+===== FILE: tests/chemcity/quizReward.test.ts =====
+
+import { BASE_DIAMONDS_PER_QUIZ, COINS_PER_CORRECT_ANSWER } from '../../src/hooks/useQuizReward';
+
+describe('Quiz reward constants', () => {
+  it('COINS_PER_CORRECT_ANSWER is positive', () => {
+    expect(COINS_PER_CORRECT_ANSWER).toBeGreaterThan(0);
+  });
+
+  it('BASE_DIAMONDS_PER_QUIZ is positive', () => {
+    expect(BASE_DIAMONDS_PER_QUIZ).toBeGreaterThan(0);
+  });
+
+  it('10 correct answers produces expected base coins', () => {
+    expect(10 * COINS_PER_CORRECT_ANSWER).toBe(100);
+  });
+
+  it('0 correct answers produces 0 base coins', () => {
+    expect(0 * COINS_PER_CORRECT_ANSWER).toBe(0);
+  });
+});
+
+describe('DailyLogin streak messages', () => {
+  function milestoneMessage(streak: number): string {
+    if (streak === 1) return 'Welcome back! 👋';
+    if (streak === 7) return '7-day streak! 🎉';
+    if (streak === 30) return '30-day legend! 🏆';
+    if (streak % 10 === 0) return `${streak} days strong! ⚡`;
+    return `${streak}-day streak! 🔥`;
+  }
+
+  it('streak 1 shows welcome message', () => {
+    expect(milestoneMessage(1)).toBe('Welcome back! 👋');
+  });
+
+  it('streak 7 shows 7-day message', () => {
+    expect(milestoneMessage(7)).toBe('7-day streak! 🎉');
+  });
+
+  it('streak 30 shows legend message', () => {
+    expect(milestoneMessage(30)).toBe('30-day legend! 🏆');
+  });
+
+  it('streak 20 shows milestone message', () => {
+    expect(milestoneMessage(20)).toBe('20 days strong! ⚡');
+  });
+
+  it('streak 5 shows generic streak message', () => {
+    expect(milestoneMessage(5)).toBe('5-day streak! 🔥');
+  });
+});

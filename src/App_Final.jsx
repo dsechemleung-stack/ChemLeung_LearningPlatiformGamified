@@ -61,7 +61,7 @@ function AppContent() {
     <>
       {showHeader && <Header />}
       <div
-        className={`${showHeader ? (isChemCityRoute ? '' : 'pt-[76px]') : ''} ${isChemCityRoute ? 'bg-slate-950 min-h-screen' : ''} ${(useNoShell || isNotebookRoute || isChemCityRoute) ? '' : 'container mx-auto px-4 py-6'}`.trim()}
+        className={`${showHeader && !isChemCityRoute ? 'pt-[76px]' : ''} ${isChemCityRoute ? 'bg-slate-950' : ''} ${(useNoShell || isNotebookRoute || isChemCityRoute) ? '' : 'container mx-auto px-4 py-6'}`.trim()}
       >
         <Routes>
           {/* Public Routes */}
