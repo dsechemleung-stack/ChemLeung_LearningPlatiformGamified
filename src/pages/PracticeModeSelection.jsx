@@ -224,7 +224,7 @@ export default function PracticeModeSelection({ questions }) {
 
   const handleModeSelect = (mode, count, timerEnabled = false, isTimed = false) => {
     if (mode === 'mistakes') {
-      navigate('/notebook');
+      navigate('/notebook?customReview=1');
       return;
     }
 
@@ -265,7 +265,7 @@ export default function PracticeModeSelection({ questions }) {
         handleAIDailyMission();
         break;
       case 'mistake-review':
-        navigate('/notebook');
+        navigate('/notebook?customReview=1');
         break;
       case 'srs-review':
         (async () => {

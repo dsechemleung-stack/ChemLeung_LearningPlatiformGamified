@@ -99,6 +99,54 @@ async function applyMistakeTopicStatsDelta(db, userId, delta, topic, bucket, isA
   });
 }
 
+async function applySrsAttemptDelta(db, userId, attemptedAtIso, deltaCorrect, statusBefore) {
+  const uid = safeString(userId);
+  const iso = safeString(attemptedAtIso);
+  if (!uid || !iso) return;
+
+  const dateKey = iso.slice(0, 10);
+  if (!dateKey) return;
+
+  const summaryRef = db.collection('users').doc(uid).collection('srs_daily_summaries').doc(dateKey);
+  const dCorrect = Number.isFinite(deltaCorrect) ? deltaCorrect : 0;
+
+  const normalizeStatus = (s) => {
+    const v = safeString(s);
+    if (v === 'new') return 'new';
+    if (v === 'learning') return 'learning';
+    if (v === 'review') return 'review';
+    if (v === 'graduated') return 'graduated';
+    return '';
+  };
+
+  const bucket = normalizeStatus(statusBefore);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(summaryRef);
+    const prev = snap.exists ? (snap.data() || {}) : {};
+    const next = { ...prev };
+
+    next.date = dateKey;
+    next.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+    if (dCorrect !== 0) {
+      const old = Number(prev.clearedCorrect || 0);
+      next.clearedCorrect = Math.max(0, old + dCorrect);
+    }
+
+    if (bucket) {
+      const field = bucket === 'new' ? 'statusNew'
+        : bucket === 'learning' ? 'statusLearning'
+        : bucket === 'review' ? 'statusReview'
+        : 'statusGraduated';
+      const old = Number(prev[field] || 0);
+      next[field] = Math.max(0, old + 1);
+    }
+
+    tx.set(summaryRef, next, { merge: true });
+  });
+}
+
 async function applyMistakeDocDelta(db, userId, before, after) {
   const beforeExists = before && typeof before === 'object' && Object.keys(before).length > 0;
   const afterExists = after && typeof after === 'object' && Object.keys(after).length > 0;
@@ -339,6 +387,128 @@ exports.rebuildMistakeTopicStats = onCall(
     }, { merge: true });
 
     return { ok: true, userId: uid, processed, topics: Object.keys(topics).length };
+  }
+);
+
+exports.pickMistakesForReview = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Must be signed in to pick mistakes');
+    }
+
+    const data = request.data && typeof request.data === 'object' ? request.data : {};
+    const limitN = Math.min(Math.max(parseInt(data.limit || 40, 10) || 40, 1), 400);
+    const filters = data.filters && typeof data.filters === 'object' ? data.filters : {};
+
+    const datePeriod = safeString(filters.datePeriod || 'all');
+    const selectedTopics = Array.isArray(filters.selectedTopics) ? filters.selectedTopics.filter(Boolean).map(String) : [];
+    const selectedSubtopics = Array.isArray(filters.selectedSubtopics) ? filters.selectedSubtopics.filter(Boolean).map(String) : [];
+    const selectedMasteryLevels = Array.isArray(filters.selectedMasteryLevels) ? filters.selectedMasteryLevels.filter(Boolean).map(String) : [];
+    const srsPresence = safeString(filters.srsPresence || 'all');
+
+    const db = admin.firestore();
+    const mistakesRef = db.collection('users').doc(uid).collection('mistakes');
+
+    const now = new Date();
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthAgo = new Date(now);
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+    const matchesSrs = (row) => {
+      if (srsPresence === 'in_srs') return row && row.srsIsActive === true;
+      if (srsPresence === 'not_in_srs') return normalizeBucket((row && row.srsBucket) || 'not_in_srs') === 'not_in_srs';
+      return true;
+    };
+
+    const topics = selectedTopics;
+    const subs = selectedSubtopics;
+    const lvls = selectedMasteryLevels;
+
+    const baseParts = [];
+    if (datePeriod === 'week') baseParts.push(['lastWrongAt', '>=', weekAgo.toISOString()]);
+    if (datePeriod === 'month') baseParts.push(['lastWrongAt', '>=', monthAgo.toISOString()]);
+
+    if (topics.length === 1) baseParts.push(['Topic', '==', topics[0]]);
+    else if (topics.length >= 2 && topics.length <= 10) baseParts.push(['Topic', 'in', topics]);
+
+    if (subs.length === 1 && topics.length <= 1) baseParts.push(['Subtopic', '==', subs[0]]);
+
+    if (srsPresence !== 'not_in_srs' && lvls.length === 1) baseParts.push(['srsBucket', '==', normalizeBucket(lvls[0])]);
+
+    if (srsPresence === 'in_srs') baseParts.push(['srsIsActive', '==', true]);
+    if (srsPresence === 'not_in_srs') baseParts.push(['srsBucket', '==', 'not_in_srs']);
+
+    const collected = [];
+    let fetched = 0;
+    const maxFetch = 1200;
+    const pageSize = 250;
+    let last = null;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      if (collected.length >= limitN) break;
+      if (fetched >= maxFetch) break;
+
+      let q = mistakesRef.orderBy('lastWrongAt', 'desc');
+      baseParts.forEach(([f, op, v]) => { q = q.where(f, op, v); });
+      if (last) q = q.startAfter(last);
+      q = q.limit(Math.min(pageSize, maxFetch - fetched));
+
+      let snap;
+      try {
+        snap = await q.get();
+      } catch (err) {
+        const code = err && (err.code || err.status || err.statusCode);
+        const details = err && (err.details || err.message || String(err));
+        // Firestore missing index => FAILED_PRECONDITION (gRPC code 9)
+        if (code === 9 || code === 'FAILED_PRECONDITION') {
+          throw new HttpsError('failed-precondition', details);
+        }
+        throw new HttpsError('internal', details);
+      }
+      if (snap.empty) break;
+      fetched += snap.size;
+      last = snap.docs[snap.docs.length - 1];
+
+      for (const docSnap of snap.docs) {
+        const row = docSnap.data() || {};
+
+        if (topics.length > 10) {
+          const tp = safeString(row.Topic || row.topic || '');
+          if (!tp || !topics.includes(tp)) continue;
+        }
+
+        if (subs.length > 1) {
+          const sb = safeString(row.Subtopic || row.subtopic || '');
+          if (!sb || !subs.includes(sb)) continue;
+        }
+
+        if (srsPresence !== 'not_in_srs' && lvls.length > 1) {
+          const b = normalizeBucket(row.srsBucket || 'not_in_srs');
+          if (!lvls.includes(b)) continue;
+        }
+
+        if (!matchesSrs(row)) continue;
+
+        collected.push(docSnap.id);
+        if (collected.length >= limitN) break;
+      }
+
+      if (snap.size < pageSize) break;
+    }
+
+    return {
+      ok: true,
+      userId: uid,
+      ids: collected.slice(0, limitN),
+      requested: limitN,
+      fetched,
+    };
   }
 );
 
@@ -635,6 +805,31 @@ exports.updateSrsDailySummaryOnCardDelete = onDocumentDeleted(
 
     const db = admin.firestore();
     await applySrsSummaryDelta(db, card.userId, card.nextReviewDate, -1, card.topic, card.subtopic);
+  }
+);
+
+// Maintain daily cleared/milestone stats from SRS review attempts
+exports.updateSrsDailySummaryOnAttemptCreate = onDocumentCreated(
+  {
+    document: 'review_attempts/{attemptId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const attempt = snap.data() || {};
+
+    const uid = safeString(attempt.userId);
+    if (!uid) return;
+
+    const attemptedAt = safeString(attempt.attemptedAt);
+    if (!attemptedAt) return;
+
+    const wasCorrect = attempt.wasCorrect === true;
+    const statusBefore = attempt?.stateBefore?.status;
+
+    const db = admin.firestore();
+    await applySrsAttemptDelta(db, uid, attemptedAt, wasCorrect ? 1 : 0, statusBefore);
   }
 );
 

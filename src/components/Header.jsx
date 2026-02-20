@@ -134,7 +134,7 @@ export default function Header() {
         }
     };
 
-    const handleNavigation = (path) => {
+    const handleNavigation = (path, options = {}) => {
         if (isInQuiz && path !== '/quiz') {
             const confirmed = window.confirm(
                 t('header.confirmLeaveQuiz')
@@ -145,9 +145,15 @@ export default function Header() {
             quizStorage.clearQuizData();
         }
 
-        navigate(path);
+        navigate(path, options);
         setShowUserMenu(false);
         setShowMobileNav(false);
+    };
+
+    const handleNotebookHome = () => {
+        // Force Mistake Notebook to reset to the 3-button home screen even if we're already on /notebook.
+        // We do this by pushing a unique navigation state nonce that MistakeNotebookPage listens for.
+        handleNavigation('/notebook', { state: { forceNotebookHome: Date.now() } });
     };
 
     const isActive = (path) => location.pathname === path;
@@ -204,7 +210,7 @@ export default function Header() {
                                 </button>
 
                                 <button
-                                    onClick={() => handleNavigation('/notebook')}
+                                    onClick={handleNotebookHome}
                                     className={`nav-orb ${isActive('/notebook') ? 'bg-orange-600 text-white' : 'bg-white/70 text-slate-800 hover:bg-white/80'}`}
                                     aria-label={t('dashboard.mistakeNotebook')}
                                     title={t('dashboard.mistakeNotebook')}
@@ -501,7 +507,7 @@ export default function Header() {
                                 </button>
                                 
                                 <button
-                                    onClick={() => handleNavigation('/notebook')}
+                                    onClick={handleNotebookHome}
                                     className={`flex items-center gap-3 px-4 py-3 rounded-lg font-bold transition-all active:scale-[0.99] ${isActive('/notebook')
                                             ? 'bg-orange-600 text-white'
                                             : 'text-slate-900 hover:bg-slate-100'

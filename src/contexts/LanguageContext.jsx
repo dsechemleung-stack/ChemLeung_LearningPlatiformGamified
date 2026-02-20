@@ -496,6 +496,12 @@ const translations = {
       savingToProfile: "Saving to your profile...",
       savedToProfile: "Saved to your profile!",
       reviewsSaved: "Reviews saved!",
+      addMistakesToSrsTitle: "Add mistakes to SRS?",
+      addMistakesToSrsBody: "We can add the questions you got wrong into SRS (spaced repetition) so you can review them later.",
+      addToSrs: "Add to SRS",
+      addingToSrs: "Adding...",
+      addedToSrs: "Added to SRS!",
+      failedAddToSrs: "Failed to add to SRS. Please try again.",
       saveFailed: "Save Failed",
       continueAnyway: "Continue Anyway",
       resultsSavingLeaveConfirm: "Your quiz results are still being saved. Are you sure you want to leave?",
@@ -880,6 +886,9 @@ const translations = {
       filterInfoBody: "Topic/Subtopic filters search across all of your mistake questions, not only the first 40 shown on screen. Use \"Load more\" to display more results.",
       close: "Close",
       
+      activeFilters: "Active filters",
+      clearAll: "Clear all",
+
       // Actions
       review: "Review Mistakes",
       practiceMistakes: "Practice Mistakes Only",
@@ -904,6 +913,14 @@ const translations = {
       totalMistakes: "Total Mistakes",
       topicsToFocus: "Topics to Focus",
       repeatedMistakes: "Repeated Mistakes",
+
+      customReview: "Custom Review",
+      customReviewSubtitle: "Configure your practice session",
+      sessionPreview: "Session preview",
+      willPractice: "Will practice",
+      masteryBreakdown: "Breakdown",
+      custom: "Custom",
+      timerSettings: "Timer",
       
       // Configurator
       configurePractice: "Configure Practice Session",
@@ -1744,6 +1761,12 @@ const translations = {
       savingToProfile: "保存至您的個人資料...",
       savedToProfile: "已保存至您的個人資料！",
       reviewsSaved: "已保存重溫記錄！",
+      addMistakesToSrsTitle: "將錯題加入 SRS？",
+      addMistakesToSrsBody: "我們可以把你答錯的題目加入 SRS（間隔重溫），方便之後重溫。",
+      addToSrs: "加入 SRS",
+      addingToSrs: "加入中...",
+      addedToSrs: "已加入 SRS！",
+      failedAddToSrs: "加入 SRS 失敗。請再試一次。",
       saveFailed: "保存失敗",
       continueAnyway: "仍然繼續",
       resultsSavingLeaveConfirm: "您的測驗結果仍在保存中。確定要離開嗎？",
@@ -1914,6 +1937,9 @@ const translations = {
       filterInfoBody: "主題/副題篩選會搜尋你所有的錯題記錄，不只限於畫面上顯示的首 40 題。你可以按 \"Load more\" 來顯示更多結果。",
       close: "關閉",
 
+      activeFilters: "已套用篩選",
+      clearAll: "清除全部",
+
       review: "複習錯題",
       practiceMistakes: "只練錯題",
       practiceMistakesCount: "練習 {count} 題錯題",
@@ -1935,6 +1961,14 @@ const translations = {
       totalMistakes: "錯題總數",
       topicsToFocus: "需加強主題",
       repeatedMistakes: "重複錯題",
+
+      customReview: "自訂重溫",
+      customReviewSubtitle: "設定你的練習時段",
+      sessionPreview: "練習預覽",
+      willPractice: "本次練習",
+      masteryBreakdown: "分佈",
+      custom: "自訂",
+      timerSettings: "計時",
 
       configurePractice: "設定練習",
       numberOfQuestions: "題數",

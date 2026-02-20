@@ -1,0 +1,490 @@
+🧪
+ChemCity
+The Alchemist's Lab
+Project Master Plan & AI Prompter Handoff Document
+Version 3.0 — Slim cache, server timestamps, honest limits, coder handoff protocol
+Single source of truth for ChemCity. Every AI coder must read this before writing any code. Covers: goals, architecture, the two-tier item cache, all 8 places & skills, technical safeguards, phase plan, risk analysis with real-world number stories, and the mandatory coder handoff protocol.
+
+Stack: React + Vite + TypeScript   Backend: Firebase / Firestore   Deploy: Vercel   Data: Excel → JSON → Firestore
+
+0. Coder Handoff Protocol — READ THIS FIRST
+🔴  MANDATORY FOR ALL AI CODERS: When you finish your phase you MUST produce a Phase Handoff Summary using the template below. The project owner collects all summaries and attaches them when briefing the next coder. This is the only way to maintain continuity across AI sessions.
+
+0.1 Handoff Summary Template
+Save as HANDOFF_PHASE[X].md — fill in every section, skip nothing:
+# ChemCity — Phase [X] Handoff Summary
+Completed by: [AI model / session date]
+Phase: [e.g. Phase 1 — Core Game Logic]
+
+## What I Built
+[Every file created or significantly changed]
+[Every function / component / Cloud Function added]
+
+## What I Changed from the Master Plan
+[Each deviation: what changed, why, impact on future phases]
+[If none: write 'No deviations from master plan.']
+
+## Known Issues / Incomplete Work
+[Anything broken, half-done, or skipped]
+[Any TODO comments left in code]
+
+## Decisions Future Coders Must Know
+[e.g. 'Used Zustand for game state — see /src/store/chemcityStore.ts']
+
+## Files the Next Coder Must Read First
+[3–5 most important files for the next phase]
+
+## What Must NOT Be Changed (Locked-In Contracts)
+[Firestore field names, item IDs, interfaces now in production]
+[Breaking these corrupts existing user data]
+
+## Suggested First Steps for Next Phase
+[2–3 concrete first actions to hit the ground running]
+
+0.2 How the Project Owner Uses Summaries
+1.	Receive HANDOFF_PHASE[X].md from the AI coder who just finished
+2.	Store it in /docs/handoff/ in the repo
+3.	When briefing the next AI coder: attach THIS master plan PLUS all previous handoff summaries in order
+4.	Tell the next coder: read master plan first, then all handoff summaries, then describe your plan before writing code
+
+Example briefing message to the next AI coder:
+"Read these in order before writing any code:
+   1. ChemCity_Master_Plan_v3.docx
+   2. HANDOFF_PHASE0.md
+   3. HANDOFF_PHASE1.md  [all available summaries in order]
+We are starting Phase 2. Task list is in Section 3.3 of the master plan.
+Describe your implementation plan before writing any code."
+ 
+1. Project Overview
+1.1 What Is ChemCity?
+ChemCity is a collectible card game (CCG) layer on top of an existing Hong Kong DSE chemistry study platform. Students earn Chem Cards — chemistry-themed items like H₂O, HCl, Fe, polyethene — by purchasing them from the ChemStore using Coins or Diamonds. Cards are placed into 8 virtual city locations, each with a passive skill bonus that rewards the student with currency or quiz diamond boosts — creating a loop between studying (earning currency) and card collecting (spending currency for bonuses).
+
+1.2 Currency & Card Acquisition
+Currency	How Earned	How Spent
+Coins 🪙	Quiz correct answers, daily login bonus, passive Garden income, achievements, streaks	Buy cards from ChemStore, unlock places, unlock coin-gated slots
+Diamonds 💎	Daily login (boosted by Toilet skill), quiz completion rewards (boosted by Kitchen/School/Beach skills)	Buy premium cards from ChemStore, unlock diamond-gated premium slots
+
+🃏  CORE RULE: Cards come EXCLUSIVELY from ChemStore purchases. Quizzes earn Coins and Diamonds only — never cards directly. Future modes (missions, events) may add other paths but must be fully designed before implementation.
+
+1.3 Core Game Loop
+5.	Answer quizzes → earn Coins and Diamonds
+6.	Log in daily → earn bonus Diamonds (boosted by Toilet skill)
+7.	Visit ChemStore → buy Chem Cards with Coins/Diamonds
+8.	Open ChemCity map → equip cards into location slots
+9.	Location skills activate: passive income, diamond multipliers, shop discounts
+10.	More cards equipped → more currency → more cards → stronger bonuses
+
+1.4 The Golden Rule
+⚠️  The existing platform already uses ~400 Firestore reads/day per user. ChemCity must add no more than 100 reads/day per user. Static data is cached in localStorage. User game state is one document plus one sub-document — read once on login.
+ 
+2. System Architecture
+2.1 Firestore Collections
+Collection	Type	Cached?	Purpose
+items/{itemId}	Static	localStorage 7 days (slim fields only)	Full card catalog — slim fields cached, full detail fetched on card tap
+places/{placeId}	Static	localStorage 7 days	8 places: slots, costs, skill formulas
+collections/{colId}	Static	localStorage 7 days	Achievement card groups
+topics/{topicId}	Static	localStorage 7 days	DSE curriculum topic list
+meta/cacheVersion	Static	Not cached — checked on every app open	Single small doc — version number for cache invalidation
+users/{userId}	Dynamic	In memory per session	currencies, ownedItems, equipped, activeBonuses, unlocks, streaks
+users/{userId}/progress/data	Dynamic	In memory per session	collections progress + topicMastery — kept separate to protect 1MB doc limit
+
+2.2 Two-Tier Item Document — Slim vs Full
+This is the key design decision that keeps localStorage well under 5MB. Items have two representations:
+Tier	When Used	Fields Included	Typical Size
+SlimItemDocument	Cached in localStorage. Used for: ChemStore listing, inventory grid, equip picker, bonus calculation	id, name, chemicalFormula, emoji, rarity, rarityValue, placeId, validSlots, shopData, skillContribution, collections (IDs only), deprecated	~170 bytes/card
+FullItemDocument	Fetched from Firestore only when student taps a card to open detail view — rare action	Everything in Slim PLUS: displayName, description, topicConnections, educational (funFact, everydayUses), albumMetadata, cardBackground, imageUrl	~800 bytes/card
+
+SLIM_FIELDS (defined in /src/lib/cache.ts — only these are stored in localStorage):
+id, name, chemicalFormula, emoji, rarity, rarityValue,
+placeId, validSlots, shopData, skillContribution,
+collections (array of IDs only), deprecated
+
+NOT cached — fetched on card detail open only:
+displayName, description, cardBackground, imageUrl,
+topicConnections, educational (funFact, everydayUses, category),
+albumMetadata (flavorText, sortOrder, tags)
+
+2.3 User Document — Main + Sub-Document Split
+collections progress and topicMastery are moved to a sub-document to keep the main user doc lean and protect the 1MB Firestore document limit.
+Location	Fields Stored	When Read
+users/{userId}	currencies, ownedItems, equipped, activeBonuses, unlockedPlaces, unlockedSlots, extraSlotsBudget, passiveIncome.lastCollected, streaks, cacheVersion	+1 read on login
+users/{userId}/progress/data	collections: { [colId]: {collected,total,completed,rewardClaimed} }  topicMastery: { [topicId]: {quizzesCompleted, correctAnswers, totalQuestions} }	  +1 read on login
+
+2.4 cacheVersion — How Cache Invalidation Works
+cacheVersion is a single integer stored in Firestore at meta/cacheVersion. When the seed script runs after an Excel import, it automatically reads the current version, increments it by 1, and writes it back. The client compares its locally cached version number to the Firestore version on every app open. If they differ, it fetches fresh data and updates localStorage.
+
+⚠️  When cacheVersion MUST be bumped:
+✅ AUTOMATIC: Running seed-firestore.ts bumps it automatically.
+   You never need to touch the Firebase console after a normal import.
+
+⚠️  MANUAL BUMP REQUIRED if you:
+   - Directly edit any item document in the Firebase console
+   - Directly edit any place document in the Firebase console
+   - Fix a price, name, or formula without running the seed script
+
+How to manually bump:
+   Firebase Console → Firestore → meta → cacheVersion → version field
+   Increment the number by 1 and save.
+
+Consequence of forgetting: students see stale data for up to 7 days.
+This causes silent wrong data (wrong prices, missing cards) — no crash.
+
+2.5 Server-Side Passive Income — Clock Manipulation Prevention
+How collectPassiveIncome() Cloud Function works:
+1. Server reads user.passiveIncome.lastCollected from Firestore
+2. Server gets current time from Firestore server timestamp (NOT client clock)
+3. elapsed = serverNow - lastCollected
+4. Cap elapsed at 24 hours (regardless of actual offline time)
+5. coins = (passiveBaseRate × passiveBoostMultiplier) × elapsed_in_hours
+6. Add coins to currencies.coins, write lastCollected = serverNow
+
+The client displays a running ticker for smooth UX — but that number
+is purely cosmetic. Changing your device clock to 3 years ahead
+makes the display show a huge number, but the server awards only
+legitimate income based on the real Firestore timestamp.
+Clock manipulation earns nothing. Cost: 0 extra reads.
+
+2.6 The 8 Places & Skills
+#	Place	ID	Slots	Unlock Cost	Skill
+1	🔬 Lab	lab	12 (6 free)	FREE	Multiplies Garden passive income rate
+2	🍳 Kitchen	kitchen	8 (4 free)	500 coins	Flat diamond bonus per quiz completion
+3	🚽 Toilet	toilet	8 (4 free)	300 coins	Boosts daily login diamond reward
+4	🌿 Garden	garden	8 (4 free)	200 coins	Base passive coin income (coins/hr)
+5	⛽ Gas Station	gas_station	8 (4 free)	600 coins	Unlocks extra slots across ALL places
+6	🛍️ Boutique	lifestyle_boutique	6 (4 free)	400 coins	% discount in ChemStore
+7	🏖️ Beach	beach	8 (4 free)	350 coins	% chance to double quiz diamonds
+8	🏫 School	school	10 (5 free)	150 coins	Diamond multiplier on quiz rewards
+
+2.7 Skill Formulas
+Place	Formula	Example
+Garden (passive base)	coins_per_hour = total_bonus × 10	Bonus 32 → 320 coins/hr
+Lab (passive multiplier)	multiplier = 1 + (total_bonus × 0.1)	Bonus 12 → 2.2× — applied to Garden rate
+Kitchen (quiz flat bonus)	bonus_diamonds = total_bonus × random(1,3)	Bonus 16 → +16 to +48 per quiz
+School (quiz multiplier)	multiplier = 1 + (total_bonus × 0.1)	Bonus 20 → 3× all quiz diamonds
+Beach (double chance)	chance% = min(total_bonus × 5, 100)	Bonus 20 → always double quiz diamonds
+Toilet (daily login)	diamonds = 5 + (total_bonus × 2)	Bonus 24 → 53 diamonds per login
+Gas Station (extra slots)	extra_slots_count = total_bonus	Bonus 16 → 16 bonus slots to distribute
+Boutique (discount)	discount% = min(total_bonus × 2, 50)	Bonus 24 → 48% off all purchases
+ 
+3. Development Phase Plan
+Phase	Name	Est. Time	Key Deliverables
+P0	Foundation & Data Seeding	1–2 weeks	Repo, Firebase, Excel→Firestore pipeline with auto-cacheVersion bump, slim item seeding
+P1	Core Game Logic	2 weeks	Bonus engine, server-side passive income, purchaseCard, sub-document, Cloud Functions, tests
+P2	UI — Map & Collection	2–3 weeks	City map, place views, slot grid, card inventory, slim load + full item on detail tap
+P3	Quiz Currency Rewards	1 week	Quiz hooks, diamond chain, coin awards, daily login bonus UI
+P4	ChemStore & Unlocks	2 weeks	ChemStore browse/buy, Boutique discount, place & slot unlock flows
+P5	Polish & Launch	2 weeks	Collections album, achievements, animations, onboarding, Firestore audit, Vercel deploy
+
+Phase 0 — Foundation & Data Seeding
+Goal: Zero UI. Scaffold the project, configure Firebase, build the Excel → slim JSON → Firestore pipeline with automatic cacheVersion bumping.
+
+P0 Key Tasks
+11.	Initialise Vite + React + TypeScript, connect Firebase
+12.	Add Firestore security rules for static collections (read-only for auth users)
+13.	Create meta/cacheVersion document in Firestore starting at version 1
+14.	Create ChemCity_Items.xlsx with all columns (see Section 8 for reference)
+15.	Write /scripts/excel-to-json.ts — outputs slim-compatible JSON per place (excludes non-slim fields)
+16.	Write /scripts/seed-firestore.ts with auto-incrementing cacheVersion after every run
+17.	Write /src/lib/cache.ts — fetchSlimItems(), fetchFullItem(), fetchPlaces() with version-aware caching
+18.	Write estimateCacheSize() utility in cache.ts for localStorage monitoring
+19.	Seed all 8 place documents, topics, starter collections, all Chem Cards
+20.	Set up Vercel project, env vars, GitHub CI/CD
+21.	Write README with setup guide, env var list, and import workflow
+22.	Produce HANDOFF_PHASE0.md
+
+Phase 1 — Core Game Logic
+Goal: All business logic as TypeScript + Cloud Functions. No UI. Full unit tests for all formulas. Server-side passive income. Sub-document initialisation.
+
+P1 Key Tasks
+23.	Extend user TypeScript types (UserChemCityData + UserProgressData sub-doc)
+24.	Write initChemCityUser(userId) — creates both user doc and progress sub-document with defaults
+25.	Write computeActiveBonuses(equipped, slimItems) — recalculates all 8 bonus values
+26.	Write equipCard / unequipCard — validate ownership + slotId, write, recompute bonuses
+27.	Write collectPassiveIncome — uses Firestore server timestamps, never trusts client clock
+28.	Write getDailyLoginBonus — Toilet formula with server timestamp for daily gate
+29.	Write purchaseCard — validate item exists, not deprecated, user has funds, add to ownedItems
+30.	Write unlockPlace / unlockSlot — validate balance, write, update unlocked fields
+31.	Write all quiz formula functions (getQuizDiamonds, Kitchen, School, Beach chain)
+32.	Write getShopPrice — applies Boutique discount from activeBonuses
+33.	Deploy ALL write operations as Firebase Cloud Functions (callable)
+34.	Unit tests: every formula, edge cases, cap enforcement (Boutique 50% cap, Beach 100% cap)
+35.	Produce HANDOFF_PHASE1.md
+
+Phase 2 — UI: Map & Card Collection
+Goal: The main ChemCity interface. City map, place views, card inventory, and equip interactions. Uses slim item data — full item fetched only on card detail tap.
+
+P2 Key Tasks
+36.	ChemCityMap — 8 place tiles, passive income ticker, currency bar, locked place overlay
+37.	PlaceView — slot grid, skill summary header, locked slot tiles with cost + unlock button inline
+38.	CardInventory — owned cards grid, filter by place/rarity, shows equipped status
+39.	CardPicker — bottom sheet: valid cards for the selected slot (from slim data)
+40.	ChemCard component — rarity gradient background, formula, emoji, rarity badge (slim data sufficient)
+41.	Card detail: on tap call fetchFullItem(itemId) → show educational content, topic connections, fun fact
+42.	Add loading skeleton for card detail (one Firestore read per tap — rare)
+43.	PassiveIncomeCollector — client-side ticker display, server-validates on Collect tap
+44.	CurrencyBar — persistent coins + diamonds header across all ChemCity screens
+45.	Produce HANDOFF_PHASE2.md
+
+Phase 3 — Quiz Currency Rewards
+Goal: Quiz completion awards Coins and Diamonds (using the full bonus chain). NO card drops from quizzes.
+
+P3 Key Tasks
+46.	Hook into existing quiz completion event/callback
+47.	Implement diamond chain: base + Kitchen flat, × School multiplier, Beach double chance roll
+48.	Award coins per correct answer + diamonds per quiz via Cloud Functions
+49.	Post-quiz reward screen: animated coin/diamond counter — NO card reveal (cards come from ChemStore only)
+50.	Daily login bonus UI: show reward on first daily open, update streak with server timestamp
+51.	Update topicMastery in progress sub-document on quiz completion
+52.	Produce HANDOFF_PHASE3.md
+
+Phase 4 — ChemStore & Unlocks
+Goal: ChemStore is the ONLY way to get cards. Build the full browse/buy flow with Boutique discount.
+
+P4 Key Tasks
+53.	ChemStore UI — browsable catalog from slim item cache, filter by place/rarity/price
+54.	On card tap in store → fetchFullItem() → show full card info before purchase confirmation
+55.	Coin and diamond purchase flows → purchaseCard Cloud Function → update inventory
+56.	'Already Owned' badge on owned cards — disable purchase button
+57.	Apply activeBonuses.shopDiscountPercent to all displayed prices
+58.	Place Unlock flow — confirmation modal with cost
+59.	Slot Unlock flow — inline in PlaceView, with cost badge
+60.	Gas Station extra-slot distributor UI — shows all locked slots, player picks where to spend bonus
+61.	Premium diamond slot unlock flows (Bridge, Power Plant, Lighthouse, Jewelry Case, Electronics Kiosk)
+62.	Produce HANDOFF_PHASE4.md
+
+Phase 5 — Polish & Launch
+Goal: Collections album, achievements, animations, onboarding, Firestore audit, production deploy.
+
+P5 Key Tasks
+63.	Collections album — completion %, animated Complete badge, claim reward
+64.	Achievements and streak UI with streak freeze consumable
+65.	Card animations: purchase reveal flip, Legendary shimmer gradient
+66.	Onboarding: 3-step tutorial on first ChemCity visit
+67.	Run estimateCacheSize() — log result, verify well under 5MB, add to handoff summary
+68.	Firestore read count audit — verify <100 reads/day per user
+69.	Admin monitoring: read counts per day, popular cards, active users
+70.	Full Vercel production deploy, smoke test, user acceptance testing
+71.	Produce HANDOFF_PHASE5.md — final maintenance handoff for any future coders
+ 
+4. System Risks, Pros & Cons — Honest Assessment
+
+4.1 Genuine Strengths
+Strength	Why It Matters	Confidence
+Very cheap to run	500 students × 5 reads/day = 2,500 ChemCity reads/day. Adds less than 2% to the existing platform's reads. Near-zero marginal cost.	High
+Fast loading for students	Card catalog loads from localStorage in milliseconds — no spinner every time they open ChemStore or inventory.	High
+Simple game state	Full game state in 2 reads (user doc + sub-doc). No complex queries or multi-doc joins. Easy to debug.	High
+Clock manipulation prevented	Server-side timestamp in collectPassiveIncome means changing device clock earns nothing. 0 extra reads.	High
+localStorage failure is graceful	If localStorage is full or unavailable, app silently falls back to Firestore. No error shown to student.	High
+Data updates are safe	seed-firestore.ts auto-bumps cacheVersion. Teacher edits Excel → runs script → all students get fresh data next open.	High
+localStorage is very safe	Slim items at ~170 bytes/card. 300 cards = ~50KB. Even 1,000 cards = ~170KB. 5MB limit is not a real concern.	High
+1MB doc limit is very safe	Realistic user doc is ~10–15KB. Would need 70,000+ card IDs to approach 1MB.	High
+
+4.2 Real Risks and How They Are Addressed
+Risk	Severity	How It Is Addressed
+Stale card data after a manual Firestore edit	Low–Medium	cacheVersion auto-bumped by seed script. Risk only exists if teacher directly edits Firestore without bumping version. Section 2.4 documents exactly when and how to manually bump.
+7-day window for urgent price fixes	Low	Document the manual bump procedure (Section 2.4). For critical fixes: bump manually + post a message to students to open the app and refresh.
+Client-side clock manipulation	Low	Server-side Firestore timestamp in collectPassiveIncome Cloud Function. Display is cosmetic. Payout is server-validated. Cannot be gamed.
+Currency cheating	Medium	All currency balance changes go through Cloud Functions — client can never directly write to currencies. Standard for any game with in-app currency.
+Breaking existing user data on updates	Medium	Never delete Firestore item documents — mark deprecated:true. All Firestore field names are locked once users have data. Document locked fields in each handoff summary.
+Firestore read budget overrun	Low	fetchSlimItems caches for 7 days. Login = 2 reads (user doc + progress). Static data refetch = ~3 reads once per 7 days. Total: 3–6 reads/day per user.
+
+4.3 Remaining Honest Cons (With Suggested Fixes)
+Con	Reality	Suggested Future Fix
+Manual cacheVersion bump required for direct Firestore edits	If teacher edits Firestore directly and forgets to bump, students get wrong data silently for up to 7 days.	Add a Cloud Function triggered by writes to items/* that auto-bumps cacheVersion. Eliminates human error entirely.
+No live catalog updates (flash sales, countdown timers)	The 7-day TTL cache means real-time catalog changes are not visible immediately.	Design an additive feature: a Firestore listener on a small active_sale document, not the full catalog. Main cache stays lazy.
+Progress sub-document is +1 read	Separating collections/topicMastery adds one extra read on login. Total login is now 2 reads instead of 1.	Deliberate tradeoff. 1MB protection is worth the extra 1 read. Total is still 2 reads — well within the 100/day budget.
+estimateCacheSize not auto-monitored	Cache size is not tracked in production unless someone runs it manually.	Add a log line in seed-firestore.ts: print estimated cache size = item_count × 170 bytes. Serves as a health check on every import.
+ 
+5. Real-World Stories with Exact Numbers
+This section explains what the three key limits actually mean, with concrete stories. Many of these limits sound scary but are not real threats for this app at realistic scale.
+
+5.1 The 50,000 Reads — What Is It and Who Does It Affect?
+What this number actually means:
+Firestore free tier = 50,000 document reads per day across the ENTIRE project.
+This means: total reads from ALL students combined.
+If you exceed it, Firestore does NOT stop — it just starts billing.
+Paid tier rate: approx $0.06 per 100,000 reads = $0.0000006 per read.
+
+Story: Mrs Chan's DSE Class of 200 Students
+Mrs Chan's school uses the platform for Form 5 chemistry. 200 students are actively using ChemCity. The existing quiz platform uses ~400 reads/day per student for its own features. Let's calculate everything:
+Scenario	Reads per Student / Day	Total: 200 Students	Reality Check
+Existing platform (already live)	~400 reads/day	~80,000 reads/day	Already above the free tier — school is on a paid plan
+ChemCity WITHOUT any caching (worst case)	~200 reads/day	~40,000 reads/day	Fetching all 300 items every session, 3 sessions/day = 900 item reads alone
+ChemCity WITH this architecture	~3–6 reads/day	~600–1,200 reads/day	Login(1) + sub-doc(1) + occasional cache refresh(1)
+Total cost WITH ChemCity optimised	~403–406 reads/day	~81,000 reads/day	Less than 1.5% increase from adding all of ChemCity
+
+The school is already on a paid plan because the existing platform alone exceeds the free tier for a class of 125+ students. ChemCity's goal is not to stay free — it is to add as little read cost as possible to an already-paid plan. With this architecture, ChemCity adds roughly $0.05/day for 200 students. Negligible.
+
+5.2 The 1MB Firestore Document Limit — Per User or Total?
+The 1MB limit is per individual document — meaning per single student's user document. Firestore can hold millions of documents and terabytes of total data. This limit has nothing to do with total storage size. It is purely about how much data fits in one document for one student.
+
+Story: Mei Buys Every Single Card in the Game
+Mei is the most dedicated student. She grinds until she has bought every card in the entire catalog. At a generous future scale of 400 cards, here is her actual user document:
+Field in User Document	Realistic Size	Notes
+ownedItems — 400 card ID strings	~6,000 bytes (6 KB)	Each ID is ~15 chars: 'item_nacl', 'item_water' etc.
+equipped — 8 places × 10 slots	~2,000 bytes (2 KB)	SlotId + itemId strings per equipped slot
+activeBonuses — 8 numbers	~200 bytes	Just 8 numeric fields
+unlockedPlaces + unlockedSlots	~1,000 bytes (1 KB)	Arrays of short string IDs
+currencies — 2 numbers	~50 bytes	Just coins and diamonds values
+streaks, timestamps, metadata	~500 bytes	A few numbers and Firestore timestamps
+TOTAL for Mei (400 cards owned)	~10,000 bytes = ~10 KB	1 MB = 1,024 KB = 1,048,576 bytes. Mei uses about 1% of the limit.
+
+You would need approximately 70,000 card IDs in ownedItems to approach the 1MB limit. The DSE chemistry curriculum will never have 70,000 cards. The sub-document split is good practice but the 1MB limit is not a real concern for this app.
+
+What WOULD hit 1MB — mistakes to avoid:
+❌ Storing full card objects (not just IDs) in ownedItems:
+   400 cards × 800 bytes = 320KB. Getting concerning.
+
+❌ Storing full quiz history (every question answered) in user doc:
+   10,000 questions × 100 bytes = 1MB. Would break.
+
+❌ Storing base64-encoded image data in the user document.
+
+✅ This architecture stores only string IDs and numbers — never full objects.
+
+5.3 The 5MB localStorage Limit — Per Device, Not Per User
+What this number means:
+Each browser gives each website (domain) ~5MB of localStorage.
+This is per device, per browser — NOT shared across students.
+Each student's phone has its own independent 5MB allocation.
+If a write fails (quota exceeded), the app logs a warning and falls
+back to Firestore reads. It does NOT crash or lose data.
+
+Story: How Big Is Mei's Slim Items Cache?
+With slim-only caching (educational content excluded from localStorage), here is the actual storage used at different catalog sizes:
+Catalog Size	Bytes per Slim Card	Total Cache	% of 5MB Budget
+100 cards (starter)	~170 bytes	~17,000 bytes (17 KB)	0.3%
+300 cards (full v1 catalog)	~170 bytes	~51,000 bytes (51 KB)	1.0%
+500 cards (expansion)	~170 bytes	~85,000 bytes (85 KB)	1.7%
+1,000 cards (very large)	~170 bytes	~170,000 bytes (170 KB)	3.4%
+If FULL items were cached	~800 bytes	300 cards = 240 KB	4.8% — dangerously close
+
+With slim caching, ChemCity uses under 2% of the 5MB budget even at 500 cards. The estimateCacheSize() utility in cache.ts can be called from any admin screen to monitor this. It has never been a real issue for apps of this scale.
+
+5.4 Summary Table — Are These Limits Real Threats?
+Limit	Definition	Real threat for v1?	At 10× scale?	Safety Built In
+50,000/day (free tier)	Total reads across ALL users per day	Already exceeded by existing platform alone — paid plan	No — ChemCity adds <2% to existing reads	7-day localStorage cache, 2 reads per login
+1MB per user doc	Max size of ONE student's user document	No — realistic doc is ~10KB	No — needs 70,000+ card IDs	Progress moved to sub-document
+5MB localStorage	Per device per domain cache limit	No — slim cache is ~51KB for 300 cards	No — slim cache is ~170KB at 1,000 cards	Slim item caching, estimateCacheSize() monitoring, graceful fallback
+ 
+6. Spec Compliance
+6.1 Kept Exactly from Original Spec
+•	All 8 place IDs, slot IDs, slot unlock costs
+•	All 8 skill formulas — every number preserved
+•	Two-currency system: Coins + Diamonds
+•	Passive income: Garden base × Lab multiplier, 24h cap, manual collect
+•	Rarity system: common=1, rare=2, epic=3, legendary=4
+•	Firestore security rules pattern
+•	100 reads/day golden rule
+
+6.2 What Changed and Why
+Item	Original Spec	v3 Current	Reason
+Card acquisition	Cards dropped from quiz answers	ChemStore purchase only	Owner clarification
+quizDropTopics / dropRate fields	On ItemDocument	REMOVED	No quiz drops — meaningless fields
+Item caching	Full item cached	Slim fields only; full fetched on detail tap	5MB protection + faster load
+collections + topicMastery	In main user document	Moved to sub-document	1MB protection
+Passive income payout	Client-side calculation	Server-side Firestore timestamp	Clock manipulation prevention
+cacheVersion bump	Manual reminder	Auto-incremented by seed script	Eliminates human error
+Boutique discount	Uncapped	Capped at 50%	Future balance protection
+Write security	Client writes	Cloud Functions only	Prevents currency cheating
+
+6.3 Out of Scope for v1 — Do Not Implement
+These must be fully designed before any coder touches them. Do not stub, partially implement, or assume how they will work.
+•	Mission-based card rewards — needs its own mission system design first
+•	Event card drops — needs event system design first
+•	New game modes awarding cards — needs full mode design first
+•	Real-money diamond purchases — stub UI placeholder only, no implementation in v1
+•	Card trading, PvP, leaderboards — not in v1
+ 
+7. AI Prompter Guide
+7.1 Prompt Template
+Use this when starting a new phase with an AI coder:
+Read these documents before writing any code:
+  1. ChemCity_Master_Plan_v3.docx
+  2. HANDOFF_PHASE0.md  [attach all available summaries in order]
+
+We are starting Phase [X]: [Phase Name].
+Stack: React + Vite + TypeScript, Firebase Firestore, Vercel.
+
+Key rules for this project:
+  - Cards come from ChemStore purchases ONLY — no quiz drops
+  - Slim item fields only in localStorage; full item fetched on card detail tap
+  - Passive income display is client-side; payout is server-side (Firestore timestamp)
+  - cacheVersion is auto-bumped by seed script; manual bump required for direct Firestore edits
+  - All currency writes through Cloud Functions
+  - Progress (collections, topicMastery) in sub-document users/{userId}/progress/data
+
+Deviations from master plan in prior phases: [list from previous handoff summaries]
+Your tasks for Phase [X]: [paste task list from Section 3]
+
+Before writing any code: describe your implementation plan.
+After completing your phase: produce HANDOFF_PHASE[X].md using template in Section 0.1.
+
+7.2 Critical Rules — Non-Negotiable
+•	NEVER implement quiz card drops — ChemStore is the only path in v1
+•	NEVER cache FullItemDocument in localStorage — slim fields only
+•	NEVER calculate passive income payout on the client — server Firestore timestamp only
+•	NEVER write currencies from the client — Cloud Functions only
+•	ALWAYS recompute activeBonuses after every equip/unequip and persist to user doc
+•	ALWAYS produce HANDOFF_PHASE[X].md at the end of your phase using Section 0.1 template
+•	REMIND if manually editing Firestore: bump meta/cacheVersion manually (see Section 2.4)
+•	LOG estimateCacheSize() result in your handoff summary after Phase 5
+
+7.3 Key Files
+Path	What It Contains
+/src/lib/cache.ts	fetchSlimItems(), fetchFullItem(), fetchPlaces(), estimateCacheSize(), invalidateCache()
+/src/lib/chemcity/types.ts	SlimItemDocument, FullItemDocument, UserChemCityData, UserProgressData, CacheManifest
+/src/lib/chemcity/bonuses.ts	computeActiveBonuses() and all 8 skill formula functions
+/src/lib/chemcity/income.ts	collectPassiveIncome() — server-side Firestore timestamp version
+/src/lib/chemcity/shop.ts	purchaseCard(), unlockPlace(), unlockSlot(), getShopPrice() with Boutique discount
+/functions/	All Cloud Functions: equipCard, purchaseCard, collectIncome, claimDailyBonus, quizReward
+/scripts/seed-firestore.ts	Seed script — uploads items, auto-increments cacheVersion
+/scripts/excel-to-json.ts	Converts ChemCity_Items.xlsx → slim-compatible /data/{placeId}.json
+/docs/handoff/	HANDOFF_PHASE0.md, HANDOFF_PHASE1.md, ... — one file per completed phase
+ 
+8. Excel Data Management
+8.1 Column Reference
+Col	Field	Example	Notes
+A	id	item_nacl	Unique. Prefix item_. snake_case. Never reuse or delete.
+B	name	Salt	Display name (slim — cached)
+C	chemicalFormula	NaCl	Unicode subscripts. (slim — cached)
+D	displayName	The Seasoning of Life	Card subtitle — full detail screen only, not cached
+E	emoji	🧂	One emoji placeholder (slim — cached)
+F	rarity	common	common / rare / epic / legendary (slim — cached)
+G	placeId	kitchen	Must exactly match one of the 8 place IDs (slim — cached)
+H	validSlots	pantry,spice_rack	Comma-separated slot IDs within that place (slim — cached)
+I	collections	ionic,everyday	Comma-separated collection group IDs (slim — cached as IDs only)
+J	topicIds	topic_001,topic_004	For topicConnections in full detail — not cached
+K	coinCost	150	ChemStore coin price. Blank = not for coin purchase. (slim — cached)
+L	diamondCost		ChemStore diamond price. Blank = not for diamond purchase. (slim — cached)
+M	category	compound	element/compound/mixture/process — full detail only, not cached
+N	funFact	Salt was once used as currency...	Full detail screen only — not in slim cache
+O	flavorText	The oldest trade good...	Album view — not cached
+P	everydayUses	Cooking,preserving,de-icing	Full detail only — comma-separated, not cached
+Q	deprecated	FALSE	Set TRUE to hide. NEVER delete the row.
+
+8.2 Import Workflow
+After editing ChemCity_Items.xlsx:
+1. Save the Excel file
+   ⚠️  Never delete rows — set column Q (deprecated) = TRUE to hide a card
+
+2. Run:  npx ts-node scripts/excel-to-json.ts
+   → Creates /data/items/{placeId}.json with slim-compatible fields only
+   → Columns D, J, M, N, O, P are excluded from slim JSON
+      (they go into Firestore full item doc but not the localStorage cache)
+
+3. Run:  npx ts-node scripts/seed-firestore.ts
+   → Uploads all items to Firestore (creates or merges)
+   → Automatically reads current cacheVersion, increments by 1, writes back
+   → Prints: 'cacheVersion bumped to X — all students get fresh data next open'
+
+4. Verify in Firebase console that new items appear correctly
+
+⚠️  If you skip the script and edit Firestore directly:
+   You MUST manually bump meta/cacheVersion (see Section 2.4).
+   If you forget: students see stale data silently for up to 7 days.
+
+
+ChemCity — The Alchemist's Lab
+Master Plan v3.0  |  Slim cache. Server timestamps. Honest limits. Coders leave handoffs.
+When in doubt — read the master plan and all previous handoff summaries first.

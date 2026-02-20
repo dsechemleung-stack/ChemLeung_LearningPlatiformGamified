@@ -1,0 +1,2775 @@
+// MistakeNotebookPage.jsx - Spaced Repetition Integration
+import React, {
+  useState, useEffect, useMemo, useCallback, useRef,
+} from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import ChemistryLoading from '../components/ChemistryLoading';
+import { quizService } from '../services/quizService';
+import { quizStorage } from '../utils/quizStorage';
+import { useFloating, offset, flip, shift, autoUpdate } from '@floating-ui/react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { db } from '../firebase/config';
+import app from '../firebase/config';
+import { collection, doc, getCountFromServer, getDoc, getDocs, limit, orderBy, query, startAfter, where, writeBatch } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { formatHKDateKey } from '../utils/hkTime';
+import { getNow } from '../utils/timeTravel';
+import {
+  BookOpen, ArrowLeft, Play, AlertCircle, Target,
+  CheckCircle, Filter, ChevronDown, Calendar, Hash, Tag,
+  Clock, Zap, TrendingUp, Brain, BarChart2, Layers, X,
+  AlertTriangle, Flame, Star, PlusCircle, Wand2, Eye, EyeOff,
+  Grid3x3, List as ListIcon, Command, Archive, Sparkles,
+  ChevronRight, Maximize2, Check, Activity, LineChart, SlidersHorizontal,
+} from 'lucide-react';
+
+import { calendarService } from '../services/calendarService';
+import { srsService } from '../services/srsService';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════════════════════════
+const MASTERY_THRESHOLD = 3;
+const ERROR_TYPES = [
+  { value: 'misread', labelKey: 'notebook.errorTypeMisread', color: 'blue' },
+  { value: 'calculation', labelKey: 'notebook.errorTypeCalculation', color: 'red' },
+  { value: 'conceptual', labelKey: 'notebook.errorTypeConceptual', color: 'orange' },
+  { value: 'careless', labelKey: 'notebook.errorTypeCareless', color: 'yellow' },
+  { value: 'vocab', labelKey: 'notebook.errorTypeVocab', color: 'purple' },
+  { value: 'diagram', labelKey: 'notebook.errorTypeDiagram', color: 'pink' },
+];
+const MASTERY_LEVELS = {
+  not_in_srs:  { labelKey: 'notebook.masteryNotInSrs', color: 'slate' },
+  new:        { labelKey: 'notebook.masteryNew', color: 'red' },
+  progressing:{ labelKey: 'notebook.masteryDeveloping', color: 'amber' },
+  near:       { labelKey: 'notebook.masteryNear', color: 'yellow' },
+  archived:   { labelKey: 'notebook.mastered', color: 'green' },
+};
+
+function buildMistakeCountBaseConstraints({ userId, datePeriod, selectedTopics, selectedSubtopics, srsPresence }) {
+  const now = getNow();
+  const weekAgo = new Date(now);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const monthAgo = new Date(now);
+  monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+  const base = [collection(db, 'users', userId, 'mistakes')];
+
+  if (datePeriod === 'week') {
+    base.push(where('lastWrongAt', '>=', weekAgo.toISOString()));
+  } else if (datePeriod === 'month') {
+    base.push(where('lastWrongAt', '>=', monthAgo.toISOString()));
+  }
+
+  const topics = (Array.isArray(selectedTopics) ? selectedTopics : []).filter(Boolean);
+  const subs = (Array.isArray(selectedSubtopics) ? selectedSubtopics : []).filter(Boolean);
+
+  const canUseTopicsIn = topics.length >= 2 && topics.length <= 10;
+  const canUseSubtopicsIn = subs.length >= 2 && subs.length <= 10;
+
+  if (topics.length === 1) {
+    base.push(where('Topic', '==', topics[0]));
+  } else if (canUseTopicsIn) {
+    base.push(where('Topic', 'in', topics));
+  }
+
+  const topicUsesIn = canUseTopicsIn;
+  const topicUsesEq = topics.length === 1;
+
+  if (subs.length === 1) {
+    base.push(where('Subtopic', '==', subs[0]));
+  } else if (canUseSubtopicsIn && !topicUsesIn) {
+    base.push(where('Subtopic', 'in', subs));
+  }
+
+  return {
+    base,
+    needsClientTopicFilter: topics.length > 10,
+    needsClientSubtopicFilter: (subs.length > 10) || (canUseSubtopicsIn && topicUsesIn) || (!topicUsesEq && subs.length > 0 && !canUseSubtopicsIn),
+    needsClientSrsPresenceFilter: srsPresence !== 'all',
+    topics,
+    subs,
+  };
+}
+
+async function backfillMistakeSrsFromActiveCards(userId) {
+  const uid = String(userId || '');
+  if (!uid) return false;
+
+  const sessionKey = `mistake_srs_sync_active_v1_${uid}`;
+  try {
+    if (sessionStorage.getItem(sessionKey) === '1') return false;
+    sessionStorage.setItem(sessionKey, '1');
+  } catch {
+    // ignore
+  }
+
+  try {
+    const activeCards = await srsService.getActiveCards(uid, { limit: 800 });
+    if (!activeCards || activeCards.length === 0) return false;
+
+    const nowIso = new Date().toISOString();
+    let wrote = false;
+
+    for (let i = 0; i < activeCards.length; i += 450) {
+      const batch = writeBatch(db);
+      const slice = activeCards.slice(i, i + 450);
+      slice.forEach((c) => {
+        const qid = c?.questionId;
+        if (!qid) return;
+        let bucket = 'progressing';
+        if (c.status === 'new') bucket = 'new';
+        else if (c.status === 'learning') bucket = 'progressing';
+        else if (c.status === 'review') bucket = 'near';
+        else if (c.status === 'graduated') bucket = 'archived';
+
+        batch.set(
+          doc(db, 'users', uid, 'mistakes', String(qid)),
+          {
+            hasSrsCard: true,
+            srsIsActive: true,
+            srsStatus: c.status || null,
+            srsBucket: bucket,
+            srsCardId: c.id || null,
+            srsUpdatedAt: nowIso,
+            updatedAt: nowIso,
+          },
+          { merge: true }
+        );
+      });
+      await batch.commit();
+      wrote = true;
+    }
+
+    return wrote;
+  } catch (e) {
+    console.error('Failed to backfill mistakes from active SRS cards:', e);
+    return false;
+  }
+}
+
+async function backfillMissingTopicCaseForTopic(userId, topic) {
+  const uid = String(userId || '');
+  const t = String(topic || '');
+  if (!uid || !t) return false;
+
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'users', uid, 'mistakes'),
+        where('topic', '==', t),
+        limit(500)
+      )
+    );
+
+    const toFix = snap.docs
+      .map((d) => ({ ref: d.ref, data: d.data() }))
+      .filter((x) => !x?.data?.Topic);
+
+    if (toFix.length === 0) return false;
+
+    const nowIso = new Date().toISOString();
+    const batch = writeBatch(db);
+    toFix.slice(0, 450).forEach((x) => {
+      batch.set(
+        x.ref,
+        {
+          Topic: x?.data?.topic || t,
+          Subtopic: x?.data?.Subtopic ?? x?.data?.subtopic ?? null,
+          updatedAt: x?.data?.updatedAt || nowIso,
+        },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+    return true;
+  } catch (e) {
+    console.error('Failed to backfill missing Topic field for topic:', e);
+    return false;
+  }
+}
+
+async function backfillMissingLastWrongAtForTopic(userId, topic) {
+  const uid = String(userId || '');
+  const t = String(topic || '');
+  if (!uid || !t) return false;
+
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'users', uid, 'mistakes'),
+        where('Topic', '==', t),
+        limit(500)
+      )
+    );
+
+    const toFix = snap.docs
+      .map((d) => ({ ref: d.ref, data: d.data() }))
+      .filter((x) => !x?.data?.lastWrongAt);
+
+    if (toFix.length === 0) return false;
+
+    const nowIso = new Date().toISOString();
+    const batch = writeBatch(db);
+    toFix.slice(0, 450).forEach((x) => {
+      const fallback = x?.data?.lastAttempted || x?.data?.updatedAt || x?.data?.createdAt || nowIso;
+      batch.set(
+        x.ref,
+        {
+          lastWrongAt: fallback,
+          updatedAt: x?.data?.updatedAt || nowIso,
+        },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+    return true;
+  } catch (e) {
+    console.error('Failed to backfill missing lastWrongAt for topic:', e);
+    return false;
+  }
+}
+
+async function backfillMistakeSrsDefaults(userId, rows = []) {
+  const uid = String(userId || '');
+  if (!uid) return false;
+
+  const targets = (Array.isArray(rows) ? rows : []).filter((r) => {
+    const hasBucket = Object.prototype.hasOwnProperty.call(r || {}, 'srsBucket');
+    const hasHasSrs = Object.prototype.hasOwnProperty.call(r || {}, 'hasSrsCard');
+    const hasActive = Object.prototype.hasOwnProperty.call(r || {}, 'srsIsActive');
+
+    const hasTopic = Object.prototype.hasOwnProperty.call(r || {}, 'Topic');
+    const hasSubtopic = Object.prototype.hasOwnProperty.call(r || {}, 'Subtopic');
+    const hasLastWrongAt = Object.prototype.hasOwnProperty.call(r || {}, 'lastWrongAt');
+
+    const needsSrsDefaults = !(hasBucket && hasHasSrs && hasActive);
+    const needsTopicShape = !(hasTopic && hasSubtopic && hasLastWrongAt);
+    return needsSrsDefaults || needsTopicShape;
+  });
+
+  if (targets.length === 0) return false;
+
+  try {
+    const batch = writeBatch(db);
+    const nowIso = new Date().toISOString();
+    targets.slice(0, 450).forEach((r) => {
+      const qid = r?.questionId ?? r?.ID ?? r?.docId ?? r?.id;
+      if (!qid) return;
+
+      const topic = r?.Topic ?? r?.topic ?? null;
+      const subtopic = r?.Subtopic ?? r?.subtopic ?? null;
+      const lastWrongAt = r?.lastWrongAt ?? r?.lastAttempted ?? r?.updatedAt ?? nowIso;
+
+      batch.set(
+        doc(db, 'users', uid, 'mistakes', String(qid)),
+        {
+          hasSrsCard: r?.hasSrsCard === true,
+          srsIsActive: r?.srsIsActive === true,
+          srsStatus: r?.srsStatus ?? null,
+          srsBucket: r?.srsBucket ?? (r?.hasSrsCard ? 'progressing' : 'not_in_srs'),
+          srsCardId: r?.srsCardId ?? null,
+          srsUpdatedAt: nowIso,
+          Topic: topic,
+          Subtopic: subtopic,
+          lastWrongAt,
+          updatedAt: r?.updatedAt ?? nowIso,
+        },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+    return true;
+  } catch (e) {
+    console.error('Failed to backfill mistake SRS defaults:', e);
+    return false;
+  }
+}
+
+function buildMistakeIndexQueryConstraints({ userId, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence, cursor, pageSize }) {
+  const now = getNow();
+  const weekAgo = new Date(now);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const monthAgo = new Date(now);
+  monthAgo.setMonth(monthAgo.getMonth() - 1);
+
+  const base = [collection(db, 'users', userId, 'mistakes')];
+
+  if (datePeriod === 'week') {
+    base.push(where('lastWrongAt', '>=', weekAgo.toISOString()));
+  } else if (datePeriod === 'month') {
+    base.push(where('lastWrongAt', '>=', monthAgo.toISOString()));
+  }
+
+  const topics = (Array.isArray(selectedTopics) ? selectedTopics : []).filter(Boolean);
+  const subs = (Array.isArray(selectedSubtopics) ? selectedSubtopics : []).filter(Boolean);
+  const masteryLevels = (Array.isArray(selectedMasteryLevels) ? selectedMasteryLevels : []).filter(Boolean);
+
+  const canUseTopicsIn = topics.length >= 2 && topics.length <= 10;
+  const canUseSubtopicsIn = subs.length >= 2 && subs.length <= 10;
+  const canUseMasteryIn = masteryLevels.length >= 2 && masteryLevels.length <= 10;
+
+  if (topics.length === 1) {
+    base.push(where('Topic', '==', topics[0]));
+  } else if (canUseTopicsIn) {
+    base.push(where('Topic', 'in', topics));
+  }
+
+  const topicUsesIn = canUseTopicsIn;
+  const topicUsesEq = topics.length === 1;
+
+  if (subs.length === 1) {
+    base.push(where('Subtopic', '==', subs[0]));
+  } else if (canUseSubtopicsIn && !topicUsesIn) {
+    base.push(where('Subtopic', 'in', subs));
+  }
+
+  base.push(orderBy('lastWrongAt', 'desc'));
+  if (cursor) base.push(startAfter(cursor));
+  base.push(limit(pageSize));
+
+  return {
+    q: query(...base),
+    needsClientTopicFilter: topics.length > 10,
+    needsClientSubtopicFilter: (subs.length > 10) || (canUseSubtopicsIn && topicUsesIn) || (!topicUsesEq && subs.length > 0 && !canUseSubtopicsIn),
+    needsClientMasteryFilter: masteryLevels.length > 0,
+    needsClientSrsPresenceFilter: srsPresence !== 'all',
+    topics,
+    subs,
+    masteryLevels,
+  };
+}
+
+function matchesSrsPresence(row, srsPresence) {
+  if (srsPresence === 'in_srs') return row?.srsIsActive === true;
+  if (srsPresence === 'not_in_srs') return (row?.srsBucket || 'not_in_srs') === 'not_in_srs';
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+function calculateMasteryPriority(mistake, recentTopics = []) {
+  const now = Date.now();
+  const lastAttemptTime = new Date(mistake.lastAttempted).getTime();
+  const daysSinceLastAttempt = Math.max(0, (now - lastAttemptTime) / (1000 * 60 * 60 * 24));
+  const U = Math.pow(2, daysSinceLastAttempt / 7);
+  const D = Math.min(1.0, (mistake.attemptCount || 1) / 3);
+  let R = 0.5;
+  if (recentTopics.length > 0 && recentTopics.includes(mistake.Topic)) {
+    R = 1.5;
+  }
+  return (U * 0.4) + (D * 0.4) + (R * 0.2);
+}
+
+function getSrsBucket(card) {
+  if (!card) return 'not_in_srs';
+  if (card?.srsBucket) return card.srsBucket;
+  if (card?.hasSrsCard === false) return 'not_in_srs';
+  const looksLikeSrsCard =
+    card?.hasSrsCard === true ||
+    !!card?.status ||
+    !!card?.nextReviewDate ||
+    !!card?.questionId;
+  if (!looksLikeSrsCard) return 'not_in_srs';
+  if (card.isActive === false) return 'archived';
+  if (card.status === 'new') return 'new';
+  if (card.status === 'learning') return 'progressing';
+  if (card.status === 'review') return 'near';
+  if (card.status === 'graduated') return 'archived';
+  return 'progressing';
+}
+
+function getSrsBucketState(bucket) {
+  if (bucket === 'not_in_srs') return { state: 0, labelKey: 'notebook.masteryNotInSrs', color: 'slate' };
+  if (bucket === 'new') return { state: 0, labelKey: 'notebook.masteryNew', color: 'red' };
+  if (bucket === 'progressing') return { state: 1, labelKey: 'notebook.masteryDeveloping', color: 'amber' };
+  if (bucket === 'near') return { state: 2, labelKey: 'notebook.masteryNear', color: 'yellow' };
+  if (bucket === 'archived') return { state: 3, labelKey: 'notebook.mastered', color: 'green' };
+  return { state: 3, labelKey: 'notebook.masteryMastered', color: 'green' };
+}
+
+function getSrsContributionWeight(card) {
+  if (!card) return 1;
+  if (card.isActive === false) return 0.1;
+  if (card.status === 'graduated') return 0.1;
+  const rep = Number(card.repetitionCount || 0);
+  const byRep = 1 / (1 + rep);
+  if (card.status === 'review') return Math.max(0.2, byRep);
+  if (card.status === 'learning') return Math.max(0.35, byRep);
+  return 1;
+}
+
+function calcPriority(mistake) {
+  const last = mistake.lastAttempted || mistake.lastReviewedAt || mistake.createdAt;
+  const days = last ? (Date.now() - new Date(last).getTime()) / (1000 * 60 * 60 * 24) : 0;
+  const rep = mistake.repetitionCount ?? mistake.improvementCount ?? 0;
+  return days * 1.2 - rep * 2;
+}
+
+function masteryStyle(improvementCount) {
+  if (improvementCount >= 2)
+    return {
+      border: 'border-green-300',
+      bg: 'bg-green-50/60',
+      badge: 'bg-green-100 text-green-700',
+      dot: 'bg-green-500',
+    };
+  if (improvementCount === 1)
+    return {
+      border: 'border-amber-300',
+      bg: 'bg-amber-50/60',
+      badge: 'bg-amber-100 text-amber-700',
+      dot: 'bg-amber-400',
+    };
+  return {
+    border: 'border-red-200',
+    bg: 'bg-white',
+    badge: 'bg-red-100 text-red-700',
+    dot: 'bg-red-500',
+  };
+}
+
+function applyRuleOfThree(improvements) {
+  return improvements;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPACED REPETITION INTEGRATION
+// ═══════════════════════════════════════════════════════════════════════════════
+async function scheduleSpacedRepetitionForMistakes(mistakesList, currentUser) {
+  if (!currentUser?.uid) return;
+  return;
+}
+
+async function handleMistakeCommitted(currentUser, question, attemptCount) {
+  if (!currentUser?.uid) return;
+  return;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UI COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function InfoIconButton({ title, body, onOpenModal, hoverCapable }) {
+  const [open, setOpen] = useState(false);
+
+  const showTooltip = hoverCapable && open;
+
+  return (
+    <span
+      className="relative inline-flex"
+      onMouseEnter={() => hoverCapable && setOpen(true)}
+      onMouseLeave={() => hoverCapable && setOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={() => onOpenModal?.()}
+        className="w-5 h-5 rounded-full border border-amber-300 bg-amber-50 text-amber-700 font-black text-[11px] leading-none flex items-center justify-center hover:bg-amber-100 transition-all"
+        aria-label={title}
+        title={hoverCapable ? title : undefined}
+      >
+        !
+      </button>
+
+      {showTooltip && (
+        <div className="absolute left-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 shadow-lg rounded-xl p-3 text-xs text-slate-700 z-[90] break-words">
+          <div className="font-bold text-slate-800 mb-1 normal-case">{title}</div>
+          <div className="text-slate-600 leading-relaxed normal-case">{body}</div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+function FilterInfoModal({ onClose }) {
+  const { t } = useLanguage();
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[100] p-4 flex items-center justify-center">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white w-11/12 max-w-md max-h-[85vh] overflow-y-auto rounded-2xl shadow-xl border border-slate-200"
+      >
+        <div className="p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="text-lg font-bold text-slate-800 normal-case">
+                {t('notebook.filterInfoTitle')}
+              </div>
+              <div className="text-sm text-slate-600 mt-2 leading-relaxed normal-case">
+                {t('notebook.filterInfoBody')}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-black hover:bg-slate-200 transition-all flex-shrink-0"
+            >
+              {t('notebook.close')}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/**
+ * ProgressSegments: 3-segment progress bar
+ */
+function ProgressSegments({ current, target = 3, size = 'sm' }) {
+  const sizeClasses = {
+    sm: 'h-2',
+    md: 'h-3',
+    lg: 'h-4',
+  };
+
+  return (
+    <div className={`flex gap-1 ${sizeClasses[size]}`}>
+      {Array.from({ length: target }).map((_, i) => (
+        <div
+          key={i}
+          className={`flex-1 rounded-full transition-all duration-300 ${
+            i < current
+              ? 'bg-green-500 shadow-lg'
+              : i === current
+              ? 'bg-amber-400'
+              : 'bg-slate-200'
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * TooltipWithPortal: Floating tooltip
+ */
+function TooltipWithPortal({ trigger, content, placement = 'top' }) {
+  const [open, setOpen] = useState(false);
+
+  const { refs, floatingStyles } = useFloating({
+    placement,
+    open,
+    onOpenChange: setOpen,
+    middleware: [offset(10), flip(), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate
+  });
+
+  return (
+    <>
+      <div
+        ref={refs.setReference}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        className="cursor-help"
+      >
+        {trigger}
+      </div>
+
+      {open && createPortal(
+        <div
+          ref={refs.setFloating}
+          style={floatingStyles}
+          className="z-[9999] bg-slate-900 text-white text-xs rounded-xl p-3 shadow-2xl ring-1 ring-white/10 max-w-xs pointer-events-none"
+        >
+          {content}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+/**
+ * InteractiveTopicHeatmap: Clickable topic density chart with multi-select
+ */
+function InteractiveTopicHeatmap({ mistakes, selectedTopics, onTopicToggle }) {
+  const { t, tf } = useLanguage();
+
+  const errorDensity = useMemo(() => {
+    const topicMap = {};
+    mistakes.forEach(m => {
+      if (!topicMap[m.Topic]) {
+        topicMap[m.Topic] = { attempted: 0, wrong: 0 };
+      }
+      topicMap[m.Topic].wrong++;
+      topicMap[m.Topic].attempted += Math.max(m.attemptCount, 1);
+    });
+
+    return Object.entries(topicMap).map(([topic, data]) => ({
+      topic,
+      errorDensity: Math.min(1.0, data.wrong / Math.max(data.attempted, 1)),
+      wrongCount: data.wrong,
+      attemptedCount: data.attempted
+    })).sort((a, b) => b.errorDensity - a.errorDensity);
+  }, [mistakes]);
+
+  const getColor = (density, isSelected) => {
+    const base = density < 0.2 ? 'yellow'
+      : density < 0.4 ? 'orange'
+      : density < 0.6 ? 'orange'
+      : density < 0.8 ? 'red'
+      : 'red';
+
+    if (isSelected) {
+      return `from-${base}-600 to-${base}-700 text-white ring-2 ring-${base}-400 ring-offset-2`;
+    }
+
+    if (density < 0.2) return 'from-yellow-100 to-yellow-200 text-yellow-900 hover:from-yellow-200 hover:to-yellow-300';
+    if (density < 0.4) return 'from-orange-200 to-orange-300 text-orange-900 hover:from-orange-300 hover:to-orange-400';
+    if (density < 0.6) return 'from-orange-400 to-orange-500 text-white hover:from-orange-500 hover:to-orange-600';
+    if (density < 0.8) return 'from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700';
+    return 'from-red-700 to-red-800 text-white hover:from-red-800 hover:to-red-900';
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+      <h3 className="font-bold text-lg text-slate-800 mb-2 flex items-center gap-2">
+        <BarChart2 size={20} className="text-orange-600" />
+        {t('notebook.errorDensityByTopic')}
+      </h3>
+      <p className="text-xs text-slate-500 mb-4">
+        {t('notebook.clickTopicsToFilter')} • {selectedTopics.length > 0 && tf('notebook.selectedCount', { count: selectedTopics.length })}
+      </p>
+
+      <div className="space-y-3">
+        {errorDensity.map(({ topic, errorDensity: density, wrongCount, attemptedCount }) => {
+          const isSelected = selectedTopics.includes(topic);
+          return (
+            <button
+              key={topic}
+              onClick={() => onTopicToggle(topic)}
+              className={`w-full flex items-center gap-4 p-4 rounded-lg bg-gradient-to-r transition-all transform hover:scale-105 active:scale-95 cursor-pointer ${getColor(density, isSelected)}`}
+            >
+              <div className="w-24 sm:w-32 font-semibold text-sm text-left truncate flex items-center gap-2">
+                {isSelected && <Check size={14} />}
+                {topic}
+              </div>
+              <div className="flex-1 text-right font-bold text-sm">
+                {(density * 100).toFixed(0)}% ({wrongCount}/{attemptedCount})
+              </div>
+              <ChevronRight size={16} />
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedTopics.length > 0 && (
+        <button
+          onClick={() => selectedTopics.forEach(onTopicToggle)}
+          className="mt-4 w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-all"
+        >
+          {t('notebook.clearSelection')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * CalendarHeatmap: 30-day activity visualization
+ */
+function CalendarHeatmap({ attempts }) {
+  const { t, tf } = useLanguage();
+
+  const activityMap = useMemo(() => {
+    const map = {};
+    const now = new Date();
+
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      map[dateStr] = 0;
+    }
+
+    (attempts || []).forEach(a => {
+      if (!a?.wasCorrect) return;
+      const dateStr = a.attemptedAt ? new Date(a.attemptedAt).toISOString().split('T')[0] : null;
+      if (dateStr && map[dateStr] !== undefined) map[dateStr]++;
+    });
+
+    return map;
+  }, [attempts]);
+
+  const days = Object.entries(activityMap).reverse();
+  const maxActivity = Math.max(...Object.values(activityMap), 1);
+
+  const getColor = (count) => {
+    const intensity = count / maxActivity;
+    if (intensity === 0) return 'bg-slate-100';
+    if (intensity < 0.33) return 'bg-blue-200';
+    if (intensity < 0.67) return 'bg-blue-400';
+    return 'bg-blue-600';
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+      <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+        <Calendar size={20} className="text-blue-600" />
+        {t('notebook.mistakeClearingActivity')}
+      </h3>
+
+      <div className="grid grid-cols-7 gap-1">
+        {[
+          t('notebook.weekdaySunShort'),
+          t('notebook.weekdayMonShort'),
+          t('notebook.weekdayTueShort'),
+          t('notebook.weekdayWedShort'),
+          t('notebook.weekdayThuShort'),
+          t('notebook.weekdayFriShort'),
+          t('notebook.weekdaySatShort'),
+        ].map((day, idx) => (
+          <div key={`header-${idx}`} className="text-center text-xs font-bold text-slate-400 h-6">
+            {day}
+          </div>
+        ))}
+
+        {days.map(([dateStr, count]) => (
+          <TooltipWithPortal
+            key={dateStr}
+            trigger={
+              <div
+                className={`w-8 h-8 rounded ${getColor(count)} flex items-center justify-center text-xs font-bold text-slate-700 hover:ring-2 ring-blue-400 transition-all cursor-pointer`}
+              >
+                {count > 0 && count}
+              </div>
+            }
+            content={tf('notebook.activityTooltipCleared', { date: dateStr, count })}
+          />
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 mt-4 text-xs text-slate-500">
+        <span>{t('notebook.less')}</span>
+        <div className="flex gap-1">
+          {[0, 0.33, 0.67, 1.0].map((i, idx) => (
+            <div key={idx} className={`w-3 h-3 rounded ${getColor(i * maxActivity)}`} />
+          ))}
+        </div>
+        <span>{t('notebook.more')}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ImprovementTrendChart: 14-day mastery progression
+ */
+function ImprovementTrendChart({ cards, attempts }) {
+  const { t } = useLanguage();
+
+  const trendData = useMemo(() => {
+    const now = new Date();
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      days.push(d.toISOString().split('T')[0]);
+    }
+
+    const snapshotByDay = Object.fromEntries(days.map(d => [d, { New: 0, Developing: 0, 'Near-Mastery': 0, Mastered: 0 }]));
+
+    const today = days[days.length - 1];
+    (cards || []).forEach(c => {
+      const bucket = getSrsBucket(c);
+      if (bucket === 'archived') snapshotByDay[today].Mastered++;
+      else if (bucket === 'new') snapshotByDay[today].New++;
+      else if (bucket === 'progressing') snapshotByDay[today].Developing++;
+      else snapshotByDay[today]['Near-Mastery']++;
+    });
+
+    (attempts || []).forEach(a => {
+      const dateStr = a.attemptedAt ? new Date(a.attemptedAt).toISOString().split('T')[0] : null;
+      if (!dateStr || !snapshotByDay[dateStr]) return;
+      const s = a.stateAfter?.status;
+      if (s === 'graduated') snapshotByDay[dateStr].Mastered++;
+      else if (s === 'new') snapshotByDay[dateStr].New++;
+      else if (s === 'learning') snapshotByDay[dateStr].Developing++;
+      else if (s === 'review') snapshotByDay[dateStr]['Near-Mastery']++;
+    });
+
+    return days.map(d => ({ date: d, ...snapshotByDay[d] }));
+  }, [cards, attempts]);
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+      <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+        <TrendingUp size={20} className="text-purple-600" />
+        {t('notebook.improvementTrend')}
+      </h3>
+
+      <ResponsiveContainer width="100%" height={300}>
+        <AreaChart data={trendData}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="date" />
+          <YAxis />
+          <Tooltip />
+          <Legend />
+          <Area type="monotone" dataKey="New" name={t('notebook.masteryNew')} stackId="1" stroke="#ef4444" fill="#fecaca" />
+          <Area type="monotone" dataKey="Developing" name={t('notebook.masteryDeveloping')} stackId="1" stroke="#f59e0b" fill="#fed7aa" />
+          <Area type="monotone" dataKey="Near-Mastery" name={t('notebook.masteryNear')} stackId="1" stroke="#eab308" fill="#fef08a" />
+          <Area type="monotone" dataKey="Mastered" name={t('notebook.masteryMastered')} stackId="1" stroke="#22c55e" fill="#bbf7d0" />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/**
+ * RetentionDashboard: Learning metrics overview
+ */
+function RetentionDashboard({ cards = [], attempts = [] }) {
+  const { t, tf } = useLanguage();
+  const [open, setOpen] = useState(true);
+
+  const stats = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const addedThisWeek = (cards || []).filter((c) => {
+      const ts = c.createdAt ? new Date(c.createdAt).getTime() : 0;
+      return ts >= weekAgo;
+    }).length;
+
+    const masteredThisWeek = (attempts || []).filter((a) => {
+      const ts = a.attemptedAt ? new Date(a.attemptedAt).getTime() : 0;
+      return ts >= weekAgo && a?.stateAfter?.status === 'graduated';
+    }).length;
+
+    const subtopicMap = {};
+    (cards || []).filter(c => c.isActive !== false).forEach((c) => {
+      const key = c.subtopic || 'Unknown';
+      if (!subtopicMap[key]) subtopicMap[key] = { count: 0, repeats: 0 };
+      subtopicMap[key].count++;
+      if ((c.failedAttempts || 0) > 0) subtopicMap[key].repeats++;
+    });
+
+    const weakest = Object.entries(subtopicMap)
+      .sort((a, b) => b[1].count + b[1].repeats * 2 - (a[1].count + a[1].repeats * 2))
+      .slice(0, 6);
+
+    return { addedThisWeek, masteredThisWeek, weakest };
+  }, [cards, attempts]);
+
+  const decayLabel =
+    stats.addedThisWeek === 0 && stats.masteredThisWeek === 0
+      ? '—'
+      : stats.masteredThisWeek > stats.addedThisWeek
+      ? t('notebook.decayImproving')
+      : stats.masteredThisWeek === stats.addedThisWeek
+      ? t('notebook.decayStable')
+      : t('notebook.decayGrowing');
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-all"
+      >
+        <div className="flex items-center gap-2">
+          <Activity className="text-purple-600" size={20} />
+          <span className="font-bold text-slate-800 text-lg">{t('notebook.retentionDashboard')}</span>
+        </div>
+        <ChevronDown
+          size={20}
+          className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="border-t border-slate-200 overflow-hidden"
+          >
+            <div className="p-6 space-y-6 bg-slate-50">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-white rounded-xl p-4 border-2 border-slate-200 text-center">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                    {t('notebook.addedThisWeek')}
+                  </div>
+                  <div className="text-3xl font-black text-red-500">{stats.addedThisWeek}</div>
+                </div>
+                <div className="bg-white rounded-xl p-4 border-2 border-slate-200 text-center">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                    {t('notebook.masteredThisWeek')}
+                  </div>
+                  <div className="text-3xl font-black text-green-600">{stats.masteredThisWeek}</div>
+                </div>
+                <div className="bg-white rounded-xl p-4 border-2 border-purple-200 text-center">
+                  <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">
+                    {t('notebook.decayRate')}
+                  </div>
+                  <div className="text-lg font-black text-purple-700 mt-1">{decayLabel}</div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-black text-slate-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Flame size={14} className="text-red-500" />
+                  {t('notebook.weakestSubtopics')}
+                </h3>
+                <div className="space-y-2">
+                  {stats.weakest.map(([subtopic, data]) => {
+                    const max = stats.weakest[0][1].count + stats.weakest[0][1].repeats * 2;
+                    const score = data.count + data.repeats * 2;
+                    const pct = max > 0 ? (score / max) * 100 : 0;
+                    return (
+                      <div key={subtopic} className="flex items-center gap-3">
+                        <div className="w-32 text-xs text-slate-600 font-semibold truncate shrink-0">
+                          {subtopic}
+                        </div>
+                        <div className="flex-1 bg-slate-200 rounded-full h-2">
+                          <div
+                            className="bg-gradient-to-r from-red-400 to-orange-400 h-2 rounded-full transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <div className="text-xs text-slate-500 shrink-0 w-8 text-right">
+                          {data.count}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CUSTOM REVIEW PAGE COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * MasteryBadge: compact badge for a mastery bucket
+ */
+function MasteryBadge({ bucket, count, selected, onClick }) {
+  const { t } = useLanguage();
+  const lvl = MASTERY_LEVELS[bucket];
+  if (!lvl) return null;
+
+  const colorMap = {
+    slate: {
+      base: 'border-slate-200 bg-slate-50 text-slate-600',
+      active: 'border-slate-500 bg-slate-100 text-slate-800 ring-2 ring-slate-300',
+      dot: 'bg-slate-400',
+    },
+    red: {
+      base: 'border-red-200 bg-red-50 text-red-700',
+      active: 'border-red-500 bg-red-100 text-red-900 ring-2 ring-red-300',
+      dot: 'bg-red-500',
+    },
+    amber: {
+      base: 'border-amber-200 bg-amber-50 text-amber-700',
+      active: 'border-amber-500 bg-amber-100 text-amber-900 ring-2 ring-amber-300',
+      dot: 'bg-amber-400',
+    },
+    yellow: {
+      base: 'border-yellow-200 bg-yellow-50 text-yellow-700',
+      active: 'border-yellow-500 bg-yellow-100 text-yellow-900 ring-2 ring-yellow-300',
+      dot: 'bg-yellow-400',
+    },
+    green: {
+      base: 'border-green-200 bg-green-50 text-green-700',
+      active: 'border-green-500 bg-green-100 text-green-900 ring-2 ring-green-300',
+      dot: 'bg-green-500',
+    },
+  };
+
+  const colors = colorMap[lvl.color] || colorMap.slate;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 font-bold text-sm transition-all ${
+        selected ? colors.active : colors.base
+      } hover:shadow-sm active:scale-95`}
+    >
+      <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colors.dot}`} />
+      <span className="flex-1 text-left leading-tight">{t(lvl.labelKey)}</span>
+      {count != null && (
+        <span className="ml-auto text-xs font-black opacity-70 tabular-nums">{count}</span>
+      )}
+      {selected && (
+        <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-indigo-600 rounded-full flex items-center justify-center">
+          <Check size={9} className="text-white" strokeWidth={3} />
+        </span>
+      )}
+    </button>
+  );
+}
+
+/**
+ * FilterPill: compact removable active filter chip
+ */
+function FilterPill({ label, onRemove }) {
+  return (
+    <span className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full text-xs font-bold">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="hover:text-indigo-900 transition-colors ml-0.5"
+        aria-label={`Remove ${label}`}
+      >
+        <X size={10} strokeWidth={3} />
+      </button>
+    </span>
+  );
+}
+
+/**
+ * CustomReviewPage — full-page practice configurator (replaces the old sidebar)
+ */
+function CustomReviewPage({
+  onBack,
+  // Data
+  filteredMistakes,
+  allTopics,
+  availableSubtopics,
+  masteryCounts,
+  totalMistakesCount,
+  // Filter state
+  questionCount, setQuestionCount,
+  datePeriod, setDatePeriod,
+  selectedTopics, toggleTopic,
+  selectedSubtopics, toggleSubtopic,
+  selectedMasteryLevels, toggleMasteryLevel,
+  srsPresence, setSrsPresence,
+  timerEnabled, setTimerEnabled,
+  isTimedMode, setIsTimedMode,
+  // Actions
+  onPractice,
+  // Helpers
+  topicFacetCountMap,
+  filterInfoOpen, setFilterInfoOpen,
+  hoverCapable,
+  mistakes,
+}) {
+  const { t, tf } = useLanguage();
+
+  const practiceCount =
+    questionCount === 'All'
+      ? filteredMistakes.length
+      : Math.min(parseInt(questionCount) || 0, filteredMistakes.length);
+
+  const hasAnyFilter =
+    datePeriod !== 'all' ||
+    selectedTopics.length > 0 ||
+    selectedSubtopics.length > 0 ||
+    selectedMasteryLevels.length > 0 ||
+    srsPresence !== 'all';
+
+  const clearAllFilters = () => {
+    setDatePeriod('all');
+    selectedTopics.forEach(toggleTopic);
+    selectedSubtopics.forEach(toggleSubtopic);
+    selectedMasteryLevels.forEach(toggleMasteryLevel);
+    setSrsPresence('all');
+  };
+
+  return (
+    <motion.div
+      key="custom-review"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -16 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+      className="min-h-full"
+    >
+      {/* Page header */}
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-600"
+          title="Back"
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <h2 className="font-black text-xl text-slate-800 flex items-center gap-2">
+            <SlidersHorizontal size={20} className="text-orange-500" />
+            {t('notebook.customReview')}
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {t('notebook.customReviewSubtitle') || 'Configure your practice session'}
+          </p>
+        </div>
+
+        {hasAnyFilter && (
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="ml-auto text-xs font-bold text-slate-500 hover:text-red-600 transition-colors flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-red-50 border border-slate-200"
+          >
+            <X size={12} />
+            {t('notebook.clearAll') || 'Clear all'}
+          </button>
+        )}
+      </div>
+
+      {/* Active filter summary */}
+      {hasAnyFilter && (
+        <div className="bg-indigo-50 border-b border-indigo-100 px-4 sm:px-6 py-2 flex flex-wrap gap-2 items-center">
+          <span className="text-xs font-black text-indigo-500 uppercase tracking-widest mr-1">
+            {t('notebook.activeFilters') || 'Active'}
+          </span>
+          {datePeriod !== 'all' && (
+            <FilterPill
+              label={datePeriod === 'week' ? t('notebook.lastWeek') : t('notebook.lastMonth')}
+              onRemove={() => setDatePeriod('all')}
+            />
+          )}
+          {selectedTopics.map(tp => (
+            <FilterPill key={tp} label={tp} onRemove={() => toggleTopic(tp)} />
+          ))}
+          {selectedSubtopics.map(s => (
+            <FilterPill key={s} label={s} onRemove={() => toggleSubtopic(s)} />
+          ))}
+          {selectedMasteryLevels.map(l => (
+            <FilterPill
+              key={l}
+              label={t(MASTERY_LEVELS[l]?.labelKey || '')}
+              onRemove={() => toggleMasteryLevel(l)}
+            />
+          ))}
+          {srsPresence !== 'all' && (
+            <FilterPill
+              label={srsPresence === 'in_srs' ? t('notebook.srsPresenceInSrs') : t('notebook.srsPresenceNotInSrs')}
+              onRemove={() => setSrsPresence('all')}
+            />
+          )}
+        </div>
+      )}
+
+      <div className="p-4 sm:p-6">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+          {/* ── LEFT COLUMN: Filters ─────────────────────────────────────── */}
+          <div className="xl:col-span-2 space-y-5">
+
+            {/* Time Range */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                <Calendar size={13} className="text-slate-400" />
+                {t('notebook.timeRange')}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: 'all', label: t('notebook.allTime') },
+                  { value: 'month', label: t('notebook.lastMonth') },
+                  { value: 'week', label: t('notebook.lastWeek') },
+                ].map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setDatePeriod(o.value)}
+                    className={`px-4 py-2 rounded-xl border-2 text-sm font-bold transition-all ${
+                      datePeriod === o.value
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Mastery Level */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                <Layers size={13} className="text-slate-400" />
+                {t('notebook.masteryLevel')}
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {Object.entries(MASTERY_LEVELS).map(([key, lvl]) => {
+                  const count = Number(masteryCounts?.[key] ?? mistakes.filter((m) => getSrsBucket(m) === key).length);
+                  return (
+                    <MasteryBadge
+                      key={key}
+                      bucket={key}
+                      count={count}
+                      selected={selectedMasteryLevels.includes(key)}
+                      onClick={() => toggleMasteryLevel(key)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* SRS Presence */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                <Brain size={13} className="text-slate-400" />
+                {t('notebook.srsPresence')}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: 'all', label: t('notebook.srsPresenceAll') },
+                  { value: 'in_srs', label: t('notebook.srsPresenceInSrs') },
+                  { value: 'not_in_srs', label: t('notebook.srsPresenceNotInSrs') },
+                ].map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setSrsPresence(o.value)}
+                    className={`px-4 py-2 rounded-xl border-2 text-sm font-bold transition-all ${
+                      srsPresence === o.value
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Topics */}
+            {allTopics.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <Tag size={13} className="text-slate-400" />
+                  {t('notebook.topics')}
+                  <InfoIconButton
+                    title={t('notebook.filterInfoTitle')}
+                    body={t('notebook.filterInfoBody')}
+                    onOpenModal={() => setFilterInfoOpen(true)}
+                    hoverCapable={hoverCapable}
+                  />
+                  {selectedTopics.length > 0 && (
+                    <span className="ml-auto text-[10px] font-black bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full">
+                      {selectedTopics.length} selected
+                    </span>
+                  )}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-64 overflow-y-auto">
+                  {allTopics.map((topic) => {
+                    const count = topicFacetCountMap.get(topic) || 0;
+                    const isSelected = selectedTopics.includes(topic);
+                    return (
+                      <button
+                        key={topic}
+                        type="button"
+                        onClick={() => toggleTopic(topic)}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl border-2 text-xs font-bold text-left transition-all ${
+                          isSelected
+                            ? 'border-indigo-500 bg-indigo-500 text-white shadow-sm'
+                            : 'border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
+                        }`}
+                      >
+                        <span className="truncate flex items-center gap-1.5">
+                          {isSelected && <Check size={10} strokeWidth={3} />}
+                          {topic}
+                        </span>
+                        <span className={`ml-2 tabular-nums flex-shrink-0 ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedTopics.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => selectedTopics.forEach(toggleTopic)}
+                    className="mt-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                  >
+                    {t('notebook.clearSelection')}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Subtopics */}
+            {availableSubtopics.length > 1 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <Hash size={13} className="text-slate-400" />
+                  {t('notebook.subtopics')}
+                  <InfoIconButton
+                    title={t('notebook.filterInfoTitle')}
+                    body={t('notebook.filterInfoBody')}
+                    onOpenModal={() => setFilterInfoOpen(true)}
+                    hoverCapable={hoverCapable}
+                  />
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto">
+                  {availableSubtopics.slice(0, 20).map((sub) => {
+                    const isSelected = selectedSubtopics.includes(sub);
+                    return (
+                      <button
+                        key={sub}
+                        type="button"
+                        onClick={() => toggleSubtopic(sub)}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 text-xs font-bold text-left transition-all ${
+                          isSelected
+                            ? 'border-indigo-400 bg-indigo-400 text-white shadow-sm'
+                            : 'border-slate-200 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50'
+                        }`}
+                      >
+                        {isSelected && <Check size={10} strokeWidth={3} className="flex-shrink-0" />}
+                        <span className="truncate">{sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── RIGHT COLUMN: Practice Config + Launch ───────────────────── */}
+          <div className="xl:col-span-1">
+            <div className="sticky top-4 space-y-4">
+
+              {/* Stats summary */}
+              <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 text-white shadow-lg">
+                <div className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">
+                  {t('notebook.sessionPreview') || 'Session preview'}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-300">{t('notebook.questionsAvailable')}</span>
+                    <span className="text-2xl font-black text-white tabular-nums">
+                      {filteredMistakes.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-slate-700 pt-3">
+                    <span className="text-sm text-slate-300">{t('notebook.willPractice') || 'Will practice'}</span>
+                    <span className="text-2xl font-black text-orange-400 tabular-nums">
+                      {practiceCount}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Mini mastery breakdown */}
+                {Object.keys(masteryCounts || {}).length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-slate-700">
+                    <div className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                      {t('notebook.masteryBreakdown') || 'Breakdown'}
+                    </div>
+                    <div className="space-y-1.5">
+                      {Object.entries(MASTERY_LEVELS).map(([key, lvl]) => {
+                        const count = Number(masteryCounts?.[key] || 0);
+                        if (count === 0) return null;
+                        const total = Object.values(masteryCounts || {}).reduce((a, b) => a + Number(b || 0), 0);
+                        const pct = total > 0 ? (count / total) * 100 : 0;
+                        const barColors = {
+                          not_in_srs: 'bg-slate-500',
+                          new: 'bg-red-500',
+                          progressing: 'bg-amber-400',
+                          near: 'bg-yellow-400',
+                          archived: 'bg-green-500',
+                        };
+                        return (
+                          <div key={key} className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400 w-20 truncate">{t(lvl.labelKey)}</span>
+                            <div className="flex-1 bg-slate-700 rounded-full h-1.5">
+                              <div
+                                className={`h-1.5 rounded-full transition-all ${barColors[key]}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-slate-400 tabular-nums w-6 text-right">{count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Question Count */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <Hash size={13} className="text-slate-400" />
+                  {t('notebook.numberOfQuestions')}
+                </h3>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {['5', '10', '15', '20', 'All'].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setQuestionCount(num)}
+                      disabled={num !== 'All' && parseInt(num) > filteredMistakes.length}
+                      className={`px-3 py-1.5 rounded-lg border-2 text-xs font-black transition-all ${
+                        questionCount === num
+                          ? 'border-orange-500 bg-orange-50 text-orange-700'
+                          : 'border-slate-200 text-slate-500 hover:border-slate-300 disabled:opacity-30 disabled:cursor-not-allowed'
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-semibold">{t('notebook.custom') || 'Custom'}:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={filteredMistakes.length || 1}
+                    value={questionCount === 'All' || ['5', '10', '15', '20'].includes(questionCount) ? '' : questionCount}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value);
+                      if (val && val > 0) {
+                        setQuestionCount(String(Math.min(val, filteredMistakes.length)));
+                      }
+                    }}
+                    placeholder="___"
+                    className="w-16 px-2 py-1.5 rounded-lg border-2 border-slate-200 text-xs font-black text-center focus:border-orange-400 focus:outline-none transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Timer Settings */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                  <Clock size={13} className="text-slate-400" />
+                  {t('notebook.timerSettings') || 'Timer'}
+                </h3>
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => setTimerEnabled(!timerEnabled)}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
+                      timerEnabled
+                        ? 'border-green-500 bg-green-50 text-green-700'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Clock size={14} />
+                      {t('notebook.timerEnabled')}
+                    </span>
+                    <div className={`w-9 h-5 rounded-full transition-all relative ${timerEnabled ? 'bg-green-500' : 'bg-slate-200'}`}>
+                      <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${timerEnabled ? 'left-4' : 'left-0.5'}`} />
+                    </div>
+                  </button>
+
+                  {timerEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setIsTimedMode(!isTimedMode)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
+                        isTimedMode
+                          ? 'border-amber-500 bg-amber-50 text-amber-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Zap size={14} />
+                        {t('notebook.timedMode')}
+                      </span>
+                      <div className={`w-9 h-5 rounded-full transition-all relative ${isTimedMode ? 'bg-amber-500' : 'bg-slate-200'}`}>
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${isTimedMode ? 'left-4' : 'left-0.5'}`} />
+                      </div>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Practice Launch Button */}
+              <button
+                type="button"
+                onClick={onPractice}
+                disabled={filteredMistakes.length === 0 || practiceCount === 0}
+                className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-2xl font-black text-base shadow-lg shadow-orange-200 transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Play fill="currentColor" size={18} />
+                {tf('notebook.practiceMistakesCount', {
+                  count: practiceCount,
+                  plural: practiceCount !== 1 ? 's' : '',
+                })}
+              </button>
+
+              {filteredMistakes.length === 0 && (
+                <p className="text-center text-xs text-slate-400 font-semibold">
+                  {t('notebook.noQuestionsFound')}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+export default function MistakeNotebookPage({ questions = [] }) {
+  const { currentUser } = useAuth();
+  const { t, tf } = useLanguage();
+  const navigate = useNavigate();
+
+  // Core state
+  const [mistakes, setMistakes] = useState([]);
+  const [totalMistakesCount, setTotalMistakesCount] = useState(null);
+  const [masteryCounts, setMasteryCounts] = useState({});
+  const [srsBackfillTick, setSrsBackfillTick] = useState(0);
+  const [facetMistakeRows, setFacetMistakeRows] = useState([]);
+  const [topicStatsDoc, setTopicStatsDoc] = useState(null);
+  const [topicCountOverrides, setTopicCountOverrides] = useState({});
+  const [multiTopicOverrideCount, setMultiTopicOverrideCount] = useState(null);
+  const [rebuildingTopicStats, setRebuildingTopicStats] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [srsCards, setSrsCards] = useState([]);
+  const [reviewAttempts, setReviewAttempts] = useState([]);
+  const [mistakeIndexRows, setMistakeIndexRows] = useState([]);
+  const [mistakeIndexHasMore, setMistakeIndexHasMore] = useState(false);
+  const [mistakeIndexCursor, setMistakeIndexCursor] = useState(null);
+  const [loadingMoreMistakes, setLoadingMoreMistakes] = useState(false);
+  const [recentQuizTopics, setRecentQuizTopics] = useState(() =>
+    JSON.parse(localStorage.getItem('recent_quiz_topics') || '[]')
+  );
+  const [archivedMistakes, setArchivedMistakes] = useState({});
+
+  // Filter state
+  const [questionCount, setQuestionCount] = useState('10');
+  const [datePeriod, setDatePeriod] = useState('all');
+  const [selectedTopics, setSelectedTopics] = useState([]);
+  const [selectedSubtopics, setSelectedSubtopics] = useState([]);
+  const [selectedMasteryLevels, setSelectedMasteryLevels] = useState([]);
+  const [srsPresence, setSrsPresence] = useState('all');
+
+  // Timer settings
+  const [timerEnabled, setTimerEnabled] = useState(true);
+  const [isTimedMode, setIsTimedMode] = useState(false);
+
+  // UI state
+  const [activeTab, setActiveTab] = useState('analytics');
+  const [archiveSubTab, setArchiveSubTab] = useState('mastery');
+  const [hoverCapable, setHoverCapable] = useState(true);
+  const [showCustomReview, setShowCustomReview] = useState(false);
+  const [filterInfoOpen, setFilterInfoOpen] = useState(false);
+  const [archivedLoaded, setArchivedLoaded] = useState(false);
+
+  // ─── SRS data cache ───────────────────────────────────────────────────────
+  const SRS_CACHE_TTL_MS = 5 * 60 * 1000;
+  const srsDataCachedForUidRef = useRef(null);
+  const cachedDueCardsRef       = useRef([]);
+  const cachedReviewAttemptsRef = useRef([]);
+  const srsLastFetchedAtRef     = useRef(0);
+
+  const refreshTopicStatsDoc = useCallback(async () => {
+    if (!currentUser?.uid) return;
+    try {
+      const ref = doc(db, 'users', currentUser.uid, 'mistake_stats', 'topicBuckets');
+      const snap = await getDoc(ref);
+      setTopicStatsDoc(snap.exists() ? (snap.data() || {}) : null);
+    } catch (e) {
+      console.error('Error loading topic stats doc:', e);
+      setTopicStatsDoc(null);
+    }
+  }, [currentUser?.uid]);
+
+  const handleRebuildTopicStats = useCallback(async () => {
+    if (!currentUser?.uid) return;
+    if (rebuildingTopicStats) return;
+    try {
+      setRebuildingTopicStats(true);
+      const { getFunctions, httpsCallable } = await import('firebase/functions');
+      const functions = getFunctions(app, 'asia-east1');
+      const callable = httpsCallable(functions, 'rebuildMistakeTopicStats');
+      await callable({});
+      await refreshTopicStatsDoc();
+    } catch (e) {
+      console.error('rebuildMistakeTopicStats failed:', e);
+    } finally {
+      setRebuildingTopicStats(false);
+    }
+  }, [currentUser?.uid, rebuildingTopicStats, refreshTopicStatsDoc]);
+
+  useEffect(() => {
+    if (!currentUser?.uid) { setTopicStatsDoc(null); return; }
+    refreshTopicStatsDoc();
+  }, [currentUser?.uid]);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    if (datePeriod !== 'all') return;
+    if (selectedTopics.length !== 1) return;
+    if (selectedSubtopics.length > 0) return;
+    if (selectedMasteryLevels.length > 0) return;
+    if (srsPresence !== 'all') return;
+
+    const topic = selectedTopics[0];
+    const run = async () => {
+      try {
+        const snap = await getCountFromServer(
+          query(collection(db, 'users', currentUser.uid, 'mistakes'), where('Topic', '==', topic))
+        );
+        const count = Number(snap.data().count || 0);
+        setTopicCountOverrides((prev) => ({
+          ...prev,
+          [String(topic)]: Number.isFinite(count) ? count : 0,
+        }));
+      } catch (e) {
+        console.error('Error counting mistakes for topic override:', e);
+      }
+    };
+    run();
+  }, [currentUser?.uid, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence, srsBackfillTick]);
+
+  useEffect(() => {
+    if (!currentUser?.uid) { setMultiTopicOverrideCount(null); return; }
+    if (datePeriod !== 'all') { setMultiTopicOverrideCount(null); return; }
+    if (selectedSubtopics.length > 0) { setMultiTopicOverrideCount(null); return; }
+    if (selectedMasteryLevels.length > 0) { setMultiTopicOverrideCount(null); return; }
+    if (srsPresence !== 'all') { setMultiTopicOverrideCount(null); return; }
+
+    const topics = (Array.isArray(selectedTopics) ? selectedTopics : []).filter(Boolean);
+    if (topics.length < 2 || topics.length > 10) { setMultiTopicOverrideCount(null); return; }
+
+    const run = async () => {
+      try {
+        const snap = await getCountFromServer(
+          query(collection(db, 'users', currentUser.uid, 'mistakes'), where('Topic', 'in', topics))
+        );
+        const count = Number(snap.data().count || 0);
+        setMultiTopicOverrideCount(Number.isFinite(count) ? count : null);
+      } catch (e) {
+        console.error('Error counting mistakes for multi-topic override:', e);
+        setMultiTopicOverrideCount(null);
+      }
+    };
+    run();
+  }, [currentUser?.uid, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence, srsBackfillTick]);
+
+  useEffect(() => {
+    if (!currentUser?.uid) { setTotalMistakesCount(null); return; }
+    const run = async () => {
+      try {
+        const now = getNow();
+        const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
+        const monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);
+        const base = [collection(db, 'users', currentUser.uid, 'mistakes')];
+        if (datePeriod === 'week') base.push(where('lastWrongAt', '>=', weekAgo.toISOString()));
+        else if (datePeriod === 'month') base.push(where('lastWrongAt', '>=', monthAgo.toISOString()));
+        const snap = await getCountFromServer(query(...base));
+        setTotalMistakesCount(Number(snap.data().count || 0));
+      } catch (e) {
+        console.error('Error counting total mistakes:', e);
+        setTotalMistakesCount(null);
+      }
+    };
+    run();
+  }, [currentUser, datePeriod]);
+
+  useEffect(() => {
+    if (!currentUser?.uid) { setMasteryCounts({}); return; }
+    const run = async () => {
+      try {
+        const built = buildMistakeCountBaseConstraints({
+          userId: currentUser.uid, datePeriod, selectedTopics, selectedSubtopics, srsPresence,
+        });
+        if (
+          (built.needsClientTopicFilter && built.topics.length > 0) ||
+          (built.needsClientSubtopicFilter && built.subs.length > 0) ||
+          (srsPresence !== 'all') ||
+          (built.topics.length > 0)
+        ) {
+          setMasteryCounts({});
+          return;
+        }
+        const entries = await Promise.all(
+          Object.keys(MASTERY_LEVELS).map(async (bucket) => {
+            const parts = [...built.base, where('srsBucket', '==', bucket)];
+            if (srsPresence === 'in_srs') parts.push(where('srsIsActive', '==', true));
+            const snap = await getCountFromServer(query(...parts));
+            return [bucket, Number(snap.data().count || 0)];
+          })
+        );
+        const nextCounts = Object.fromEntries(entries);
+        const sum = Object.values(nextCounts).reduce((a, b) => a + Number(b || 0), 0);
+        if (sum === 0 && Number(totalMistakesCount || 0) > 0) setMasteryCounts({});
+        else setMasteryCounts(nextCounts);
+      } catch (e) {
+        console.error('Error counting mastery buckets:', e);
+        setMasteryCounts({});
+      }
+    };
+    run();
+  }, [currentUser?.uid, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence, srsBackfillTick, totalMistakesCount]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    loadFacetMistakes();
+  }, [currentUser, datePeriod]);
+
+  useEffect(() => {
+    setMistakeIndexRows([]);
+    setMistakeIndexHasMore(false);
+    setMistakeIndexCursor(null);
+    if (currentUser) loadMistakes();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (activeTab !== 'archive') return;
+    if (archivedLoaded) return;
+
+    const loadArchived = async () => {
+      try {
+        const questionMap = new Map((questions || []).map(q => [q.ID, q]));
+        const archivedCards = await srsService.getArchivedCards(currentUser.uid);
+        const archivedByQuestionId = {};
+        (archivedCards || []).forEach((c) => {
+          const questionData = questionMap.get(c.questionId) || {};
+          archivedByQuestionId[c.questionId] = {
+            ...c, ...questionData,
+            ID: c.questionId,
+            archivedAt: c.archivedAt,
+            archiveReason: c.archiveReason || 'unknown'
+          };
+        });
+        setArchivedMistakes(archivedByQuestionId);
+        setArchivedLoaded(true);
+      } catch (e) {
+        console.error('Error loading archived cards:', e);
+      }
+    };
+    loadArchived();
+  }, [activeTab, archivedLoaded, currentUser, questions]);
+
+  useEffect(() => {
+    if (activeTab !== 'archive') return;
+    setArchiveSubTab('mastery');
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const runArchive = async () => {
+      try {
+        const archivedCount = await srsService.archiveOverdueCards(currentUser.uid);
+        if (archivedCount > 0) {
+          console.log(`🗄️ Auto-archived ${archivedCount} overdue cards`);
+          loadMistakes();
+        }
+      } catch (error) {
+        console.error('Error auto-archiving overdue cards:', error);
+      }
+    };
+    runArchive();
+  }, [currentUser]);
+
+  async function loadMistakes() {
+    if (!currentUser) { setLoading(false); return; }
+    try {
+      setLoading(true);
+      setError(null);
+
+      backfillMistakeSrsFromActiveCards(currentUser.uid)
+        .then((didWrite) => { if (didWrite) setSrsBackfillTick((x) => x + 1); })
+        .catch((e) => console.error('Active-card backfill failed:', e));
+
+      const srsNeedsFetch =
+        srsDataCachedForUidRef.current !== currentUser.uid ||
+        (Date.now() - srsLastFetchedAtRef.current) > SRS_CACHE_TTL_MS;
+
+      let srsAttempts, dueCards;
+      if (srsNeedsFetch) {
+        [srsAttempts, dueCards] = await Promise.all([
+          srsService.getRecentReviewAttempts(currentUser.uid, 30),
+          srsService.getDueCards(currentUser.uid, getNow(), { limit: 200 })
+        ]);
+        cachedReviewAttemptsRef.current = srsAttempts;
+        cachedDueCardsRef.current       = dueCards;
+        srsDataCachedForUidRef.current  = currentUser.uid;
+        srsLastFetchedAtRef.current     = Date.now();
+      } else {
+        srsAttempts = cachedReviewAttemptsRef.current;
+        dueCards    = cachedDueCardsRef.current;
+      }
+
+      const pageSize = 40;
+      const firstBuilt = buildMistakeIndexQueryConstraints({
+        userId: currentUser.uid, datePeriod,
+        selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence,
+        cursor: null, pageSize,
+      });
+
+      let rows = [];
+      let cursor = null;
+      let hasMore = false;
+
+      const needsClientFiltering =
+        (firstBuilt.needsClientTopicFilter && firstBuilt.topics.length > 0) ||
+        (firstBuilt.needsClientSubtopicFilter && firstBuilt.subs.length > 0) ||
+        (firstBuilt.needsClientMasteryFilter && firstBuilt.masteryLevels.length > 0) ||
+        firstBuilt.needsClientSrsPresenceFilter;
+
+      if (!needsClientFiltering) {
+        const snap = await getDocs(firstBuilt.q);
+        rows = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+        cursor = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+        hasMore = snap.docs.length === pageSize;
+      } else {
+        const maxPages = 6;
+        let pagesFetched = 0;
+        let fetchCursor = null;
+        let lastSnapSize = 0;
+        const topics = firstBuilt.topics;
+        const subs = firstBuilt.subs;
+        const masteryLevels = firstBuilt.masteryLevels;
+
+        while (pagesFetched < maxPages && rows.length < pageSize) {
+          const built = buildMistakeIndexQueryConstraints({
+            userId: currentUser.uid, datePeriod,
+            selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence,
+            cursor: fetchCursor, pageSize,
+          });
+          const snap = await getDocs(built.q);
+          lastSnapSize = snap.docs.length;
+          let pageRows = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+
+          if (built.needsClientTopicFilter && topics.length > 0)
+            pageRows = pageRows.filter((r) => topics.includes(r?.Topic ?? r?.topic));
+          if (built.needsClientSubtopicFilter && subs.length > 0)
+            pageRows = pageRows.filter((r) => subs.includes(r?.Subtopic ?? r?.subtopic));
+          if (built.needsClientMasteryFilter && masteryLevels.length > 0)
+            pageRows = pageRows.filter((r) => masteryLevels.includes(r.srsBucket || 'not_in_srs'));
+          if (built.needsClientSrsPresenceFilter)
+            pageRows = pageRows.filter((r) => matchesSrsPresence(r, srsPresence));
+
+          rows.push(...pageRows);
+          fetchCursor = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : fetchCursor;
+          pagesFetched += 1;
+          if (lastSnapSize < pageSize) break;
+        }
+
+        cursor = fetchCursor;
+        hasMore = rows.length === pageSize;
+        rows = rows.slice(0, pageSize);
+      }
+
+      if (await backfillMistakeSrsDefaults(currentUser.uid, rows))
+        setSrsBackfillTick((x) => x + 1);
+
+      setMistakeIndexRows(rows);
+      setMistakeIndexCursor(cursor);
+      setMistakeIndexHasMore(hasMore);
+      setReviewAttempts(srsAttempts);
+
+      const questionMap = new Map((questions || []).map(q => [q.ID, q]));
+      const dueByQuestionId = new Map((dueCards || []).map((c) => [String(c.questionId), c]));
+
+      const deckAll = (rows || [])
+        .map((row) => {
+          const qid = row?.questionId ?? row?.ID ?? row?.docId ?? row?.id;
+          const questionId = qid ? String(qid) : null;
+          if (!questionId) return null;
+          const q = questionMap.get(Number.isFinite(Number(questionId)) ? Number(questionId) : questionId) || questionMap.get(questionId);
+          const dueCard = dueByQuestionId.get(questionId);
+          return {
+            ...(q || {}), ...row,
+            ID: q?.ID ?? row?.ID ?? questionId,
+            questionId,
+            Topic: q?.Topic ?? row?.Topic ?? null,
+            Subtopic: q?.Subtopic ?? row?.Subtopic ?? null,
+            attemptCount: Number(row?.attemptCount || 0),
+            lastAttempted: row?.lastAttempted || row?.lastWrongAt || row?.updatedAt || null,
+            userAnswer: row?.lastUserAnswer ?? null,
+            ...(dueCard || {}),
+            hasSrsCard: row?.hasSrsCard === true,
+            srsIsActive: row?.srsIsActive === true,
+            srsStatus: row?.srsStatus ?? null,
+            srsBucket: row?.srsBucket ?? (row?.hasSrsCard ? 'progressing' : 'not_in_srs'),
+            srsCardId: row?.srsCardId ?? null,
+            id: row?.srsCardId ?? null,
+            repetitionCount: (dueCard?.repetitionCount ?? row?.repetitionCount ?? 0),
+            improvementCount: (dueCard?.repetitionCount ?? row?.repetitionCount ?? 0),
+            status: dueCard?.status ?? row?.srsStatus ?? null,
+            isActive: row?.srsIsActive ?? dueCard?.isActive ?? row?.isActive ?? true,
+          };
+        })
+        .filter(Boolean)
+        .filter((m) => {
+          if (selectedTopics.length > 0 && !selectedTopics.includes(m.Topic)) return false;
+          if (selectedSubtopics.length > 0 && !selectedSubtopics.includes(m.Subtopic)) return false;
+          if (srsPresence !== 'all' && !matchesSrsPresence(m, srsPresence)) return false;
+          if (selectedMasteryLevels.length > 0) {
+            const bucket = getSrsBucket(m);
+            if (!selectedMasteryLevels.includes(bucket)) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          const aDue = !!(a?.nextReviewDate && a?.nextReviewDate <= formatHKDateKey(getNow()) && a?.isActive !== false);
+          const bDue = !!(b?.nextReviewDate && b?.nextReviewDate <= formatHKDateKey(getNow()) && b?.isActive !== false);
+          if (aDue !== bDue) return aDue ? -1 : 1;
+          return calcPriority(b) - calcPriority(a);
+        });
+
+      setMistakes(deckAll);
+      setSrsCards(dueCards || []);
+      setArchivedMistakes({});
+      setArchivedLoaded(false);
+    } catch (err) {
+      console.error(err);
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadFacetMistakes() {
+    if (!currentUser?.uid) return;
+    try {
+      const now = getNow();
+      const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
+      const monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);
+      const base = [collection(db, 'users', currentUser.uid, 'mistakes')];
+      if (datePeriod === 'week') base.push(where('lastWrongAt', '>=', weekAgo.toISOString()));
+      else if (datePeriod === 'month') base.push(where('lastWrongAt', '>=', monthAgo.toISOString()));
+      base.push(orderBy('lastWrongAt', 'desc'));
+      base.push(limit(200));
+      const snap = await getDocs(query(...base));
+      setFacetMistakeRows(snap.docs.map((d) => ({ docId: d.id, ...d.data() })));
+    } catch (e) {
+      console.error('Error loading facet mistakes:', e);
+    }
+  }
+
+  async function loadMoreMistakes() {
+    if (!currentUser?.uid || loadingMoreMistakes || !mistakeIndexHasMore || !mistakeIndexCursor) return;
+    setLoadingMoreMistakes(true);
+    try {
+      const pageSize = 40;
+      const firstBuilt = buildMistakeIndexQueryConstraints({
+        userId: currentUser.uid, datePeriod,
+        selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence,
+        cursor: mistakeIndexCursor, pageSize,
+      });
+
+      let fetchedRows = [];
+      let nextCursor = mistakeIndexCursor;
+      let hasMore = false;
+
+      const needsClientFiltering =
+        (firstBuilt.needsClientTopicFilter && firstBuilt.topics.length > 0) ||
+        (firstBuilt.needsClientSubtopicFilter && firstBuilt.subs.length > 0) ||
+        (firstBuilt.needsClientMasteryFilter && firstBuilt.masteryLevels.length > 0) ||
+        firstBuilt.needsClientSrsPresenceFilter;
+
+      if (!needsClientFiltering) {
+        const snap = await getDocs(firstBuilt.q);
+        fetchedRows = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+        nextCursor = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : mistakeIndexCursor;
+        hasMore = snap.docs.length === pageSize;
+      } else {
+        const maxPages = 6;
+        let pagesFetched = 0;
+        let fetchCursor = mistakeIndexCursor;
+        let lastSnapSize = 0;
+        const topics = firstBuilt.topics;
+        const subs = firstBuilt.subs;
+        const masteryLevels = firstBuilt.masteryLevels;
+
+        while (pagesFetched < maxPages && fetchedRows.length < pageSize) {
+          const built = buildMistakeIndexQueryConstraints({
+            userId: currentUser.uid, datePeriod,
+            selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence,
+            cursor: fetchCursor, pageSize,
+          });
+          const snap = await getDocs(built.q);
+          lastSnapSize = snap.docs.length;
+          let pageRows = snap.docs.map((d) => ({ docId: d.id, ...d.data() }));
+
+          if (built.needsClientTopicFilter && topics.length > 0)
+            pageRows = pageRows.filter((r) => topics.includes(r?.Topic ?? r?.topic));
+          if (built.needsClientSubtopicFilter && subs.length > 0)
+            pageRows = pageRows.filter((r) => subs.includes(r?.Subtopic ?? r?.subtopic));
+          if (built.needsClientMasteryFilter && masteryLevels.length > 0)
+            pageRows = pageRows.filter((r) => masteryLevels.includes(r.srsBucket || 'not_in_srs'));
+          if (built.needsClientSrsPresenceFilter)
+            pageRows = pageRows.filter((r) => matchesSrsPresence(r, srsPresence));
+
+          fetchedRows.push(...pageRows);
+          fetchCursor = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : fetchCursor;
+          pagesFetched += 1;
+          if (lastSnapSize < pageSize) break;
+        }
+
+        fetchedRows = fetchedRows.slice(0, pageSize);
+        nextCursor = fetchCursor;
+        hasMore = fetchedRows.length === pageSize;
+      }
+
+      if (await backfillMistakeSrsDefaults(currentUser.uid, fetchedRows))
+        setSrsBackfillTick((x) => x + 1);
+
+      const mergedRows = [...mistakeIndexRows, ...fetchedRows];
+      setMistakeIndexRows(mergedRows);
+      setMistakeIndexCursor(nextCursor);
+      setMistakeIndexHasMore(hasMore);
+
+      const questionMap = new Map((questions || []).map(q => [q.ID, q]));
+      const dueByQuestionId = new Map((srsCards || []).map((c) => [String(c.questionId), c]));
+
+      const deckDeduped = (() => {
+        const byId = new Map();
+        const order = [];
+        (mergedRows || []).forEach((row) => {
+          const qid = row?.questionId ?? row?.ID ?? row?.docId ?? row?.id;
+          const questionId = qid ? String(qid) : null;
+          if (!questionId) return;
+          const q =
+            questionMap.get(Number.isFinite(Number(questionId)) ? Number(questionId) : questionId) ||
+            questionMap.get(questionId);
+          const dueCard = dueByQuestionId.get(questionId);
+          const m = {
+            ...(q || {}), ...row,
+            ID: q?.ID ?? row?.ID ?? questionId, questionId,
+            Topic: q?.Topic ?? row?.Topic ?? null,
+            Subtopic: q?.Subtopic ?? row?.Subtopic ?? null,
+            attemptCount: Number(row?.attemptCount || 0),
+            lastAttempted: row?.lastAttempted || row?.lastWrongAt || row?.updatedAt || null,
+            userAnswer: row?.lastUserAnswer ?? null,
+            ...(dueCard || {}),
+            hasSrsCard: row?.hasSrsCard === true,
+            srsIsActive: row?.srsIsActive === true,
+            srsStatus: row?.srsStatus ?? null,
+            srsBucket: row?.srsBucket ?? (row?.hasSrsCard ? 'progressing' : 'not_in_srs'),
+            srsCardId: row?.srsCardId ?? null,
+            id: row?.srsCardId ?? null,
+            repetitionCount: (dueCard?.repetitionCount ?? row?.repetitionCount ?? 0),
+            improvementCount: (dueCard?.repetitionCount ?? row?.repetitionCount ?? 0),
+            status: dueCard?.status ?? row?.srsStatus ?? null,
+            isActive: row?.srsIsActive ?? dueCard?.isActive ?? row?.isActive ?? true,
+          };
+          if (!byId.has(questionId)) order.push(questionId);
+          byId.set(questionId, m);
+        });
+        return order.map((k) => byId.get(k)).filter(Boolean);
+      })();
+
+      const deckFiltered = deckDeduped
+        .filter((m) => {
+          if (selectedTopics.length > 0 && !selectedTopics.includes(m.Topic)) return false;
+          if (selectedSubtopics.length > 0 && !selectedSubtopics.includes(m.Subtopic)) return false;
+          if (srsPresence !== 'all' && !matchesSrsPresence(m, srsPresence)) return false;
+          if (selectedMasteryLevels.length > 0) {
+            const bucket = getSrsBucket(m);
+            if (!selectedMasteryLevels.includes(bucket)) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          const aDue = !!(a?.nextReviewDate && a?.nextReviewDate <= formatHKDateKey(getNow()) && a?.isActive !== false);
+          const bDue = !!(b?.nextReviewDate && b?.nextReviewDate <= formatHKDateKey(getNow()) && b?.isActive !== false);
+          if (aDue !== bDue) return aDue ? -1 : 1;
+          return calcPriority(b) - calcPriority(a);
+        });
+
+      setMistakes(deckFiltered);
+    } catch (e) {
+      console.error('Error loading more mistakes:', e);
+    }
+    setLoadingMoreMistakes(false);
+  }
+
+  useEffect(() => { applyRuleOfThree({}); }, []);
+
+  // Computed values
+  const allTopics = useMemo(() => {
+    if (datePeriod === 'all' && topicStatsDoc?.topics && typeof topicStatsDoc.topics === 'object') {
+      return Object.keys(topicStatsDoc.topics)
+        .map((k) => { try { return decodeURIComponent(k); } catch { return k; } })
+        .filter(Boolean).sort();
+    }
+    return [...new Set((facetMistakeRows || []).map((m) => m.Topic).filter(Boolean))].sort();
+  }, [facetMistakeRows, topicStatsDoc, datePeriod]);
+
+  const topicErrorDensity = useMemo(() => {
+    const byTopic = {};
+    const totalByTopic = {};
+    (questions || []).forEach((q) => {
+      if (!q?.Topic) return;
+      totalByTopic[q.Topic] = (totalByTopic[q.Topic] || 0) + 1;
+    });
+    mistakes.forEach((m) => {
+      const topic = m.Topic || m.topic;
+      if (!topic) return;
+      const wrongCount = Number(m.attemptCount || 0);
+      const weight = getSrsContributionWeight(m);
+      const score = wrongCount * weight;
+      byTopic[topic] = (byTopic[topic] || 0) + score;
+    });
+    return Object.entries(byTopic)
+      .map(([topic, score]) => {
+        const total = totalByTopic[topic] || 0;
+        const density = total > 0 ? score / total : score;
+        return { topic, score, density, total };
+      })
+      .sort((a, b) => b.density - a.density);
+  }, [mistakes, questions]);
+
+  useEffect(() => {
+    try {
+      const top = (topicErrorDensity || []).slice(0, 4);
+      localStorage.setItem('dashboard_topics_to_focus_cache_v1', JSON.stringify({
+        updatedAt: new Date().toISOString(), top
+      }));
+    } catch { /* ignore */ }
+  }, [topicErrorDensity]);
+
+  const availableSubtopics = useMemo(() => {
+    const baseRows = facetMistakeRows || [];
+    const base = selectedTopics.length > 0
+      ? baseRows.filter((m) => selectedTopics.includes(m.Topic))
+      : baseRows;
+    return [...new Set(base.map((m) => m.Subtopic).filter(Boolean))].sort();
+  }, [facetMistakeRows, selectedTopics]);
+
+  useEffect(() => {
+    setSelectedSubtopics((prev) => {
+      const next = prev.filter((s) => availableSubtopics.includes(s));
+      if (next.length === prev.length && next.every((v, i) => v === prev[i])) return prev;
+      return next;
+    });
+  }, [availableSubtopics]);
+
+  const filteredMistakes = useMemo(() => {
+    let result = [...mistakes];
+    const noFilters =
+      datePeriod === 'all' &&
+      selectedTopics.length === 0 &&
+      selectedSubtopics.length === 0 &&
+      selectedMasteryLevels.length === 0 &&
+      srsPresence === 'all';
+    if (noFilters && !mistakeIndexHasMore && mistakeIndexRows.length <= 40) {
+      return result.slice(0, 40);
+    }
+    return result;
+  }, [mistakes, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence, mistakeIndexHasMore, mistakeIndexRows.length]);
+
+  const selectedMasteryTotalCount = useMemo(() => {
+    if (!selectedMasteryLevels || selectedMasteryLevels.length === 0) return null;
+    if (!masteryCounts || typeof masteryCounts !== 'object') return null;
+    const sum = selectedMasteryLevels.reduce((acc, lvl) => acc + Number(masteryCounts?.[lvl] || 0), 0);
+    return Number.isFinite(sum) ? sum : null;
+  }, [masteryCounts, selectedMasteryLevels]);
+
+  const globalFilteredTotalCount = useMemo(() => {
+    if (datePeriod !== 'all') return null;
+    if (selectedSubtopics.length > 0) return null;
+    if (selectedTopics.length > 0) {
+      if (selectedTopics.length === 1) {
+        const topic = selectedTopics[0];
+        const override = topicCountOverrides?.[String(topic)];
+        if (override != null) { const v = Number(override); return Number.isFinite(v) ? v : null; }
+      }
+      if (selectedTopics.length >= 2 && selectedTopics.length <= 10 && multiTopicOverrideCount != null) {
+        const v = Number(multiTopicOverrideCount);
+        return Number.isFinite(v) ? v : null;
+      }
+      if (!topicStatsDoc?.topics || typeof topicStatsDoc.topics !== 'object') return null;
+      const bucketKeys = selectedMasteryLevels.length > 0 ? selectedMasteryLevels : Object.keys(MASTERY_LEVELS);
+      const sum = selectedTopics.reduce((acc, topic) => {
+        const key = encodeURIComponent(String(topic || ''));
+        const entry = topicStatsDoc.topics[key];
+        const e = entry && typeof entry === 'object' ? entry : {};
+        if (srsPresence === 'in_srs') return acc + Number(e.active || 0);
+        if (srsPresence === 'not_in_srs') return acc + Number(e.b_not_in_srs || 0);
+        const topicSum = bucketKeys.reduce((bAcc, b) => bAcc + Number(e[`b_${b}`] || 0), 0);
+        return acc + topicSum;
+      }, 0);
+      return Number.isFinite(sum) ? sum : null;
+    }
+    if (selectedMasteryTotalCount != null) return selectedMasteryTotalCount;
+    if (srsPresence === 'not_in_srs') {
+      if (masteryCounts && typeof masteryCounts === 'object') {
+        const v = Number(masteryCounts?.not_in_srs || 0);
+        return Number.isFinite(v) ? v : null;
+      }
+      return null;
+    }
+    if (masteryCounts && typeof masteryCounts === 'object' && Object.keys(masteryCounts).length > 0) {
+      const sum = Object.values(masteryCounts).reduce((acc, v) => acc + Number(v || 0), 0);
+      return Number.isFinite(sum) ? sum : null;
+    }
+    return totalMistakesCount != null ? Number(totalMistakesCount) : null;
+  }, [datePeriod, selectedSubtopics, selectedTopics, topicStatsDoc, selectedMasteryLevels, srsPresence, selectedMasteryTotalCount, masteryCounts, totalMistakesCount, topicCountOverrides, multiTopicOverrideCount]);
+
+  useEffect(() => {
+    if (!currentUser?.uid || datePeriod !== 'all' || selectedTopics.length === 0 || loading || error || loadingMoreMistakes) return;
+    const total = globalFilteredTotalCount;
+    const loaded = Number(filteredMistakes?.length || 0);
+    if (total == null || !Number.isFinite(Number(total)) || !(Number(total) > loaded)) return;
+    const doneKey = `normalize_mistakes_done_${currentUser.uid}`;
+    const runningKey = `normalize_mistakes_running_${currentUser.uid}`;
+    if (localStorage.getItem(doneKey) === '1' || localStorage.getItem(runningKey) === '1') return;
+    const run = async () => {
+      try {
+        localStorage.setItem(runningKey, '1');
+        const functions = getFunctions(app, 'asia-east1');
+        const callable = httpsCallable(functions, 'normalizeMistakes');
+        await callable({});
+        localStorage.setItem(doneKey, '1');
+        localStorage.removeItem(runningKey);
+        await refreshTopicStatsDoc();
+        await loadMistakes();
+      } catch (e) {
+        localStorage.removeItem(runningKey);
+        console.error('normalizeMistakes failed:', e);
+      }
+    };
+    run();
+  }, [currentUser?.uid, datePeriod, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence, loading, error, loadingMoreMistakes, globalFilteredTotalCount, filteredMistakes, refreshTopicStatsDoc]);
+
+  const facetFilteredCount = useMemo(() => {
+    let result = [...(facetMistakeRows || [])];
+    if (selectedTopics.length > 0) result = result.filter((m) => selectedTopics.includes(m.Topic));
+    if (selectedSubtopics.length > 0) result = result.filter((m) => selectedSubtopics.includes(m.Subtopic));
+    if (srsPresence !== 'all') result = result.filter((m) => matchesSrsPresence(m, srsPresence));
+    if (selectedMasteryLevels.length > 0) result = result.filter((m) => selectedMasteryLevels.some((lvl) => getSrsBucket(m) === lvl));
+    return result.length;
+  }, [facetMistakeRows, selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence]);
+
+  const topicFacetCountMap = useMemo(() => {
+    if (datePeriod === 'all' && topicStatsDoc?.topics && typeof topicStatsDoc.topics === 'object') {
+      const map = new Map();
+      const bucketKeys = selectedMasteryLevels.length > 0 ? selectedMasteryLevels : Object.keys(MASTERY_LEVELS);
+      const includeActiveOnly = srsPresence === 'in_srs';
+      const includeNotInSrsOnly = srsPresence === 'not_in_srs';
+      Object.entries(topicStatsDoc.topics).forEach(([topicEnc, entry]) => {
+        const topic = (() => { try { return decodeURIComponent(topicEnc); } catch { return topicEnc; } })();
+        if (!topic) return;
+        const e = entry && typeof entry === 'object' ? entry : {};
+        let count = 0;
+        if (includeActiveOnly) count = Number(e.active || 0);
+        else if (includeNotInSrsOnly) count = Number(e.b_not_in_srs || 0);
+        else bucketKeys.forEach((b) => { count += Number(e[`b_${b}`] || 0); });
+        map.set(topic, count);
+      });
+      if (topicCountOverrides && typeof topicCountOverrides === 'object') {
+        Object.entries(topicCountOverrides).forEach(([topic, v]) => {
+          const n = Number(v);
+          if (!Number.isFinite(n)) return;
+          map.set(topic, n);
+        });
+      }
+      return map;
+    }
+    const base = [...(facetMistakeRows || [])]
+      .filter((m) => (srsPresence === 'all' ? true : matchesSrsPresence(m, srsPresence)))
+      .filter((m) => (selectedMasteryLevels.length === 0 ? true : selectedMasteryLevels.some((lvl) => getSrsBucket(m) === lvl)));
+    const map = new Map();
+    base.forEach((m) => {
+      const topic = m?.Topic;
+      if (!topic) return;
+      map.set(topic, (map.get(topic) || 0) + 1);
+    });
+    if (topicCountOverrides && typeof topicCountOverrides === 'object') {
+      Object.entries(topicCountOverrides).forEach(([topic, v]) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return;
+        map.set(topic, n);
+      });
+    }
+    return map;
+  }, [facetMistakeRows, srsPresence, selectedMasteryLevels, topicStatsDoc, datePeriod, topicCountOverrides]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const onChange = (e) => setHoverCapable(!!e.matches);
+    setHoverCapable(!!mql.matches);
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', onChange);
+      return () => mql.removeEventListener('change', onChange);
+    }
+    mql.addListener(onChange);
+    return () => mql.removeListener(onChange);
+  }, []);
+
+  const practiceCount =
+    questionCount === 'All'
+      ? filteredMistakes.length
+      : Math.min(parseInt(questionCount) || 0, filteredMistakes.length);
+
+  // Handlers
+  const toggleTopic = useCallback((topic) => {
+    setSelectedTopics((prev) => prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]);
+  }, []);
+
+  const toggleSubtopic = useCallback((sub) => {
+    setSelectedSubtopics((prev) => prev.includes(sub) ? prev.filter((s) => s !== sub) : [...prev, sub]);
+  }, []);
+
+  const toggleMasteryLevel = useCallback((lvl) => {
+    setSelectedMasteryLevels((prev) => prev.includes(lvl) ? prev.filter((l) => l !== lvl) : [...prev, lvl]);
+  }, []);
+
+  const handlePracticeMistakes = () => {
+    if (filteredMistakes.length === 0) return;
+    const selected = [...filteredMistakes]
+      .sort((a, b) => calcPriority(b) - calcPriority(a))
+      .slice(0, practiceCount);
+    quizStorage.clearQuizData();
+    quizStorage.saveSelectedQuestions(selected);
+    const selectedSrsCards = selected.filter((card) => !!card?.id);
+    if (selectedSrsCards.length === selected.length) {
+      localStorage.setItem('quiz_mode', 'spaced-repetition');
+      localStorage.setItem('quiz_srs_cards', JSON.stringify(
+        selectedSrsCards.map((card) => ({
+          id: card.id, questionId: card.questionId,
+          topic: card.topic || card.Topic,
+          subtopic: card.subtopic || card.Subtopic || null,
+          nextReviewDate: card.nextReviewDate,
+          status: card.status,
+        }))
+      ));
+    } else {
+      localStorage.setItem('quiz_mode', 'mistakes');
+      localStorage.removeItem('quiz_srs_cards');
+    }
+    localStorage.setItem('quiz_timer_enabled', timerEnabled.toString());
+    localStorage.setItem('quiz_is_timed_mode', isTimedMode.toString());
+    navigate('/quiz');
+  };
+
+  const handleRestoreCard = async (questionId) => {
+    if (!currentUser) return;
+    try {
+      const archivedCard = Object.values(archivedMistakes).find(card => card.questionId === questionId || card.ID === questionId);
+      if (!archivedCard?.id) { console.error('Could not find archived card:', questionId); return; }
+      await srsService.restoreArchivedCard(archivedCard.id);
+      console.log('♻️ Restored card:', questionId);
+      loadMistakes();
+    } catch (error) {
+      console.error('Error restoring card:', error);
+    }
+  };
+
+  const formatDate = (iso) =>
+    new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  const hasAnyFilter =
+    datePeriod !== 'all' ||
+    selectedTopics.length > 0 ||
+    selectedSubtopics.length > 0 ||
+    selectedMasteryLevels.length > 0 ||
+    srsPresence !== 'all';
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <ChemistryLoading />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-sm border border-red-200 max-w-lg">
+          <p className="text-red-600 font-black mb-2">{t('notebook.loadingMistakes')}</p>
+          <p className="text-slate-600 text-sm">{String(error?.message || error)}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  return (
+    <div className="flex flex-col min-h-0 bg-slate-50">
+      {/* Filter Info Modal */}
+      <AnimatePresence>
+        {filterInfoOpen && (
+          <FilterInfoModal onClose={() => setFilterInfoOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* ── Top Navigation Bar ───────────────────────────────────────────── */}
+      {!showCustomReview && (
+        <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2 flex-1">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="p-2 hover:bg-slate-100 rounded-lg transition-all"
+              title="Back to Dashboard"
+            >
+              <ArrowLeft size={20} className="text-slate-700" />
+            </button>
+            <h1 className="font-black text-xl text-slate-800 flex items-center gap-2">
+              <Brain size={20} className="text-indigo-600" />
+              {t('notebook.commandCenter')}
+            </h1>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Tab buttons */}
+            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+              <button
+                onClick={() => setActiveTab('analytics')}
+                className={`px-3 py-1.5 rounded-lg font-bold text-sm transition-all ${
+                  activeTab === 'analytics'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                <Brain size={14} className="inline mr-1.5" />
+                {t('notebook.learningInsights')}
+              </button>
+              <button
+                onClick={() => setActiveTab('archive')}
+                className={`px-3 py-1.5 rounded-lg font-bold text-sm transition-all ${
+                  activeTab === 'archive'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                <Archive size={14} className="inline mr-1.5" />
+                {t('notebook.archive')}
+                {Object.keys(archivedMistakes).length > 0 && (
+                  <span className="ml-1 text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">
+                    {Object.keys(archivedMistakes).length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Custom Review toggle button — prominent, distinct from tabs */}
+            <button
+              onClick={() => setShowCustomReview(true)}
+              className={`relative flex items-center gap-2 px-4 py-2 rounded-xl font-black text-sm transition-all shadow-sm
+                bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white active:scale-95`}
+            >
+              <SlidersHorizontal size={15} />
+              {t('notebook.customReview') || 'Custom Review'}
+              {hasAnyFilter && (
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-indigo-600 rounded-full flex items-center justify-center text-[9px] font-black text-white">
+                  {[
+                    datePeriod !== 'all' ? 1 : 0,
+                    selectedTopics.length,
+                    selectedSubtopics.length,
+                    selectedMasteryLevels.length,
+                    srsPresence !== 'all' ? 1 : 0,
+                  ].reduce((a, b) => a + b, 0)}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Content ─────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+        <AnimatePresence mode="wait">
+
+          {/* Custom Review Page */}
+          {showCustomReview && (
+            <CustomReviewPage
+              key="custom-review"
+              onBack={() => setShowCustomReview(false)}
+              filteredMistakes={filteredMistakes}
+              allTopics={allTopics}
+              availableSubtopics={availableSubtopics}
+              masteryCounts={masteryCounts}
+              totalMistakesCount={totalMistakesCount}
+              questionCount={questionCount}
+              setQuestionCount={setQuestionCount}
+              datePeriod={datePeriod}
+              setDatePeriod={setDatePeriod}
+              selectedTopics={selectedTopics}
+              toggleTopic={toggleTopic}
+              selectedSubtopics={selectedSubtopics}
+              toggleSubtopic={toggleSubtopic}
+              selectedMasteryLevels={selectedMasteryLevels}
+              toggleMasteryLevel={toggleMasteryLevel}
+              srsPresence={srsPresence}
+              setSrsPresence={setSrsPresence}
+              timerEnabled={timerEnabled}
+              setTimerEnabled={setTimerEnabled}
+              isTimedMode={isTimedMode}
+              setIsTimedMode={setIsTimedMode}
+              onPractice={handlePracticeMistakes}
+              topicFacetCountMap={topicFacetCountMap}
+              filterInfoOpen={filterInfoOpen}
+              setFilterInfoOpen={setFilterInfoOpen}
+              hoverCapable={hoverCapable}
+              mistakes={mistakes}
+            />
+          )}
+
+          {/* Analytics Tab */}
+          {!showCustomReview && activeTab === 'analytics' && (
+            <motion.div
+              key="analytics"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="p-4 sm:p-6 space-y-6"
+            >
+              {mistakes.length === 0 ? (
+                <div className="text-center py-16">
+                  <CheckCircle className="w-16 h-16 text-green-300 mx-auto mb-4" />
+                  <p className="text-slate-400 text-lg mb-2 font-semibold">{t('notebook.noMistakesYet')}</p>
+                  <p className="text-slate-500 text-sm mb-6">{t('notebook.keepPracticing')}</p>
+                  <button
+                    onClick={() => navigate('/practice')}
+                    className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all"
+                  >
+                    {t('notebook.startPracticing')}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Quick Stats */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                      <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                        {t('notebook.totalMistakes')}
+                      </div>
+                      <div className="text-3xl font-black text-red-600">{totalMistakesCount ?? mistakes.length}</div>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                      <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                        {t('notebook.topicsToFocus')}
+                      </div>
+                      <div className="text-3xl font-black text-amber-600">
+                        {new Set(mistakes.map((m) => m.Topic)).size}
+                      </div>
+                    </div>
+                    <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+                      <div className="text-xs font-black text-slate-500 uppercase tracking-widest mb-2">
+                        {t('notebook.repeatedMistakes')}
+                      </div>
+                      <div className="text-3xl font-black text-green-600">
+                        {mistakes.filter((m) => m.attemptCount > 1).length}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* LEFT: Error density + topic order */}
+                    <div className="lg:col-span-1 space-y-6">
+                      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                        <h3 className="font-bold text-lg text-slate-800 mb-4 flex items-center gap-2">
+                          <Target size={20} className="text-rose-600" />
+                          {t('notebook.topicsToFocus')}
+                        </h3>
+                        <div className="space-y-2">
+                          {topicErrorDensity.slice(0, 10).map((row, idx) => (
+                            <button
+                              key={row.topic}
+                              onClick={() => toggleTopic(row.topic)}
+                              className={`w-full text-left p-3 rounded-xl border transition-all hover:shadow-sm ${
+                                selectedTopics.includes(row.topic)
+                                  ? 'border-rose-300 bg-rose-50'
+                                  : 'border-slate-200 bg-white hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-black text-slate-800 truncate">
+                                    #{idx + 1} {row.topic}
+                                  </div>
+                                  <div className="text-xs text-slate-500 mt-0.5">
+                                    {tf('notebook.topicFilter', { topic: row.topic })}
+                                  </div>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <div className="text-xs font-black text-rose-600">
+                                    {row.density.toFixed(2)}
+                                  </div>
+                                  <div className="text-[11px] text-slate-500">
+                                    {Math.round(row.score)} / {row.total || '—'}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <InteractiveTopicHeatmap
+                        mistakes={mistakes}
+                        selectedTopics={selectedTopics}
+                        onTopicToggle={toggleTopic}
+                      />
+                    </div>
+
+                    {/* RIGHT: SRS charts */}
+                    <div className="lg:col-span-2 space-y-6">
+                      <RetentionDashboard cards={srsCards} attempts={reviewAttempts} />
+                      <div className="grid grid-cols-1 gap-6">
+                        <CalendarHeatmap attempts={reviewAttempts} />
+                        <ImprovementTrendChart cards={srsCards} attempts={reviewAttempts} />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          )}
+
+          {/* Archive Tab */}
+          {!showCustomReview && activeTab === 'archive' && (
+            <motion.div
+              key="archive"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="p-4 sm:p-6"
+            >
+              {Object.keys(archivedMistakes).length === 0 ? (
+                <div className="text-center py-12">
+                  <Archive className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-400 text-lg mb-2 font-semibold">{t('notebook.noArchivedYet')}</p>
+                  <div className="max-w-2xl mx-auto space-y-3">
+                    <p className="text-slate-500 text-sm">{t('notebook.archiveInstructions')}</p>
+                    <div className="p-4 rounded-xl border-2 bg-emerald-50 border-emerald-200 text-left">
+                      <div className="text-sm font-black text-slate-800 mb-1">{t('notebook.archiveMasteryHowTitle')}</div>
+                      <div className="text-xs text-slate-600 leading-relaxed">{t('notebook.archiveMasteryHowBody')}</div>
+                    </div>
+                    <div className="p-4 rounded-xl border-2 bg-amber-50 border-amber-200 text-left">
+                      <div className="text-sm font-black text-slate-800 mb-1">{t('notebook.archiveOverdueHowTitle')}</div>
+                      <div className="text-xs text-slate-600 leading-relaxed">{t('notebook.archiveOverdueHowBody')}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                (() => {
+                  const allArchived = Object.values(archivedMistakes);
+                  const overdueArchived = allArchived.filter((q) => q.archiveReason === 'overdue_7_days' || q.archiveReason === 'overdue_14_days');
+                  const masteryArchived = allArchived.filter((q) => q.archiveReason !== 'overdue_7_days' && q.archiveReason !== 'overdue_14_days');
+                  const activeList = archiveSubTab === 'overdue' ? overdueArchived : masteryArchived;
+                  const activeCount = activeList.length;
+
+                  const renderCard = (question) => (
+                    <motion.div
+                      key={question?.docId ?? question?.ID}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300"
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <div className="text-xs font-bold text-green-700 uppercase">{question.Topic}</div>
+                          <div className="text-xs text-green-600">{question.Subtopic}</div>
+                          {question.archiveReason && (
+                            <div className="text-xs text-amber-600 font-semibold mt-1">
+                              {question.archiveReason === 'overdue_7_days' || question.archiveReason === 'overdue_14_days'
+                                ? 'Auto-archived (14+ days overdue)'
+                                : 'Archived'}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-green-600 font-bold flex items-center gap-1">
+                            <CheckCircle size={14} />
+                            {tf('notebook.masteredOn', { date: formatDate(question.archivedAt) })}
+                          </div>
+                          <button
+                            onClick={() => handleRestoreCard(question.ID)}
+                            className="mt-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
+                          >
+                            <PlusCircle size={12} />
+                            Restore
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-sm text-green-900 font-medium mb-2">
+                        {question.Question?.replace(/<[^>]*>/g, '').substring(0, 100)}...
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-slate-600">
+                        <span>Original attempts: {question.attemptCount || 1}</span>
+                        <span>SRS reviews: {question.repetitionCount || 0}</span>
+                        {question.interval && <span>Interval: {question.interval} days</span>}
+                      </div>
+                    </motion.div>
+                  );
+
+                  return (
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setArchiveSubTab('mastery')}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-black border-2 transition-all ${
+                              archiveSubTab === 'mastery'
+                                ? 'bg-emerald-600 text-white border-emerald-600'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {t('notebook.archiveSubtabMastery')} ({masteryArchived.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setArchiveSubTab('overdue')}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-black border-2 transition-all ${
+                              archiveSubTab === 'overdue'
+                                ? 'bg-amber-500 text-white border-amber-500'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {t('notebook.archiveSubtabOverdue')} ({overdueArchived.length})
+                          </button>
+                        </div>
+                        <div className="text-xs text-slate-500 font-semibold">
+                          {tf('notebook.archiveSubtabCount', { count: activeCount })}
+                        </div>
+                      </div>
+
+                      <div className={`p-4 rounded-xl border-2 ${archiveSubTab === 'overdue' ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                        <div className="text-sm font-black text-slate-800 mb-1">
+                          {archiveSubTab === 'overdue' ? t('notebook.archiveOverdueHowTitle') : t('notebook.archiveMasteryHowTitle')}
+                        </div>
+                        <div className="text-xs text-slate-600 leading-relaxed">
+                          {archiveSubTab === 'overdue' ? t('notebook.archiveOverdueHowBody') : t('notebook.archiveMasteryHowBody')}
+                        </div>
+                      </div>
+
+                      {activeList.length === 0 ? (
+                        <div className="text-center py-10">
+                          <div className="text-sm font-black text-slate-700 mb-1">
+                            {archiveSubTab === 'overdue' ? t('notebook.noOverdueArchives') : t('notebook.noMasteryArchives')}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {archiveSubTab === 'overdue' ? t('notebook.noOverdueArchivesHint') : t('notebook.noMasteryArchivesHint')}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">{activeList.map(renderCard)}</div>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
+            </motion.div>
+          )}
+
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
