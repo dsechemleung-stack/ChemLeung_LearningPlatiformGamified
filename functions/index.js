@@ -15,6 +15,7 @@ function getChemCityDefaults(userId) {
       coins: 500,
       diamonds: 20,
     },
+    storeSlotCount: 3,
     ownedItems: [],
     equipped: {},
     activeBonuses: {
@@ -128,6 +129,12 @@ function getDiscountedCoinCost(baseCost, shopDiscountPercent) {
   const factor = 1 - Math.min(disc, 50) / 100;
   return Math.max(1, Math.floor(cost * factor));
 }
+
+const STORE_SLOT_UNLOCK_COSTS = {
+  4: 1000,
+  5: 2500,
+  6: 5000,
+};
 
 async function computeChemCityActiveBonuses(db, equipped) {
   const itemIds = Object.values(equipped || {}).filter((x) => typeof x === 'string' && x.length > 0);
@@ -386,6 +393,166 @@ exports.updateMistakeTopicStatsOnCreate = onDocumentCreated(
   }
 );
 
+exports.chemcityUnlockStoreSlot = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+
+    return db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+
+      const current = Number(chemcity.storeSlotCount || 3);
+      if (!Number.isFinite(current) || current < 3) {
+        throw new HttpsError('failed-precondition', 'Invalid storeSlotCount.');
+      }
+      if (current >= 6) {
+        throw new HttpsError('failed-precondition', 'All store slots already unlocked.');
+      }
+
+      const next = current + 1;
+      const cost = STORE_SLOT_UNLOCK_COSTS[next];
+      if (!Number.isFinite(cost) || cost <= 0) {
+        throw new HttpsError('failed-precondition', 'Invalid store slot unlock cost.');
+      }
+
+      const currencies = chemcity.currencies || {};
+      const coins = Number(currencies.coins || 0);
+      if (coins < cost) {
+        throw new HttpsError('failed-precondition', 'Insufficient coins.');
+      }
+
+      tx.update(userRef, {
+        'chemcity.currencies.coins': coins - cost,
+        'chemcity.storeSlotCount': next,
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: true, newSlotCount: next, coinsDeducted: cost };
+    });
+  }
+);
+
+exports.chemcityClaimCollectionReward = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const collectionId = request.data?.collectionId;
+    if (typeof collectionId !== 'string' || !collectionId) {
+      throw new HttpsError('invalid-argument', 'collectionId must be a non-empty string.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+    const progressRef = userRef.collection('chemcity_progress').doc('data');
+    const colRef = db.collection('collections').doc(collectionId);
+
+    return db.runTransaction(async (tx) => {
+      const [userSnap, progressSnap, colSnap] = await Promise.all([
+        tx.get(userRef),
+        tx.get(progressRef),
+        tx.get(colRef),
+      ]);
+
+      if (!userSnap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+      if (!colSnap.exists) {
+        throw new HttpsError('not-found', `Collection '${collectionId}' not found.`);
+      }
+
+      const userData = userSnap.data() || {};
+      const chemcity = userData.chemcity || {};
+
+      const ownedItems = Array.isArray(chemcity.ownedItems) ? chemcity.ownedItems : [];
+      const ownedSet = new Set(ownedItems.map(String));
+
+      const colData = colSnap.data() || {};
+      const itemIds = Array.isArray(colData.itemIds) ? colData.itemIds.map(String) : [];
+      const rewardCoins = Number(colData.rewardCoins || 0);
+      const rewardDiamonds = Number(colData.rewardDiamonds || 0);
+
+      if (itemIds.length === 0) {
+        throw new HttpsError('failed-precondition', 'Collection has no items.');
+      }
+
+      const allOwned = itemIds.every((id) => ownedSet.has(id));
+      if (!allOwned) {
+        throw new HttpsError('failed-precondition', 'You have not collected all items in this collection.');
+      }
+
+      const progress = progressSnap.exists ? (progressSnap.data() || {}) : {};
+      const collectionsProgress = progress.collections && typeof progress.collections === 'object'
+        ? progress.collections
+        : {};
+      const prevColProgress = collectionsProgress[collectionId] && typeof collectionsProgress[collectionId] === 'object'
+        ? collectionsProgress[collectionId]
+        : {};
+
+      if (prevColProgress.rewardClaimed === true) {
+        throw new HttpsError('already-exists', 'Reward for this collection has already been claimed.');
+      }
+
+      const update = {
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (rewardCoins > 0) {
+        update['chemcity.currencies.coins'] = admin.firestore.FieldValue.increment(rewardCoins);
+      }
+      if (rewardDiamonds > 0) {
+        update['chemcity.currencies.diamonds'] = admin.firestore.FieldValue.increment(rewardDiamonds);
+      }
+
+      tx.update(userRef, update);
+
+      tx.set(
+        progressRef,
+        {
+          collections: {
+            [collectionId]: {
+              collected: itemIds.length,
+              total: itemIds.length,
+              completed: true,
+              rewardClaimed: true,
+              claimedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+          },
+        },
+        { merge: true },
+      );
+
+      return {
+        ok: true,
+        coinsAwarded: Math.max(0, Math.floor(rewardCoins)),
+        diamondsAwarded: Math.max(0, Math.floor(rewardDiamonds)),
+      };
+    });
+  },
+);
+
 exports.chemcityPurchaseCard = onCall(
   {
     region: 'asia-east1',
@@ -605,6 +772,8 @@ exports.chemcityUnlockSlot = onCall(
       throw new HttpsError('failed-precondition', 'Invalid slotId.');
     }
 
+    const isBudgetOnly = slot.budgetOnly === true;
+
     const unlockCost = slot.unlockCost == null ? null : Number(slot.unlockCost);
     const unlockCurrency = slot.unlockCurrency == null ? 'coins' : String(slot.unlockCurrency);
 
@@ -626,15 +795,11 @@ exports.chemcityUnlockSlot = onCall(
         return { ok: true, alreadyUnlocked: true, slotId };
       }
 
-      if (unlockCost == null) {
-        tx.update(userRef, {
-          'chemcity.unlockedSlots': [...unlockedSlots, slotId],
-          'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
-        });
-        return { ok: true, slotId, cost: 0, currency: null };
-      }
-
-      if (useExtraSlotBudget) {
+      // Budget-only slots can only be unlocked via extraSlotsBudget.
+      if (isBudgetOnly) {
+        if (!useExtraSlotBudget) {
+          throw new HttpsError('failed-precondition', 'This slot can only be unlocked using extra slot budget.');
+        }
         const budget = Number(chemcity.extraSlotsBudget || 0);
         if (budget <= 0) {
           throw new HttpsError('failed-precondition', 'No extra slot budget available.');
@@ -644,7 +809,20 @@ exports.chemcityUnlockSlot = onCall(
           'chemcity.unlockedSlots': [...unlockedSlots, slotId],
           'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
         });
-        return { ok: true, slotId, usedExtraSlotBudget: true };
+        return { ok: true, slotId, usedExtraSlotBudget: true, budgetOnly: true };
+      }
+
+      // Non-budget slots must not spend extraSlotsBudget.
+      if (useExtraSlotBudget) {
+        throw new HttpsError('failed-precondition', 'This slot cannot be unlocked using extra slot budget.');
+      }
+
+      if (unlockCost == null) {
+        tx.update(userRef, {
+          'chemcity.unlockedSlots': [...unlockedSlots, slotId],
+          'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { ok: true, slotId, cost: 0, currency: null };
       }
 
       const currencies = chemcity.currencies || {};

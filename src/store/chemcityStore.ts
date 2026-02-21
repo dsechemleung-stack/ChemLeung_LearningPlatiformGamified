@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { doc, getDoc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { fetchSlimItems, fetchPlaces, fetchFullItem } from '../lib/cache';
+import { fetchSlimItems, fetchPlaces, fetchFullItem, fetchCollections } from '../lib/cache';
 import type {
   UserChemCityData,
   UserProgressData,
   SlimItemDocument,
   PlaceDocument,
   FullItemDocument,
+  CollectionDocument,
 } from '../lib/chemcity/types';
 import {
   callChemCityInitUser,
@@ -18,11 +19,33 @@ import {
   callChemCityUnlockSlot,
   callChemCityGetDailyLoginBonus,
   callChemCityQuizReward,
+  callChemCityPurchaseCard,
+  callChemCityUnlockStoreSlot,
+  callChemCityClaimCollectionReward,
 } from '../lib/chemcity/cloudFunctions';
 import { estimateUnclaimedCoins } from '../lib/chemcity/income';
+import { getDailyStoreItems, STORE_MIN_SLOTS } from '../lib/chemcity/dailyStore';
 import type { QuizRewardRequest, QuizRewardResult } from '../lib/chemcity/types';
 
-type View = 'map' | 'place' | 'inventory';
+const ONBOARDING_STORAGE_KEY = 'chemcity_onboarding_done_v1';
+
+function hasSeenOnboarding(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markOnboardingDone(): void {
+  try {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
+type View = 'map' | 'place' | 'inventory' | 'store' | 'gas_station_distributor' | 'collections';
 
 type RootUserDoc = {
   chemcity?: UserChemCityData;
@@ -33,6 +56,7 @@ interface ChemCityStore {
   progress: UserProgressData | null;
   slimItems: SlimItemDocument[];
   places: PlaceDocument[];
+  collections: CollectionDocument[];
 
   isLoading: boolean;
   error: string | null;
@@ -47,6 +71,14 @@ interface ChemCityStore {
   cardDetailLoading: boolean;
 
   passiveDisplayCoins: number;
+
+  // Phase 4: store + unlock modals
+  dailyStoreItems: SlimItemDocument[];
+  storeSlotCount: number;
+  storePurchaseItemId: string | null;
+  storePurchaseData: FullItemDocument | null;
+  storePurchaseLoading: boolean;
+  placeUnlockModalId: string | null;
 
   quizReward: {
     result: QuizRewardResult | null;
@@ -63,6 +95,8 @@ interface ChemCityStore {
     checked: boolean;
   };
 
+  showOnboarding: boolean;
+
   _unsubUser: Unsubscribe | null;
 
   loadAll: (userId: string) => Promise<void>;
@@ -71,6 +105,9 @@ interface ChemCityStore {
   navigateToMap: () => void;
   navigateToPlace: (placeId: string) => void;
   navigateToInventory: () => void;
+  navigateToStore: () => void;
+  navigateToGasStationDistributor: () => void;
+  navigateToCollections: () => void;
 
   openCardPicker: (slotId: string) => void;
   closeCardPicker: () => void;
@@ -84,7 +121,7 @@ interface ChemCityStore {
   collectIncome: () => Promise<{ coinsAwarded: number }>;
 
   unlockPlace: (placeId: string) => Promise<void>;
-  unlockSlot: (placeId: string, slotId: string) => Promise<void>;
+  unlockSlot: (placeId: string, slotId: string, useExtraSlotBudget?: boolean) => Promise<void>;
 
   tickPassiveDisplay: () => void;
 
@@ -93,6 +130,19 @@ interface ChemCityStore {
 
   checkDailyLogin: () => Promise<void>;
   dismissDailyLogin: () => void;
+
+  computeDailyStore: (userId: string) => void;
+  unlockStoreSlot: () => Promise<void>;
+
+  openPurchaseConfirm: (itemId: string) => void;
+  closePurchaseConfirm: () => void;
+  purchaseCard: (itemId: string, currency: 'coins' | 'diamonds') => Promise<void>;
+
+  openPlaceUnlockModal: (placeId: string) => void;
+  closePlaceUnlockModal: () => void;
+
+  claimCollectionReward: (collectionId: string) => Promise<void>;
+  dismissOnboarding: () => void;
 }
 
 export const useChemCityStore = create<ChemCityStore>((set, get) => ({
@@ -100,6 +150,7 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   progress: null,
   slimItems: [],
   places: [],
+  collections: [],
 
   isLoading: false,
   error: null,
@@ -114,6 +165,13 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   cardDetailLoading: false,
 
   passiveDisplayCoins: 0,
+
+  dailyStoreItems: [],
+  storeSlotCount: STORE_MIN_SLOTS,
+  storePurchaseItemId: null,
+  storePurchaseData: null,
+  storePurchaseLoading: false,
+  placeUnlockModalId: null,
 
   quizReward: {
     result: null,
@@ -130,12 +188,18 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
     checked: false,
   },
 
+  showOnboarding: false,
+
   _unsubUser: null,
 
   loadAll: async (userId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const [slimItems, places] = await Promise.all([fetchSlimItems(), fetchPlaces()]);
+      const [slimItems, places, collections] = await Promise.all([
+        fetchSlimItems(),
+        fetchPlaces(),
+        fetchCollections(),
+      ]);
 
       await callChemCityInitUser();
 
@@ -155,21 +219,61 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
         if (!snap.exists()) return;
         const freshRoot = (snap.data() || {}) as RootUserDoc;
         const fresh = (freshRoot.chemcity || null) as UserChemCityData | null;
-        set({ user: fresh });
+
+        // Phase 4: mirror storeSlotCount (default 3) + compute daily store items
+        const slotCount = (fresh as any)?.storeSlotCount ?? STORE_MIN_SLOTS;
+        const dailyStoreItems = fresh
+          ? getDailyStoreItems(userId, slimItems, slotCount)
+          : [];
+
+        set({ user: fresh, storeSlotCount: slotCount, dailyStoreItems });
       });
+
+      const progressUnsub = onSnapshot(progressRef, (snap) => {
+        if (!snap.exists()) return;
+        const fresh = snap.data() as UserProgressData;
+        set({ progress: fresh });
+      });
+
+      const showOnboarding = (() => {
+        if (hasSeenOnboarding()) return false;
+        const createdAt = (chemcity as any)?.createdAt;
+        if (!createdAt) return true;
+        const createdMs =
+          typeof createdAt?.toMillis === 'function'
+            ? createdAt.toMillis()
+            : typeof createdAt === 'number'
+              ? createdAt
+              : Date.now();
+        return Date.now() - createdMs < 90_000;
+      })();
 
       set({
         user: chemcity,
         progress,
         slimItems,
         places,
+        collections,
         isLoading: false,
         passiveDisplayCoins: 0,
-        _unsubUser: unsub,
+        storeSlotCount: (chemcity as any)?.storeSlotCount ?? STORE_MIN_SLOTS,
+        dailyStoreItems: chemcity
+          ? getDailyStoreItems(userId, slimItems, (chemcity as any)?.storeSlotCount ?? STORE_MIN_SLOTS)
+          : [],
+        showOnboarding,
+        _unsubUser: (() => {
+          return () => {
+            unsub();
+            progressUnsub();
+          };
+        })(),
       });
 
       // Phase 3: check daily login bonus (non-blocking)
       get().checkDailyLogin();
+
+      // Phase 4: compute store (non-blocking)
+      setTimeout(() => get().computeDailyStore(userId), 200);
     } catch (err: any) {
       set({ isLoading: false, error: err?.message || 'Failed to load ChemCity' });
     }
@@ -184,6 +288,9 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   navigateToMap: () => set({ view: 'map', selectedPlaceId: null }),
   navigateToPlace: (placeId) => set({ view: 'place', selectedPlaceId: placeId }),
   navigateToInventory: () => set({ view: 'inventory' }),
+  navigateToStore: () => set({ view: 'store' }),
+  navigateToGasStationDistributor: () => set({ view: 'gas_station_distributor' }),
+  navigateToCollections: () => set({ view: 'collections' }),
 
   openCardPicker: (slotId) => set({ cardPickerSlotId: slotId }),
   closeCardPicker: () => set({ cardPickerSlotId: null }),
@@ -217,9 +324,36 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
     await callChemCityUnlockPlace(placeId);
   },
 
-  unlockSlot: async (placeId, slotId) => {
-    await callChemCityUnlockSlot(placeId, slotId);
+  unlockSlot: async (placeId, slotId, useExtraSlotBudget) => {
+    await callChemCityUnlockSlot(placeId, slotId, useExtraSlotBudget);
   },
+
+  computeDailyStore: (userId: string) => {
+    const { slimItems, storeSlotCount } = get();
+    if (!slimItems.length) return;
+    set({ dailyStoreItems: getDailyStoreItems(userId, slimItems, storeSlotCount) });
+  },
+
+  unlockStoreSlot: async () => {
+    await callChemCityUnlockStoreSlot();
+  },
+
+  openPurchaseConfirm: (itemId: string) => {
+    set({ storePurchaseItemId: itemId, storePurchaseData: null, storePurchaseLoading: true });
+    fetchFullItem(itemId)
+      .then((data) => set({ storePurchaseData: data ?? null, storePurchaseLoading: false }))
+      .catch(() => set({ storePurchaseLoading: false }));
+  },
+
+  closePurchaseConfirm: () =>
+    set({ storePurchaseItemId: null, storePurchaseData: null, storePurchaseLoading: false }),
+
+  purchaseCard: async (itemId: string, currency: 'coins' | 'diamonds') => {
+    await callChemCityPurchaseCard(itemId, currency);
+  },
+
+  openPlaceUnlockModal: (placeId: string) => set({ placeUnlockModalId: placeId }),
+  closePlaceUnlockModal: () => set({ placeUnlockModalId: null }),
 
   tickPassiveDisplay: () => {
     const user = get().user;
@@ -282,7 +416,7 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
       set({
         dailyLogin: {
           diamonds: Number((result as any)?.diamondsAwarded || 0),
-          coins: 0,
+          coins: Number((result as any)?.coinsAwarded || 0),
           streak: Number((result as any)?.currentStreak || 0),
           showModal: true,
           checked: true,
@@ -295,5 +429,14 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
 
   dismissDailyLogin: () => {
     set((s) => ({ dailyLogin: { ...s.dailyLogin, showModal: false } }));
+  },
+
+  claimCollectionReward: async (collectionId: string) => {
+    await callChemCityClaimCollectionReward(collectionId);
+  },
+
+  dismissOnboarding: () => {
+    markOnboardingDone();
+    set({ showOnboarding: false });
   },
 }));

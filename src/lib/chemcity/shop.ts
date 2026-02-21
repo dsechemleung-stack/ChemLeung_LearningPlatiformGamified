@@ -1,40 +1,40 @@
-import type { SlimItemDocument, ActiveBonuses } from "./types";
-import { getShopPrice } from "./bonuses";
+import type { ActiveBonuses } from './types';
 
 export function getEffectiveCoinPrice(
-  item: SlimItemDocument,
-  activeBonuses: ActiveBonuses
+  rawCoinPrice: number,
+  bonuses: ActiveBonuses | null | undefined,
+): number {
+  const discount = bonuses?.shopDiscountPercent ?? 0;
+  if (discount <= 0) return rawCoinPrice;
+  const discounted = rawCoinPrice * (1 - discount / 100);
+  return Math.max(1, Math.floor(discounted));
+}
+
+export function getDisplayPrice(
+  rawCoinPrice: number | undefined,
+  rawDiamondPrice: number | undefined,
+  currency: 'coins' | 'diamonds',
+  bonuses: ActiveBonuses | null | undefined,
 ): number | null {
-  if (item.shopData.coinCost == null) return null;
-  return getShopPrice(item.shopData.coinCost, "coins", activeBonuses);
+  if (currency === 'coins') {
+    if (rawCoinPrice == null) return null;
+    return getEffectiveCoinPrice(rawCoinPrice, bonuses);
+  }
+  return rawDiamondPrice ?? null;
 }
 
-export function getEffectiveDiamondPrice(
-  item: SlimItemDocument,
-  _activeBonuses: ActiveBonuses
-): number | null {
-  return item.shopData.diamondCost ?? null;
-}
-
-export function canAffordCoins(
-  item: SlimItemDocument,
-  activeBonuses: ActiveBonuses,
-  userCoins: number
+export function canAffordItem(
+  rawCoinPrice: number | undefined,
+  rawDiamondPrice: number | undefined,
+  currency: 'coins' | 'diamonds',
+  userCoins: number,
+  userDiamonds: number,
+  bonuses: ActiveBonuses | null | undefined,
 ): boolean {
-  const price = getEffectiveCoinPrice(item, activeBonuses);
-  if (price == null) return false;
-  return userCoins >= price;
-}
-
-export function canAffordDiamonds(
-  item: SlimItemDocument,
-  userDiamonds: number
-): boolean {
-  const price = item.shopData.diamondCost;
-  if (price == null) return false;
-  return userDiamonds >= price;
-}
-
-export function isOwned(itemId: string, ownedItems: string[]): boolean {
-  return ownedItems.includes(itemId);
+  if (currency === 'coins') {
+    if (rawCoinPrice == null) return false;
+    return userCoins >= getEffectiveCoinPrice(rawCoinPrice, bonuses);
+  }
+  if (rawDiamondPrice == null) return false;
+  return userDiamonds >= rawDiamondPrice;
 }

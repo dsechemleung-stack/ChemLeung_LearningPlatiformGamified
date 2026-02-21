@@ -28,6 +28,11 @@ const __dirname = path.dirname(__filename);
 const serviceAccountPath = path.resolve(__dirname, '../service-account.json');
 
 const envCredPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const envProjectId =
+  process.env.CHEMCITY_FIREBASE_PROJECT_ID ||
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.GCLOUD_PROJECT ||
+  process.env.GOOGLE_CLOUD_PROJECT;
 
 type ServiceAccountJson = {
   project_id?: string;
@@ -60,7 +65,14 @@ if (fs.existsSync(serviceAccountPath)) {
 } else {
   // Fall back to Application Default Credentials (CI/cloud)
   console.log('[Seeder Auth] Using applicationDefault()');
-  initializeApp({ credential: applicationDefault() });
+  if (!envProjectId) {
+    throw new Error(
+      'Seeder is using applicationDefault(), but no project id was detected. ' +
+        'Set CHEMCITY_FIREBASE_PROJECT_ID (recommended) or GCLOUD_PROJECT / GOOGLE_CLOUD_PROJECT.',
+    );
+  }
+  console.log(`[Seeder Auth] Using projectId=${envProjectId}`);
+  initializeApp({ credential: applicationDefault(), projectId: envProjectId });
 }
 
 const db = getFirestore();

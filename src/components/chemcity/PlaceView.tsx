@@ -323,6 +323,7 @@ export const PlaceView: React.FC = () => {
   const openCardPicker = useChemCityStore((s) => s.openCardPicker);
   const openCardDetail = useChemCityStore((s) => s.openCardDetail);
   const unlockSlot = useChemCityStore((s) => s.unlockSlot);
+  const navigateToGasStationDistributor = useChemCityStore((s) => s.navigateToGasStationDistributor);
 
   const [unlockingSlotId, setUnlockingSlotId] = useState<string | null>(null);
 
@@ -424,6 +425,12 @@ export const PlaceView: React.FC = () => {
   const isPlaceUnlocked = place.unlockCost === 0 || user.unlockedPlaces.includes(place.id);
 
   const handleUnlockSlot = async (slotId: string) => {
+    const slot = place.slots.find((s) => s.slotId === slotId);
+    if (slot?.budgetOnly) {
+      navigateToGasStationDistributor();
+      return;
+    }
+
     setUnlockingSlotId(slotId);
     try {
       await unlockSlot(place.id, slotId);
@@ -521,7 +528,7 @@ export const PlaceView: React.FC = () => {
               const equippedItemId = user.equipped?.[slotId];
               const slimItem = equippedItemId ? slimItems.find((i) => i.id === equippedItemId) : undefined;
 
-              const isFreeSlot = slot.unlockCost == null;
+              const isFreeSlot = slot.unlockCost == null && !slot.budgetOnly;
               const isUnlockedSlot = isFreeSlot || user.unlockedSlots.includes(slotId);
               const isLocked = isPlaceUnlocked && !isUnlockedSlot;
 
@@ -702,17 +709,19 @@ export const PlaceView: React.FC = () => {
           const equippedItemId = user.equipped?.[slotId];
           const slimItem = equippedItemId ? slimItems.find((i) => i.id === equippedItemId) : undefined;
 
-          const isFreeSlot = slot.unlockCost == null;
+          const isFreeSlot = slot.unlockCost == null && !slot.budgetOnly;
           const isUnlockedSlot = isFreeSlot || user.unlockedSlots.includes(slotId);
           const isLocked = isPlaceUnlocked && !isUnlockedSlot;
 
-          const canAfford =
-            slot.unlockCurrency === 'diamonds'
+          const canAfford = slot.budgetOnly
+            ? (user.extraSlotsBudget ?? 0) > 0
+            : slot.unlockCurrency === 'diamonds'
               ? diamonds >= (slot.unlockCost ?? 0)
               : coins >= (slot.unlockCost ?? 0);
 
-          const costLabel =
-            slot.unlockCurrency === 'diamonds'
+          const costLabel = slot.budgetOnly
+            ? '1⛽'
+            : slot.unlockCurrency === 'diamonds'
               ? `${slot.unlockCost?.toLocaleString() ?? 0}💎`
               : `${slot.unlockCost?.toLocaleString() ?? 0}🪙`;
 

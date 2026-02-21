@@ -9,6 +9,12 @@ import { CardPicker } from './CardPicker';
 import { CardDetail } from './CardDetail';
 import { DailyLoginModal } from './DailyLoginModal';
 import { QuizRewardModal } from './QuizRewardModal';
+import { ChemStore } from './ChemStore';
+import { PurchaseConfirmModal } from './PurchaseConfirmModal';
+import { PlaceUnlockModal } from './PlaceUnlockModal';
+import { GasStationDistributor } from './GasStationDistributor';
+import { CollectionsAlbum } from './CollectionsAlbum';
+import { OnboardingOverlay } from './OnboardingOverlay';
 
 export const ChemCityRoot: React.FC = () => {
   const { currentUser } = useAuth();
@@ -19,6 +25,7 @@ export const ChemCityRoot: React.FC = () => {
   const loadAll = useChemCityStore((s) => s.loadAll);
   const teardown = useChemCityStore((s) => s.teardown);
   const dailyLoginOpen = useChemCityStore((s) => s.dailyLogin.showModal);
+  const showOnboarding = useChemCityStore((s) => s.showOnboarding);
 
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -69,6 +76,9 @@ export const ChemCityRoot: React.FC = () => {
         {view === 'map' && <ChemCityMap />}
         {view === 'place' && <PlaceView />}
         {view === 'inventory' && <CardInventory />}
+        {view === 'store' && <ChemStore />}
+        {view === 'gas_station_distributor' && <GasStationDistributor />}
+        {view === 'collections' && <CollectionsAlbum />}
       </main>
 
       <CardPicker />
@@ -76,6 +86,11 @@ export const ChemCityRoot: React.FC = () => {
 
       <DailyLoginModal />
       {!dailyLoginOpen && <QuizRewardModal />}
+
+      <PlaceUnlockModal />
+      <PurchaseConfirmModal />
+
+      {showOnboarding && <OnboardingOverlay />}
     </div>
   );
 };

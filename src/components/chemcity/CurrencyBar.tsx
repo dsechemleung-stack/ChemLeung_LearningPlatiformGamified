@@ -8,13 +8,20 @@ export const CurrencyBar: React.FC = () => {
   const user = useChemCityStore((s) => s.user);
   const places = useChemCityStore((s) => s.places);
   const view = useChemCityStore((s) => s.view);
+  const selectedPlaceId = useChemCityStore((s) => s.selectedPlaceId);
   const navigateToMap = useChemCityStore((s) => s.navigateToMap);
   const navigateToInventory = useChemCityStore((s) => s.navigateToInventory);
+  const navigateToStore = useChemCityStore((s) => s.navigateToStore);
+  const navigateToCollections = useChemCityStore((s) => s.navigateToCollections);
+  const navigateToGasStationDistributor = useChemCityStore((s) => s.navigateToGasStationDistributor);
 
   const [skillsOpen, setSkillsOpen] = useState(false);
 
   const coins = user?.currencies.coins ?? 0;
   const diamonds = user?.currencies.diamonds ?? 0;
+
+  const showGasDistributorButton =
+    view === 'place' && selectedPlaceId === 'gas_station' && (user?.extraSlotsBudget ?? 0) > 0;
 
   const skillSummaryByPlaceId = useMemo(() => {
     const bonuses = user?.activeBonuses;
@@ -31,6 +38,34 @@ export const CurrencyBar: React.FC = () => {
       lifestyle_boutique: `${bonuses.shopDiscountPercent}% store discount`,
     };
   }, [user?.activeBonuses]);
+
+  const NavBtn: React.FC<{
+    onClick: () => void;
+    active: boolean;
+    label: string;
+    children: React.ReactNode;
+    extra?: string;
+  }> = ({ onClick, active, label, children, extra = '' }) => (
+    <button
+      onClick={onClick}
+      className={`
+        flex items-center justify-center
+        w-9 h-9 rounded-xl
+        border backdrop-blur-md shadow-lg
+        transition-all active:scale-95
+        text-sm
+        ${extra}
+        ${active
+          ? 'bg-indigo-600/90 border-indigo-400 text-white'
+          : 'bg-slate-900/90 hover:bg-slate-800 border-slate-600 text-slate-200'
+        }
+      `}
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </button>
+  );
 
   return (
     <>
@@ -88,43 +123,39 @@ export const CurrencyBar: React.FC = () => {
             </span>
           </div>
 
-          {/* Skills button */}
-          <button
-            onClick={() => setSkillsOpen(true)}
-            className="
-              flex items-center justify-center
-              w-9 h-9 rounded-xl
-              bg-slate-900/90 hover:bg-slate-800
-              border border-slate-600
-              backdrop-blur-md shadow-lg
-              transition-all active:scale-95
-              text-sm text-slate-200
-            "
-            aria-label="Skill boosts"
-            title="Skill boosts"
-          >
+          <NavBtn onClick={() => setSkillsOpen(true)} active={false} label="Skill boosts">
             ✨
-          </button>
+          </NavBtn>
 
-          {/* Inventory button */}
-          <button
-            onClick={navigateToInventory}
-            className={`
-              flex items-center justify-center
-              w-9 h-9 rounded-xl
-              border backdrop-blur-md shadow-lg
-              transition-all active:scale-95
-              text-sm
-              ${view === 'inventory'
-                ? 'bg-indigo-600/90 border-indigo-400 text-white'
-                : 'bg-slate-900/90 hover:bg-slate-800 border-slate-600 text-slate-200'
-              }
-            `}
-            aria-label="Card inventory"
-            title="Card Inventory"
-          >
+          <NavBtn onClick={navigateToCollections} active={view === 'collections'} label="Collections Album">
+            📚
+          </NavBtn>
+
+          <NavBtn onClick={navigateToStore} active={view === 'store'} label="ChemStore">
+            🏪
+          </NavBtn>
+
+          <NavBtn onClick={navigateToInventory} active={view === 'inventory'} label="Card Inventory">
             🃏
-          </button>
+          </NavBtn>
+
+          {showGasDistributorButton && (
+            <button
+              onClick={navigateToGasStationDistributor}
+              className={`
+                flex items-center justify-center
+                w-9 h-9 rounded-xl
+                border backdrop-blur-md shadow-lg
+                transition-all active:scale-95
+                text-sm
+                bg-amber-600/80 hover:bg-amber-500/80 border-amber-500 text-white
+              `}
+              aria-label="Distribute bonus slots"
+              title="Distribute bonus slots"
+            >
+              ⛽
+            </button>
+          )}
         </div>
       </div>
 

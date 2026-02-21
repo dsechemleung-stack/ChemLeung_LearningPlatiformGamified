@@ -9,26 +9,28 @@ import type {
   QuizRewardResult,
 } from './types';
 
-const functions = getFunctions(undefined, 'asia-east1');
+function getFns() {
+  return getFunctions(undefined, 'asia-east1');
+}
 
 export async function callChemCityInitUser(): Promise<void> {
-  const fn = httpsCallable(functions, 'chemcityInitUser');
+  const fn = httpsCallable(getFns(), 'chemcityInitUser');
   await fn({});
 }
 
 export async function callChemCityEquipCard(slotId: string, itemId: string): Promise<void> {
-  const fn = httpsCallable<EquipCardRequest, { ok?: boolean }>(functions, 'chemcityEquipCard');
+  const fn = httpsCallable<EquipCardRequest, { ok?: boolean }>(getFns(), 'chemcityEquipCard');
   await fn({ slotId, itemId });
 }
 
 export async function callChemCityUnequipCard(slotId: string): Promise<void> {
-  const fn = httpsCallable<UnequipCardRequest, { ok?: boolean }>(functions, 'chemcityUnequipCard');
+  const fn = httpsCallable<UnequipCardRequest, { ok?: boolean }>(getFns(), 'chemcityUnequipCard');
   await fn({ slotId });
 }
 
 export async function callChemCityCollectPassiveIncome(): Promise<{ coinsAwarded: number } & Record<string, unknown>> {
   const fn = httpsCallable<{}, { coinsAwarded: number } & Record<string, unknown>>(
-    functions,
+    getFns(),
     'chemcityCollectPassiveIncome',
   );
   const result = await fn({});
@@ -36,28 +38,76 @@ export async function callChemCityCollectPassiveIncome(): Promise<{ coinsAwarded
 }
 
 export async function callChemCityGetDailyLoginBonus(): Promise<Record<string, unknown>> {
-  const fn = httpsCallable(functions, 'chemcityGetDailyLoginBonus');
+  const fn = httpsCallable(getFns(), 'chemcityGetDailyLoginBonus');
   const result = await fn({});
   return result.data as Record<string, unknown>;
 }
 
 export async function callChemCityPurchaseCard(itemId: string, currency: 'coins' | 'diamonds'): Promise<void> {
-  const fn = httpsCallable<PurchaseCardRequest, { ok?: boolean }>(functions, 'chemcityPurchaseCard');
+  const fn = httpsCallable<PurchaseCardRequest, { ok?: boolean }>(getFns(), 'chemcityPurchaseCard');
   await fn({ itemId, currency });
 }
 
+export async function callChemCityUnlockStoreSlot(): Promise<Record<string, unknown>> {
+  const fn = httpsCallable(getFns(), 'chemcityUnlockStoreSlot');
+  const result = await fn({});
+  return result.data as Record<string, unknown>;
+}
+
 export async function callChemCityUnlockPlace(placeId: string): Promise<void> {
-  const fn = httpsCallable<UnlockPlaceRequest, { ok?: boolean }>(functions, 'chemcityUnlockPlace');
+  const fn = httpsCallable<UnlockPlaceRequest, { ok?: boolean }>(getFns(), 'chemcityUnlockPlace');
   await fn({ placeId });
 }
 
-export async function callChemCityUnlockSlot(placeId: string, slotId: string): Promise<void> {
-  const fn = httpsCallable<UnlockSlotRequest, { ok?: boolean }>(functions, 'chemcityUnlockSlot');
-  await fn({ placeId, slotId });
+export async function callChemCityUnlockSlot(
+  placeId: string,
+  slotId: string,
+  useExtraSlotBudget?: boolean,
+): Promise<void> {
+  const fn = httpsCallable<UnlockSlotRequest, { ok?: boolean }>(getFns(), 'chemcityUnlockSlot');
+  await fn({ placeId, slotId, useExtraSlotBudget });
 }
 
 export async function callChemCityQuizReward(req: QuizRewardRequest): Promise<QuizRewardResult> {
-  const fn = httpsCallable<QuizRewardRequest, QuizRewardResult>(functions, 'chemcityQuizReward');
+  const fn = httpsCallable<QuizRewardRequest, QuizRewardResult>(getFns(), 'chemcityQuizReward');
   const result = await fn(req);
   return result.data;
 }
+
+export interface ClaimCollectionRewardResult {
+  ok: boolean;
+  coinsAwarded: number;
+  diamondsAwarded: number;
+}
+
+export async function callChemCityClaimCollectionReward(
+  collectionId: string,
+): Promise<ClaimCollectionRewardResult> {
+  const fn = httpsCallable<{ collectionId: string }, ClaimCollectionRewardResult>(
+    getFns(),
+    'chemcityClaimCollectionReward',
+  );
+  const result = await fn({ collectionId });
+  return result.data;
+}
+
+// ─── Phase 4 aliases (used by the Phase 4 handoff code) ───────────────────────
+
+export const callPurchaseCard = (req: PurchaseCardRequest) =>
+  callChemCityPurchaseCard(req.itemId, req.currency).then(() => ({ success: true }));
+
+export const callUnlockPlace = (req: UnlockPlaceRequest) =>
+  callChemCityUnlockPlace(req.placeId).then(() => ({ success: true, coinsDeducted: 0 }));
+
+export const callUnlockSlot = (req: UnlockSlotRequest) =>
+  httpsCallable<UnlockSlotRequest, { ok?: boolean }>(getFns(), 'chemcityUnlockSlot')(req).then((r) => ({
+    success: true,
+    ...((r.data as any) ?? {}),
+  }));
+
+export const callUnlockStoreSlot = (_req: Record<string, never>) =>
+  callChemCityUnlockStoreSlot().then((data: any) => ({
+    success: true,
+    newSlotCount: data?.newSlotCount ?? data?.storeSlotCount ?? 0,
+    coinsDeducted: data?.coinsDeducted ?? data?.cost ?? 0,
+  }));

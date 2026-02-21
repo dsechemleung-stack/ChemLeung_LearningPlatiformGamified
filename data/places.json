@@ -15,12 +15,12 @@
       { "slotId": "lab_bench_4" },
       { "slotId": "lab_bench_5" },
       { "slotId": "lab_bench_6" },
-      { "slotId": "lab_premium_1", "unlockCost": 300, "unlockCurrency": "diamonds" },
-      { "slotId": "lab_premium_2", "unlockCost": 300, "unlockCurrency": "diamonds" },
-      { "slotId": "lab_premium_3", "unlockCost": 300, "unlockCurrency": "diamonds" },
-      { "slotId": "lab_premium_4", "unlockCost": 300, "unlockCurrency": "diamonds" },
-      { "slotId": "lab_premium_5", "unlockCost": 300, "unlockCurrency": "diamonds" },
-      { "slotId": "lab_premium_6", "unlockCost": 300, "unlockCurrency": "diamonds" }
+      { "slotId": "lab_premium_1", "budgetOnly": true },
+      { "slotId": "lab_premium_2", "budgetOnly": true },
+      { "slotId": "lab_premium_3", "budgetOnly": true },
+      { "slotId": "lab_premium_4", "budgetOnly": true },
+      { "slotId": "lab_premium_5", "budgetOnly": true },
+      { "slotId": "lab_premium_6", "budgetOnly": true }
     ]
   },
   {
@@ -37,10 +37,10 @@
       { "slotId": "kitchen_counter_2" },
       { "slotId": "kitchen_counter_3" },
       { "slotId": "kitchen_counter_4" },
-      { "slotId": "kitchen_shelf_1", "unlockCost": 800, "unlockCurrency": "coins" },
-      { "slotId": "kitchen_shelf_2", "unlockCost": 800, "unlockCurrency": "coins" },
-      { "slotId": "kitchen_shelf_3", "unlockCost": 800, "unlockCurrency": "coins" },
-      { "slotId": "kitchen_shelf_4", "unlockCost": 800, "unlockCurrency": "coins" }
+      { "slotId": "kitchen_shelf_1", "budgetOnly": true },
+      { "slotId": "kitchen_shelf_2", "budgetOnly": true },
+      { "slotId": "kitchen_shelf_3", "budgetOnly": true },
+      { "slotId": "kitchen_shelf_4", "budgetOnly": true }
     ]
   },
   {
@@ -57,10 +57,10 @@
       { "slotId": "toilet_tank_2" },
       { "slotId": "toilet_tank_3" },
       { "slotId": "toilet_tank_4" },
-      { "slotId": "toilet_cabinet_1", "unlockCost": 500, "unlockCurrency": "coins" },
-      { "slotId": "toilet_cabinet_2", "unlockCost": 500, "unlockCurrency": "coins" },
-      { "slotId": "toilet_cabinet_3", "unlockCost": 500, "unlockCurrency": "coins" },
-      { "slotId": "toilet_cabinet_4", "unlockCost": 500, "unlockCurrency": "coins" }
+      { "slotId": "toilet_cabinet_1", "budgetOnly": true },
+      { "slotId": "toilet_cabinet_2", "budgetOnly": true },
+      { "slotId": "toilet_cabinet_3", "budgetOnly": true },
+      { "slotId": "toilet_cabinet_4", "budgetOnly": true }
     ]
   },
   {
@@ -77,10 +77,10 @@
       { "slotId": "garden_bed_2" },
       { "slotId": "garden_bed_3" },
       { "slotId": "garden_bed_4" },
-      { "slotId": "garden_plot_1", "unlockCost": 400, "unlockCurrency": "coins" },
-      { "slotId": "garden_plot_2", "unlockCost": 400, "unlockCurrency": "coins" },
-      { "slotId": "garden_plot_3", "unlockCost": 400, "unlockCurrency": "coins" },
-      { "slotId": "garden_plot_4", "unlockCost": 400, "unlockCurrency": "coins" }
+      { "slotId": "garden_plot_1", "budgetOnly": true },
+      { "slotId": "garden_plot_2", "budgetOnly": true },
+      { "slotId": "garden_plot_3", "budgetOnly": true },
+      { "slotId": "garden_plot_4", "budgetOnly": true }
     ]
   },
   {
@@ -97,10 +97,10 @@
       { "slotId": "gas_pump_2" },
       { "slotId": "gas_pump_3" },
       { "slotId": "gas_pump_4" },
-      { "slotId": "gas_shelf_1", "unlockCost": 1000, "unlockCurrency": "coins" },
-      { "slotId": "gas_shelf_2", "unlockCost": 1000, "unlockCurrency": "coins" },
-      { "slotId": "gas_shelf_3", "unlockCost": 1000, "unlockCurrency": "coins" },
-      { "slotId": "gas_shelf_4", "unlockCost": 1000, "unlockCurrency": "coins" }
+      { "slotId": "gas_shelf_1", "budgetOnly": true },
+      { "slotId": "gas_shelf_2", "budgetOnly": true },
+      { "slotId": "gas_shelf_3", "budgetOnly": true },
+      { "slotId": "gas_shelf_4", "budgetOnly": true }
     ]
   },
   {
@@ -117,8 +117,8 @@
       { "slotId": "boutique_shelf_2" },
       { "slotId": "boutique_shelf_3" },
       { "slotId": "boutique_shelf_4" },
-      { "slotId": "boutique_display_1", "unlockCost": 200, "unlockCurrency": "diamonds" },
-      { "slotId": "boutique_display_2", "unlockCost": 200, "unlockCurrency": "diamonds" }
+      { "slotId": "boutique_display_1", "budgetOnly": true },
+      { "slotId": "boutique_display_2", "budgetOnly": true }
     ]
   },
   {
@@ -135,10 +135,10 @@
       { "slotId": "beach_sand_2" },
       { "slotId": "beach_sand_3" },
       { "slotId": "beach_sand_4" },
-      { "slotId": "beach_pier_1", "unlockCost": 600, "unlockCurrency": "coins" },
-      { "slotId": "beach_pier_2", "unlockCost": 600, "unlockCurrency": "coins" },
-      { "slotId": "beach_pier_3", "unlockCost": 600, "unlockCurrency": "coins" },
-      { "slotId": "beach_pier_4", "unlockCost": 600, "unlockCurrency": "coins" }
+      { "slotId": "beach_pier_1", "budgetOnly": true },
+      { "slotId": "beach_pier_2", "budgetOnly": true },
+      { "slotId": "beach_pier_3", "budgetOnly": true },
+      { "slotId": "beach_pier_4", "budgetOnly": true }
     ]
   },
   {
@@ -156,11 +156,11 @@
       { "slotId": "school_desk_3" },
       { "slotId": "school_desk_4" },
       { "slotId": "school_desk_5" },
-      { "slotId": "school_locker_1", "unlockCost": 700, "unlockCurrency": "coins" },
-      { "slotId": "school_locker_2", "unlockCost": 700, "unlockCurrency": "coins" },
-      { "slotId": "school_locker_3", "unlockCost": 700, "unlockCurrency": "coins" },
-      { "slotId": "school_locker_4", "unlockCost": 700, "unlockCurrency": "coins" },
-      { "slotId": "school_locker_5", "unlockCost": 700, "unlockCurrency": "coins" }
+      { "slotId": "school_locker_1", "budgetOnly": true },
+      { "slotId": "school_locker_2", "budgetOnly": true },
+      { "slotId": "school_locker_3", "budgetOnly": true },
+      { "slotId": "school_locker_4", "budgetOnly": true },
+      { "slotId": "school_locker_5", "budgetOnly": true }
     ]
   }
 ]

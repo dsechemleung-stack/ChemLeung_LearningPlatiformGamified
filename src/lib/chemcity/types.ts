@@ -67,6 +67,7 @@ export interface SlotDocument {
   slotId: string;
   unlockCost?: number;         // undefined = free by default
   unlockCurrency?: 'coins' | 'diamonds';
+  budgetOnly?: boolean;        // if true, can only be unlocked via extraSlotsBudget
   equippedItemId?: string;     // null = empty
 }
 
@@ -94,6 +95,7 @@ export interface UserChemCityData {
     coins: number;
     diamonds: number;
   };
+  storeSlotCount: number;
   ownedItems: string[];        // array of item IDs only
   equipped: {
     [slotId: string]: string;  // slotId → itemId
@@ -206,6 +208,7 @@ export interface UnlockPlaceRequest {
 export interface UnlockSlotRequest {
   placeId: string;
   slotId: string;
+  useExtraSlotBudget?: boolean;
 }
 
 export interface QuizRewardRequest {

@@ -1,6 +1,9 @@
+# Combined ChemCity code
+# Generated: Sat Feb 21 07:49:33 HKT 2026
 
 
-===== FILE: functions/chemcity/collectPassiveIncome.ts =====
+
+===== functions/chemcity/collectPassiveIncome.ts =====
 
 // ============================================================
 // ChemCity — collectPassiveIncome Cloud Function
@@ -89,7 +92,7 @@ export const collectPassiveIncome = functions.https.onCall(
 );
 
 
-===== FILE: functions/chemcity/initChemCityUser.ts =====
+===== functions/chemcity/initChemCityUser.ts =====
 
 // ============================================================
 // ChemCity — User Initialization
@@ -181,7 +184,7 @@ export async function initChemCityUser(userId: string): Promise<void> {
 }
 
 
-===== FILE: src/components/chemcity/CardDetail.tsx =====
+===== src/components/chemcity/CardDetail.tsx =====
 
 import React from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
@@ -340,7 +343,7 @@ export const CardDetail: React.FC = () => {
 };
 
 
-===== FILE: src/components/chemcity/CardInventory.tsx =====
+===== src/components/chemcity/CardInventory.tsx =====
 
 import React, { useMemo, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
@@ -467,7 +470,7 @@ export const CardInventory: React.FC = () => {
 };
 
 
-===== FILE: src/components/chemcity/CardPicker.tsx =====
+===== src/components/chemcity/CardPicker.tsx =====
 
 import React, { useMemo, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
@@ -622,7 +625,7 @@ export const CardPicker: React.FC = () => {
 };
 
 
-===== FILE: src/components/chemcity/ChemCard.tsx =====
+===== src/components/chemcity/ChemCard.tsx =====
 
 import React from 'react';
 import type { SlimItemDocument } from '../../lib/chemcity/types';
@@ -703,7 +706,7 @@ export const ChemCard: React.FC<ChemCardProps> = ({
 };
 
 
-===== FILE: src/components/chemcity/ChemCityMap.tsx =====
+===== src/components/chemcity/ChemCityMap.tsx =====
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
@@ -713,6 +716,7 @@ export const ChemCityMap: React.FC = () => {
   const user = useChemCityStore((s) => s.user);
   const places = useChemCityStore((s) => s.places);
   const navigateToPlace = useChemCityStore((s) => s.navigateToPlace);
+  const openPlaceUnlockModal = useChemCityStore((s) => s.openPlaceUnlockModal);
   const [mapLevel, setMapLevel] = useState<'world' | 'home'>('world');
 
   const isHotspotEditorEnabled = false;
@@ -774,6 +778,11 @@ export const ChemCityMap: React.FC = () => {
   if (!user) return null;
 
   const placeById = (id: string) => places.find((p) => p.id === id) ?? null;
+  const isPlaceUnlocked = (placeId: string) => {
+    const place = placeById(placeId);
+    if (!place) return false;
+    return place.unlockCost === 0 || user.unlockedPlaces.includes(placeId as any);
+  };
 
   const mapSrc = mapLevel === 'world' ? '/Map1.png' : '/Map2.png';
 
@@ -840,12 +849,13 @@ export const ChemCityMap: React.FC = () => {
     scale: number;
     onClick: () => void;
     disabled?: boolean;
-  }> = ({ label, leftPct, topPct, scale, onClick, disabled }) => {
+    locked?: boolean;
+  }> = ({ label, leftPct, topPct, scale, onClick, disabled, locked }) => {
     return (
       <button
         type="button"
         aria-label={label}
-        title={label}
+        title={locked ? `${label} (Locked — tap to unlock)` : label}
         onClick={(e) => {
           e.stopPropagation();
           if (disabled) return;
@@ -855,6 +865,8 @@ export const ChemCityMap: React.FC = () => {
         className={`absolute rounded-full border font-bold shadow-md transition-all px-4 py-2 text-xs ${
           disabled
             ? 'bg-slate-800/80 border-slate-700 text-slate-500 cursor-not-allowed'
+            : locked
+            ? 'bg-slate-800/90 hover:bg-slate-700 border-amber-600/80 text-amber-300 active:scale-95'
             : 'bg-indigo-500/90 hover:bg-indigo-400 border-indigo-200 text-white active:scale-95'
         }`}
         style={{
@@ -864,7 +876,7 @@ export const ChemCityMap: React.FC = () => {
           transformOrigin: 'center',
         }}
       >
-        {label}
+        {locked ? `🔒 ${label}` : label}
       </button>
     );
   };
@@ -928,6 +940,7 @@ export const ChemCityMap: React.FC = () => {
               leftPct={h.leftPct}
               topPct={h.topPct}
               scale={hotspotScale}
+              locked={h.placeId ? !isPlaceUnlocked(h.placeId) : false}
               onClick={() => {
                 if (isHotspotEditorEnabled && editMode) {
                   setSelectedHotspotKey(h.key);
@@ -937,7 +950,12 @@ export const ChemCityMap: React.FC = () => {
                   setMapLevel('home');
                   return;
                 }
-                if (h.placeId) navigateToPlace(h.placeId);
+                if (!h.placeId) return;
+                if (!isPlaceUnlocked(h.placeId)) {
+                  openPlaceUnlockModal(h.placeId);
+                  return;
+                }
+                navigateToPlace(h.placeId);
               }}
               disabled={h.placeId ? !placeById(h.placeId) : false}
             />
@@ -954,9 +972,14 @@ export const ChemCityMap: React.FC = () => {
                   setSelectedHotspotKey(h.key);
                   return;
                 }
+                if (!isPlaceUnlocked(h.placeId)) {
+                  openPlaceUnlockModal(h.placeId);
+                  return;
+                }
                 navigateToPlace(h.placeId);
               }}
               disabled={!placeById(h.placeId)}
+              locked={!isPlaceUnlocked(h.placeId)}
             />
           ))}
 
@@ -1039,7 +1062,7 @@ export const ChemCityMap: React.FC = () => {
 };
 
 
-===== FILE: src/components/chemcity/ChemCityRoot.tsx =====
+===== src/components/chemcity/ChemCityRoot.tsx =====
 
 import React, { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
@@ -1052,6 +1075,10 @@ import { CardPicker } from './CardPicker';
 import { CardDetail } from './CardDetail';
 import { DailyLoginModal } from './DailyLoginModal';
 import { QuizRewardModal } from './QuizRewardModal';
+import { ChemStore } from './ChemStore';
+import { PurchaseConfirmModal } from './PurchaseConfirmModal';
+import { PlaceUnlockModal } from './PlaceUnlockModal';
+import { GasStationDistributor } from './GasStationDistributor';
 
 export const ChemCityRoot: React.FC = () => {
   const { currentUser } = useAuth();
@@ -1112,6 +1139,8 @@ export const ChemCityRoot: React.FC = () => {
         {view === 'map' && <ChemCityMap />}
         {view === 'place' && <PlaceView />}
         {view === 'inventory' && <CardInventory />}
+        {view === 'store' && <ChemStore />}
+        {view === 'gas_station_distributor' && <GasStationDistributor />}
       </main>
 
       <CardPicker />
@@ -1119,12 +1148,212 @@ export const ChemCityRoot: React.FC = () => {
 
       <DailyLoginModal />
       {!dailyLoginOpen && <QuizRewardModal />}
+
+      <PlaceUnlockModal />
+      <PurchaseConfirmModal />
     </div>
   );
 };
 
 
-===== FILE: src/components/chemcity/CurrencyBar.tsx =====
+===== src/components/chemcity/ChemStore.tsx =====
+
+import React, { useEffect, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+import { getEffectiveCoinPrice } from '../../lib/chemcity/shop';
+import {
+  countdownToMidnight,
+  STORE_SLOT_UNLOCK_COSTS,
+  STORE_MAX_SLOTS,
+} from '../../lib/chemcity/dailyStore';
+
+const RARITY_STYLES: Record<string, { bg: string; border: string; pill: string; glow: string }> = {
+  common: { bg: 'from-slate-700 to-slate-600', border: 'border-slate-500', pill: 'bg-slate-600 text-white', glow: '' },
+  rare: { bg: 'from-blue-800 to-indigo-700', border: 'border-blue-500', pill: 'bg-blue-600 text-white', glow: 'shadow-blue-500/30' },
+  epic: { bg: 'from-purple-800 to-pink-700', border: 'border-purple-500', pill: 'bg-purple-600 text-white', glow: 'shadow-purple-500/30' },
+  legendary: { bg: 'from-amber-700 to-yellow-500', border: 'border-yellow-400', pill: 'bg-yellow-400 text-slate-900', glow: 'shadow-yellow-400/40' },
+};
+
+export const ChemStore: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const dailyStoreItems = useChemCityStore((s) => s.dailyStoreItems);
+  const storeSlotCount = useChemCityStore((s) => s.storeSlotCount);
+  const openPurchaseConfirm = useChemCityStore((s) => s.openPurchaseConfirm);
+  const unlockStoreSlot = useChemCityStore((s) => s.unlockStoreSlot);
+
+  const [countdown, setCountdown] = useState(() => countdownToMidnight());
+  const [unlockingSlot, setUnlockingSlot] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const id = setInterval(() => setCountdown(countdownToMidnight()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const discount = user?.activeBonuses.shopDiscountPercent ?? 0;
+  const coins = user?.currencies.coins ?? 0;
+  const ownedSet = new Set(user?.ownedItems ?? []);
+
+  const nextSlotNum = storeSlotCount + 1;
+  const nextSlotCost = STORE_SLOT_UNLOCK_COSTS[nextSlotNum] ?? null;
+  const canUnlockMore = storeSlotCount < STORE_MAX_SLOTS;
+  const canAffordNext = nextSlotCost != null && coins >= nextSlotCost;
+
+  const handleUnlockSlot = async () => {
+    if (unlockingSlot || !canUnlockMore || !canAffordNext) return;
+    setUnlockingSlot(true);
+    setUnlockError(null);
+    try {
+      await unlockStoreSlot();
+    } catch (err: any) {
+      setUnlockError(err?.message ?? 'Failed to unlock slot.');
+    } finally {
+      setUnlockingSlot(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col flex-1" style={{ paddingTop: 76 }}>
+      <div className="px-4 pt-3 pb-3 border-b border-slate-800">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🏪</span>
+            <div>
+              <h2 className="text-white font-bold text-lg leading-tight">ChemStore</h2>
+              <p className="text-slate-400 text-xs">New stock in {countdown}</p>
+            </div>
+          </div>
+          {discount > 0 && (
+            <span className="bg-emerald-600 text-white text-xs font-bold rounded-full px-3 py-1 shrink-0">
+              {discount}% OFF
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 mt-3">
+          {Array.from({ length: STORE_MAX_SLOTS }, (_, i) => (
+            <div
+              key={i}
+              className={`h-1.5 flex-1 rounded-full transition-colors ${i < storeSlotCount ? 'bg-indigo-500' : 'bg-slate-700'}`}
+            />
+          ))}
+          <span className="text-slate-400 text-xs ml-1 shrink-0">
+            {storeSlotCount}/{STORE_MAX_SLOTS} slots
+          </span>
+        </div>
+      </div>
+
+      <div className="overflow-y-auto flex-1 px-4 pt-4 pb-6">
+        {dailyStoreItems.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+            <span className="text-5xl mb-3 animate-pulse">🏪</span>
+            <p className="text-sm">Store loading…</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {dailyStoreItems.map((item, idx) => {
+              const isOwned = ownedSet.has(item.id);
+              const style = RARITY_STYLES[item.rarity] ?? RARITY_STYLES.common;
+              const rawCoin = item.shopData?.coinCost;
+              const rawDiamond = item.shopData?.diamondCost;
+              const effCoin = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
+              const coinSaved = rawCoin != null && effCoin != null ? rawCoin - effCoin : 0;
+
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => openPurchaseConfirm(item.id)}
+                  className={`relative flex items-center gap-4 rounded-2xl border-2 ${style.border} bg-gradient-to-r ${style.bg} p-3 text-left transition-transform active:scale-[0.98] shadow-lg ${style.glow ? `shadow-lg ${style.glow}` : ''}`}
+                >
+                  <span className="absolute top-2 left-2.5 text-[10px] text-white/30 font-mono">#{idx + 1}</span>
+
+                  {isOwned && (
+                    <span className="absolute top-2 right-2 bg-green-500 text-white text-[10px] font-bold rounded-full px-2 py-0.5">
+                      ✓ Owned
+                    </span>
+                  )}
+
+                  <div className="w-16 h-16 shrink-0 flex items-center justify-center rounded-xl bg-white/10 mt-3">
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        className="w-14 h-14 object-contain rounded-lg"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <span className="text-4xl">{item.emoji}</span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0 pr-2 mt-3">
+                    <p className="text-white font-bold text-base leading-tight truncate">{item.name}</p>
+                    <p className="text-white/60 font-mono text-sm">{item.chemicalFormula}</p>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 capitalize ${style.pill}`}>{item.rarity}</span>
+                      <span className="text-white/40 text-[10px] capitalize">{item.placeId?.replace(/_/g, ' ')}</span>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right mt-3">
+                    {effCoin != null && (
+                      <div>
+                        <p className="text-yellow-300 font-black text-lg tabular-nums leading-tight">🪙 {effCoin.toLocaleString()}</p>
+                        {coinSaved > 0 && (
+                          <p className="text-slate-400 text-xs line-through tabular-nums">{rawCoin!.toLocaleString()}</p>
+                        )}
+                      </div>
+                    )}
+                    {rawDiamond != null && (
+                      <p className="text-cyan-300 font-black text-lg tabular-nums leading-tight">💎 {rawDiamond.toLocaleString()}</p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {canUnlockMore && (
+          <div className="mt-6">
+            <p className="text-slate-500 text-xs text-center mb-3">Unlock more store slots to see more cards each day</p>
+            <button
+              onClick={handleUnlockSlot}
+              disabled={!canAffordNext || unlockingSlot}
+              className={`w-full flex flex-col items-center gap-1.5 border-2 border-dashed rounded-2xl py-4 transition-all active:scale-[0.98] ${
+                canAffordNext && !unlockingSlot
+                  ? 'border-indigo-500/60 bg-indigo-900/20 hover:bg-indigo-900/30 cursor-pointer'
+                  : 'border-slate-700 bg-slate-900/40 cursor-not-allowed opacity-60'
+              }`}
+            >
+              <span className="text-2xl">{unlockingSlot ? '⏳' : '🔓'}</span>
+              <p className="text-white font-semibold text-sm">Unlock Slot #{nextSlotNum}</p>
+              {nextSlotCost != null && (
+                <p className={`text-sm font-bold tabular-nums ${canAffordNext ? 'text-yellow-300' : 'text-slate-500'}`}>
+                  🪙 {nextSlotCost.toLocaleString()}
+                </p>
+              )}
+              {!canAffordNext && nextSlotCost != null && (
+                <p className="text-slate-600 text-xs">Need {(nextSlotCost - coins).toLocaleString()} more coins</p>
+              )}
+              {unlockError && <p className="text-red-400 text-xs mt-1">{unlockError}</p>}
+            </button>
+          </div>
+        )}
+
+        {storeSlotCount === STORE_MAX_SLOTS && (
+          <p className="text-slate-700 text-xs text-center mt-6">All store slots unlocked ✓</p>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+===== src/components/chemcity/CurrencyBar.tsx =====
 
 // ==============================
 // FILE: src/components/chemcity/CurrencyBar.tsx
@@ -1136,13 +1365,19 @@ export const CurrencyBar: React.FC = () => {
   const user = useChemCityStore((s) => s.user);
   const places = useChemCityStore((s) => s.places);
   const view = useChemCityStore((s) => s.view);
+  const selectedPlaceId = useChemCityStore((s) => s.selectedPlaceId);
   const navigateToMap = useChemCityStore((s) => s.navigateToMap);
   const navigateToInventory = useChemCityStore((s) => s.navigateToInventory);
+  const navigateToStore = useChemCityStore((s) => s.navigateToStore);
+  const navigateToGasStationDistributor = useChemCityStore((s) => s.navigateToGasStationDistributor);
 
   const [skillsOpen, setSkillsOpen] = useState(false);
 
   const coins = user?.currencies.coins ?? 0;
   const diamonds = user?.currencies.diamonds ?? 0;
+
+  const showGasDistributorButton =
+    view === 'place' && selectedPlaceId === 'gas_station' && (user?.extraSlotsBudget ?? 0) > 0;
 
   const skillSummaryByPlaceId = useMemo(() => {
     const bonuses = user?.activeBonuses;
@@ -1234,6 +1469,26 @@ export const CurrencyBar: React.FC = () => {
             ✨
           </button>
 
+          {/* Store button */}
+          <button
+            onClick={navigateToStore}
+            className={`
+              flex items-center justify-center
+              w-9 h-9 rounded-xl
+              border backdrop-blur-md shadow-lg
+              transition-all active:scale-95
+              text-sm
+              ${view === 'store'
+                ? 'bg-indigo-600/90 border-indigo-400 text-white'
+                : 'bg-slate-900/90 hover:bg-slate-800 border-slate-600 text-slate-200'
+              }
+            `}
+            aria-label="ChemStore"
+            title="ChemStore"
+          >
+            🏪
+          </button>
+
           {/* Inventory button */}
           <button
             onClick={navigateToInventory}
@@ -1253,6 +1508,24 @@ export const CurrencyBar: React.FC = () => {
           >
             🃏
           </button>
+
+          {showGasDistributorButton && (
+            <button
+              onClick={navigateToGasStationDistributor}
+              className={`
+                flex items-center justify-center
+                w-9 h-9 rounded-xl
+                border backdrop-blur-md shadow-lg
+                transition-all active:scale-95
+                text-sm
+                bg-amber-600/80 hover:bg-amber-500/80 border-amber-500 text-white
+              `}
+              aria-label="Distribute bonus slots"
+              title="Distribute bonus slots"
+            >
+              ⛽
+            </button>
+          )}
         </div>
       </div>
 
@@ -1306,7 +1579,7 @@ export const CurrencyBar: React.FC = () => {
   );
 };
 
-===== FILE: src/components/chemcity/DailyLoginModal.tsx =====
+===== src/components/chemcity/DailyLoginModal.tsx =====
 
 import React, { useMemo } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
@@ -1379,7 +1652,177 @@ export const DailyLoginModal: React.FC = () => {
 };
 
 
-===== FILE: src/components/chemcity/PassiveIncomeCollector.tsx =====
+===== src/components/chemcity/GasStationDistributor.tsx =====
+
+import React, { useMemo, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+
+export const GasStationDistributor: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const places = useChemCityStore((s) => s.places);
+  const unlockSlot = useChemCityStore((s) => s.unlockSlot);
+
+  const [unlockingSlotId, setUnlockingSlotId] = useState<string | null>(null);
+  const [recentlyUnlocked, setRecentlyUnlocked] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
+
+  const budget = user?.extraSlotsBudget ?? 0;
+
+  const gasStationSlots = useMemo(() => {
+    if (!user) return [] as Array<{ placeId: string; placeEmoji: string; placeDisplayName: string; slotId: string; slotLabel: string }>;
+
+    const result: Array<{ placeId: string; placeEmoji: string; placeDisplayName: string; slotId: string; slotLabel: string }> = [];
+
+    for (const place of places) {
+      if (place.unlockCost > 0 && !user.unlockedPlaces.includes(place.id)) continue;
+
+      for (const slot of place.slots) {
+        if (!slot.budgetOnly) continue;
+        if (user.unlockedSlots.includes(slot.slotId)) continue;
+        if (recentlyUnlocked.has(slot.slotId)) continue;
+
+        result.push({
+          placeId: place.id,
+          placeEmoji: place.emoji,
+          placeDisplayName: place.displayName,
+          slotId: slot.slotId,
+          slotLabel: slot.slotId.replace(/_/g, ' '),
+        });
+      }
+    }
+
+    return result;
+  }, [user, places, recentlyUnlocked]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, typeof gasStationSlots>();
+    for (const s of gasStationSlots) {
+      if (!map.has(s.placeId)) map.set(s.placeId, []);
+      map.get(s.placeId)!.push(s);
+    }
+    return Array.from(map.entries()).map(([placeId, slots]) => ({ placeId, slots }));
+  }, [gasStationSlots]);
+
+  const handleUnlock = async (placeId: string, slotId: string) => {
+    if (unlockingSlotId || budget < 1) return;
+    setUnlockingSlotId(slotId);
+    setError(null);
+    try {
+      await unlockSlot(placeId, slotId, true);
+      setRecentlyUnlocked((prev) => new Set([...prev, slotId]));
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to unlock slot.');
+    } finally {
+      setUnlockingSlotId(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col" style={{ paddingTop: 76 }}>
+      <div className="px-4 pt-3 pb-3 border-b border-slate-800">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-2xl">⛽</span>
+          <h2 className="text-white font-bold text-lg">Gas Station</h2>
+        </div>
+        <p className="text-slate-400 text-xs mb-3">Use your bonus slot budget to unlock extra card slots across any place.</p>
+
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center justify-between">
+          <div>
+            <p className="text-slate-400 text-xs">Extra Slot Budget</p>
+            <p className="text-white font-black text-2xl tabular-nums">{budget}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-slate-400 text-xs">Total unlockable</p>
+            <p className="text-slate-300 font-bold text-lg">{gasStationSlots.length}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-y-auto flex-1 px-4 py-3 pb-8">
+        {budget === 0 && gasStationSlots.length > 0 && (
+          <div className="bg-amber-900/30 border border-amber-700 rounded-xl p-3 mb-4">
+            <p className="text-amber-200 text-sm">
+              💡 Equip more cards in the <span className="font-bold">⛽ Gas Station</span> to increase your budget.
+            </p>
+          </div>
+        )}
+
+        {gasStationSlots.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+            <span className="text-5xl mb-3">⛽</span>
+            {user?.extraSlotsBudget === 0 ? (
+              <>
+                <p className="text-sm text-center">No bonus slots available yet.</p>
+                <p className="text-xs text-center mt-1">Equip cards in the Gas Station to earn slot budget.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-center">All extra slots are unlocked!</p>
+                <p className="text-xs text-center mt-1">Check back after unlocking more places.</p>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {error && (
+              <div className="bg-red-900/30 border border-red-700 rounded-xl p-3">
+                <p className="text-red-300 text-sm">{error}</p>
+              </div>
+            )}
+
+            {grouped.map(({ placeId, slots }) => {
+              const place = places.find((p) => p.id === placeId);
+              return (
+                <div key={placeId}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xl">{place?.emoji}</span>
+                    <span className="text-slate-300 font-semibold text-sm">{place?.displayName}</span>
+                    <span className="text-slate-500 text-xs ml-auto">{slots.length} available</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {slots.map(({ slotId, slotLabel }) => {
+                      const isUnlocking = unlockingSlotId === slotId;
+                      const canAfford = budget >= 1;
+
+                      return (
+                        <button
+                          key={slotId}
+                          onClick={() => handleUnlock(placeId, slotId)}
+                          disabled={!canAfford || !!unlockingSlotId}
+                          className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-all active:scale-95 ${
+                            canAfford && !unlockingSlotId
+                              ? 'bg-slate-800 border-slate-600 hover:border-indigo-500 hover:bg-slate-700 cursor-pointer'
+                              : 'bg-slate-900/60 border-slate-800 cursor-not-allowed opacity-60'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-white text-xs font-semibold capitalize leading-tight truncate">{slotLabel}</p>
+                            <p className="text-slate-500 text-[10px] font-mono truncate">{slotId}</p>
+                          </div>
+                          <span
+                            className={`shrink-0 text-xs font-bold rounded-lg px-2 py-1 ${
+                              canAfford && !unlockingSlotId ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'
+                            }`}
+                          >
+                            {isUnlocking ? '⏳' : '-1'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+===== src/components/chemcity/PassiveIncomeCollector.tsx =====
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
@@ -1455,7 +1898,137 @@ export const PassiveIncomeCollector: React.FC = () => {
 };
 
 
-===== FILE: src/components/chemcity/PlaceView.tsx =====
+===== src/components/chemcity/PlaceUnlockModal.tsx =====
+
+import React, { useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+
+export const PlaceUnlockModal: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const places = useChemCityStore((s) => s.places);
+  const placeUnlockModalId = useChemCityStore((s) => s.placeUnlockModalId);
+  const closePlaceUnlockModal = useChemCityStore((s) => s.closePlaceUnlockModal);
+  const unlockPlace = useChemCityStore((s) => s.unlockPlace);
+
+  const [unlocking, setUnlocking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const isOpen = !!placeUnlockModalId;
+  const place = places.find((p) => p.id === placeUnlockModalId) ?? null;
+
+  if (!isOpen || !place || !user) return null;
+
+  const cost = place.unlockCost ?? 0;
+  const coins = user.currencies.coins;
+  const canAfford = coins >= cost;
+  const isUnlocked = user.unlockedPlaces.includes(place.id);
+
+  const handleUnlock = async () => {
+    if (unlocking || !canAfford || isUnlocked) return;
+    setUnlocking(true);
+    setError(null);
+    try {
+      await unlockPlace(place.id);
+      setSuccess(true);
+      setTimeout(() => {
+        closePlaceUnlockModal();
+        setSuccess(false);
+      }, 1200);
+    } catch (err: any) {
+      setError(err?.message ?? 'Unlock failed. Please try again.');
+    } finally {
+      setUnlocking(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/70 z-[70]" onClick={closePlaceUnlockModal} />
+
+      <div className="fixed inset-x-6 top-1/4 z-[80] bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl">
+        <div className="p-5 flex flex-col items-center gap-2 border-b border-slate-700">
+          <span className="text-5xl">{place.emoji}</span>
+          <h3 className="text-white font-bold text-xl text-center">{place.displayName}</h3>
+          <p className="text-slate-400 text-sm text-center leading-snug">{place.skill.description}</p>
+        </div>
+
+        <div className="p-5 flex flex-col gap-4">
+          {isUnlocked ? (
+            <div className="bg-green-900/30 border border-green-700 rounded-xl p-3 text-center">
+              <p className="text-green-300 font-semibold">✓ Already unlocked!</p>
+            </div>
+          ) : success ? (
+            <div className="bg-green-900/30 border border-green-700 rounded-xl p-3 text-center">
+              <p className="text-green-300 font-semibold">🎉 {place.displayName} unlocked!</p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-slate-400 text-sm">Unlock Cost</span>
+                  <span className="text-yellow-300 font-black text-xl tabular-nums">🪙 {cost.toLocaleString()}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 text-sm">Your Balance</span>
+                  <span className={`font-bold text-base tabular-nums ${canAfford ? 'text-white' : 'text-red-400'}`}>
+                    🪙 {coins.toLocaleString()}
+                  </span>
+                </div>
+                {!canAfford && (
+                  <p className="text-red-400 text-xs mt-2 text-center">Need {(cost - coins).toLocaleString()} more coins</p>
+                )}
+              </div>
+
+              <div className="bg-indigo-900/30 border border-indigo-800 rounded-xl p-3">
+                <p className="text-indigo-200 text-xs">
+                  Unlocking <span className="font-bold">{place.displayName}</span> gives you access to{' '}
+                  <span className="font-bold">{place.slots?.length ?? 0} card slots</span>.
+                </p>
+              </div>
+
+              {error && <p className="text-red-400 text-xs text-center">{error}</p>}
+            </>
+          )}
+
+          {!success && !isUnlocked && (
+            <div className="flex gap-3">
+              <button
+                onClick={closePlaceUnlockModal}
+                className="flex-1 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUnlock}
+                disabled={!canAfford || unlocking}
+                className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 ${
+                  canAfford && !unlocking
+                    ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-900'
+                    : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                {unlocking ? 'Unlocking...' : `Unlock for 🪙 ${cost.toLocaleString()}`}
+              </button>
+            </div>
+          )}
+
+          {(success || isUnlocked) && (
+            <button
+              onClick={closePlaceUnlockModal}
+              className="w-full py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold text-sm transition-colors"
+            >
+              Close
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+
+===== src/components/chemcity/PlaceView.tsx =====
 
 // ==============================
 // FILE: src/components/chemcity/PlaceView.tsx
@@ -1782,6 +2355,7 @@ export const PlaceView: React.FC = () => {
   const openCardPicker = useChemCityStore((s) => s.openCardPicker);
   const openCardDetail = useChemCityStore((s) => s.openCardDetail);
   const unlockSlot = useChemCityStore((s) => s.unlockSlot);
+  const navigateToGasStationDistributor = useChemCityStore((s) => s.navigateToGasStationDistributor);
 
   const [unlockingSlotId, setUnlockingSlotId] = useState<string | null>(null);
 
@@ -1883,6 +2457,12 @@ export const PlaceView: React.FC = () => {
   const isPlaceUnlocked = place.unlockCost === 0 || user.unlockedPlaces.includes(place.id);
 
   const handleUnlockSlot = async (slotId: string) => {
+    const slot = place.slots.find((s) => s.slotId === slotId);
+    if (slot?.budgetOnly) {
+      navigateToGasStationDistributor();
+      return;
+    }
+
     setUnlockingSlotId(slotId);
     try {
       await unlockSlot(place.id, slotId);
@@ -1980,7 +2560,7 @@ export const PlaceView: React.FC = () => {
               const equippedItemId = user.equipped?.[slotId];
               const slimItem = equippedItemId ? slimItems.find((i) => i.id === equippedItemId) : undefined;
 
-              const isFreeSlot = slot.unlockCost == null;
+              const isFreeSlot = slot.unlockCost == null && !slot.budgetOnly;
               const isUnlockedSlot = isFreeSlot || user.unlockedSlots.includes(slotId);
               const isLocked = isPlaceUnlocked && !isUnlockedSlot;
 
@@ -2161,17 +2741,19 @@ export const PlaceView: React.FC = () => {
           const equippedItemId = user.equipped?.[slotId];
           const slimItem = equippedItemId ? slimItems.find((i) => i.id === equippedItemId) : undefined;
 
-          const isFreeSlot = slot.unlockCost == null;
+          const isFreeSlot = slot.unlockCost == null && !slot.budgetOnly;
           const isUnlockedSlot = isFreeSlot || user.unlockedSlots.includes(slotId);
           const isLocked = isPlaceUnlocked && !isUnlockedSlot;
 
-          const canAfford =
-            slot.unlockCurrency === 'diamonds'
+          const canAfford = slot.budgetOnly
+            ? (user.extraSlotsBudget ?? 0) > 0
+            : slot.unlockCurrency === 'diamonds'
               ? diamonds >= (slot.unlockCost ?? 0)
               : coins >= (slot.unlockCost ?? 0);
 
-          const costLabel =
-            slot.unlockCurrency === 'diamonds'
+          const costLabel = slot.budgetOnly
+            ? '1⛽'
+            : slot.unlockCurrency === 'diamonds'
               ? `${slot.unlockCost?.toLocaleString() ?? 0}💎`
               : `${slot.unlockCost?.toLocaleString() ?? 0}🪙`;
 
@@ -2199,7 +2781,290 @@ export const PlaceView: React.FC = () => {
   );
 };
 
-===== FILE: src/components/chemcity/QuizRewardModal.tsx =====
+===== src/components/chemcity/PurchaseConfirmModal.tsx =====
+
+import React, { useEffect, useState } from 'react';
+import { useChemCityStore } from '../../store/chemcityStore';
+import { getEffectiveCoinPrice } from '../../lib/chemcity/shop';
+
+const RARITY_BG: Record<string, string> = {
+  common: 'from-slate-700 to-slate-600',
+  rare: 'from-blue-800 to-indigo-700',
+  epic: 'from-purple-800 to-pink-700',
+  legendary: 'from-amber-700 to-yellow-500',
+};
+
+type PurchaseCurrency = 'coins' | 'diamonds';
+
+export const PurchaseConfirmModal: React.FC = () => {
+  const user = useChemCityStore((s) => s.user);
+  const slimItems = useChemCityStore((s) => s.slimItems);
+  const storePurchaseItemId = useChemCityStore((s) => s.storePurchaseItemId);
+  const storePurchaseData = useChemCityStore((s) => s.storePurchaseData);
+  const storePurchaseLoading = useChemCityStore((s) => s.storePurchaseLoading);
+  const closePurchaseConfirm = useChemCityStore((s) => s.closePurchaseConfirm);
+  const purchaseCard = useChemCityStore((s) => s.purchaseCard);
+
+  const [purchasing, setPurchasing] = useState(false);
+  const [purchaseCurrency, setPurchaseCurrency] = useState<PurchaseCurrency>('coins');
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+
+  const isOpen = !!storePurchaseItemId;
+  const slim = slimItems.find((i) => i.id === storePurchaseItemId);
+  const full = storePurchaseData;
+
+  const isOwned = !!user?.ownedItems?.includes(storePurchaseItemId ?? '');
+  const rarity = slim?.rarity ?? 'common';
+  const gradBg = RARITY_BG[rarity] ?? RARITY_BG.common;
+  const discount = user?.activeBonuses.shopDiscountPercent ?? 0;
+  const rawCoin = slim?.shopData?.coinCost;
+  const rawDiamond = slim?.shopData?.diamondCost;
+  const effCoin = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
+
+  const coins = user?.currencies.coins ?? 0;
+  const diamonds = user?.currencies.diamonds ?? 0;
+
+  const canAffordCoins = effCoin != null && coins >= effCoin;
+  const canAffordDiamonds = rawDiamond != null && diamonds >= rawDiamond;
+
+  useEffect(() => {
+    if (isOpen) {
+      setPurchaseError(null);
+      setPurchaseSuccess(false);
+      setPurchasing(false);
+      if (rawCoin != null) setPurchaseCurrency('coins');
+      else if (rawDiamond != null) setPurchaseCurrency('diamonds');
+    }
+  }, [isOpen, storePurchaseItemId, rawCoin, rawDiamond]);
+
+  if (!isOpen || !slim) return null;
+
+  const handlePurchase = async () => {
+    if (purchasing || isOwned) return;
+    const canAfford = purchaseCurrency === 'coins' ? canAffordCoins : canAffordDiamonds;
+    if (!canAfford) return;
+
+    setPurchasing(true);
+    setPurchaseError(null);
+    try {
+      await purchaseCard(slim.id, purchaseCurrency);
+      setPurchaseSuccess(true);
+      setTimeout(() => closePurchaseConfirm(), 1500);
+    } catch (err: any) {
+      setPurchaseError(err?.message ?? 'Purchase failed. Please try again.');
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/75 z-[80]" onClick={closePurchaseConfirm} />
+
+      <div className="fixed inset-x-3 top-10 bottom-4 z-[90] bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden flex flex-col shadow-2xl">
+        <button
+          onClick={closePurchaseConfirm}
+          className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-slate-800/80 text-slate-300 hover:text-white text-lg"
+          aria-label="Close"
+        >
+          ×
+        </button>
+
+        <div className="overflow-y-auto flex-1">
+          <div className={`w-full bg-gradient-to-b ${gradBg} p-6 flex flex-col items-center gap-3`}>
+            {full?.imageUrl ? (
+              <img
+                src={full.imageUrl}
+                alt={full.name}
+                className="w-28 h-28 object-contain rounded-xl shadow-lg"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <span className="text-6xl">{slim.emoji}</span>
+            )}
+            <div className="text-center">
+              <h2 className="text-white font-bold text-xl leading-tight">{full?.displayName || slim.name}</h2>
+              <p className="text-white/70 font-mono text-lg mt-0.5">{slim.chemicalFormula}</p>
+              <div className="flex items-center justify-center gap-2 mt-2">
+                <span className="bg-white/20 text-white text-xs font-semibold rounded-full px-3 py-0.5 capitalize">{rarity}</span>
+                {isOwned && (
+                  <span className="bg-green-500 text-white text-xs font-bold rounded-full px-3 py-0.5">✓ Owned</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {storePurchaseLoading && (
+            <div className="animate-pulse px-4 py-3 flex flex-col gap-2">
+              <div className="h-4 bg-slate-700 rounded w-3/4" />
+              <div className="h-4 bg-slate-700 rounded w-full" />
+              <div className="h-4 bg-slate-700 rounded w-5/6" />
+            </div>
+          )}
+
+          <div className="p-4 flex flex-col gap-4">
+            {full?.description && <p className="text-slate-300 text-sm leading-relaxed">{full.description}</p>}
+
+            {full?.educational?.funFact && (
+              <div className="bg-indigo-900/40 border border-indigo-700 rounded-xl p-3">
+                <p className="text-indigo-300 text-xs font-semibold mb-1">🔬 Fun Fact</p>
+                <p className="text-slate-200 text-sm leading-relaxed">{full.educational.funFact}</p>
+              </div>
+            )}
+
+            {full?.educational?.everydayUses && full.educational.everydayUses.length > 0 && (
+              <div>
+                <p className="text-slate-400 text-xs font-semibold mb-2">🏠 Everyday Uses</p>
+                <div className="flex flex-wrap gap-2">
+                  {full.educational.everydayUses.map((use) => (
+                    <span key={use} className="bg-slate-700 text-slate-200 text-xs rounded-full px-3 py-1">
+                      {use}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {full?.topicConnections && full.topicConnections.length > 0 && (
+              <div>
+                <p className="text-slate-400 text-xs font-semibold mb-2">📚 DSE Topics</p>
+                <div className="flex flex-wrap gap-2">
+                  {full.topicConnections.map((tid) => (
+                    <span
+                      key={tid}
+                      className="bg-emerald-900/50 text-emerald-300 text-xs rounded-full px-3 py-1 border border-emerald-800"
+                    >
+                      {tid}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {full?.albumMetadata?.flavorText && (
+              <div className="border-t border-slate-700 pt-3">
+                <p className="text-slate-500 text-xs italic leading-relaxed">"{full.albumMetadata.flavorText}"</p>
+              </div>
+            )}
+
+            {slim.skillContribution > 0 && (
+              <div className="bg-slate-800 rounded-xl p-3 flex items-center justify-between">
+                <span className="text-slate-400 text-sm">Skill Contribution</span>
+                <span className="text-white font-bold">+{slim.skillContribution}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="shrink-0 border-t border-slate-700 p-4 bg-slate-900">
+          {purchaseSuccess ? (
+            <div className="flex items-center justify-center gap-2 bg-green-600 rounded-xl py-3">
+              <span className="text-white font-bold">🎉 Added to your collection!</span>
+            </div>
+          ) : isOwned ? (
+            <div className="flex items-center justify-center gap-2 bg-slate-700 rounded-xl py-3">
+              <span className="text-slate-300 font-semibold">✓ Already in your collection</span>
+            </div>
+          ) : (
+            <>
+              {effCoin != null && rawDiamond != null && (
+                <div className="flex gap-2 mb-3">
+                  <button
+                    onClick={() => setPurchaseCurrency('coins')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-colors ${
+                      purchaseCurrency === 'coins'
+                        ? 'bg-yellow-500/20 border-yellow-500 text-yellow-300'
+                        : 'bg-slate-800 border-slate-600 text-slate-400'
+                    }`}
+                  >
+                    🪙 Coins
+                  </button>
+                  <button
+                    onClick={() => setPurchaseCurrency('diamonds')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-colors ${
+                      purchaseCurrency === 'diamonds'
+                        ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
+                        : 'bg-slate-800 border-slate-600 text-slate-400'
+                    }`}
+                  >
+                    💎 Diamonds
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mb-3 px-1">
+                <div>
+                  {purchaseCurrency === 'coins' && effCoin != null && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-yellow-300 font-black text-xl tabular-nums">🪙 {effCoin.toLocaleString()}</span>
+                      {rawCoin != null && rawCoin !== effCoin && (
+                        <span className="text-slate-500 text-sm line-through tabular-nums">{rawCoin.toLocaleString()}</span>
+                      )}
+                      {discount > 0 && (
+                        <span className="bg-emerald-600 text-white text-xs font-bold rounded-full px-2 py-0.5">
+                          {discount}% OFF
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {purchaseCurrency === 'diamonds' && rawDiamond != null && (
+                    <span className="text-cyan-300 font-black text-xl tabular-nums">💎 {rawDiamond.toLocaleString()}</span>
+                  )}
+                </div>
+                <div className="text-right text-xs text-slate-400">
+                  {purchaseCurrency === 'coins' ? `You have: 🪙 ${coins.toLocaleString()}` : `You have: 💎 ${diamonds.toLocaleString()}`}
+                </div>
+              </div>
+
+              {purchaseError && <p className="text-red-400 text-xs mb-2 text-center">{purchaseError}</p>}
+
+              {purchaseCurrency === 'coins' && effCoin != null && !canAffordCoins && (
+                <p className="text-yellow-500 text-xs mb-2 text-center">Not enough coins — need {(effCoin - coins).toLocaleString()} more</p>
+              )}
+              {purchaseCurrency === 'diamonds' && rawDiamond != null && !canAffordDiamonds && (
+                <p className="text-cyan-500 text-xs mb-2 text-center">
+                  Not enough diamonds — need {(rawDiamond - diamonds).toLocaleString()} more
+                </p>
+              )}
+
+              <button
+                onClick={handlePurchase}
+                disabled={
+                  purchasing ||
+                  (purchaseCurrency === 'coins' && (!canAffordCoins || effCoin == null)) ||
+                  (purchaseCurrency === 'diamonds' && (!canAffordDiamonds || rawDiamond == null))
+                }
+                className={`w-full py-3 rounded-xl font-bold text-base transition-all active:scale-95 ${
+                  purchasing
+                    ? 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                    : purchaseCurrency === 'coins' && canAffordCoins
+                      ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-900'
+                      : purchaseCurrency === 'diamonds' && canAffordDiamonds
+                        ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-900'
+                        : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                {purchasing
+                  ? 'Purchasing...'
+                  : purchaseCurrency === 'coins' && effCoin != null
+                    ? `Buy for 🪙 ${effCoin.toLocaleString()}`
+                    : rawDiamond != null
+                      ? `Buy for 💎 ${rawDiamond.toLocaleString()}`
+                      : 'Not for sale'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+
+===== src/components/chemcity/QuizRewardModal.tsx =====
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
@@ -2319,7 +3184,1090 @@ export const QuizRewardModal: React.FC = () => {
 };
 
 
-===== FILE: tests/chemcity/bonuses.test.ts =====
+===== src/lib/chemcity/bonuses.ts =====
+
+// ============================================================
+// ChemCity — Bonus Engine
+// Computes all 8 place skill bonuses from equipped cards.
+// Called after every equip/unequip — result persisted to user doc.
+//
+// FORMULAS (locked — do not change):
+//   Garden:       coins_per_hour = total_bonus × 10
+//   Lab:          multiplier = 1 + (total_bonus × 0.1)
+//   Kitchen:      bonus_diamonds = total_bonus × random(1,3)  [max stored]
+//   School:       multiplier = 1 + (total_bonus × 0.1)
+//   Beach:        chance% = min(total_bonus × 5, 100)
+//   Toilet:       diamonds = 5 + (total_bonus × 2)
+//   Gas Station:  extra_slots_count = total_bonus
+//   Boutique:     discount% = min(total_bonus × 2, 50)  [capped at 50%]
+// ============================================================
+
+import type { ActiveBonuses, SlimItemDocument } from './types';
+
+// ─── Place Skill Totals ───────────────────────────────────────
+
+/**
+ * Given the equipped map { slotId → itemId } and the full slim item
+ * catalog, sum up skillContribution per place.
+ */
+function sumBonusByPlace(
+  equipped: Record<string, string>,
+  slimItems: SlimItemDocument[],
+): Record<string, number> {
+  const itemMap = new Map(slimItems.map((i) => [i.id, i]));
+  const totals: Record<string, number> = {};
+
+  for (const itemId of Object.values(equipped)) {
+    const item = itemMap.get(itemId);
+    if (!item || item.deprecated) continue;
+    const place = item.placeId;
+    totals[place] = (totals[place] ?? 0) + item.skillContribution;
+  }
+
+  return totals;
+}
+
+// ─── Individual Skill Formulas ────────────────────────────────
+
+/** Garden — base passive coin income per hour */
+export function calcGardenCoinsPerHour(totalBonus: number): number {
+  return totalBonus * 10;
+}
+
+/** Lab — passive income multiplier applied to Garden base */
+export function calcLabMultiplier(totalBonus: number): number {
+  return 1 + totalBonus * 0.1;
+}
+
+/** Kitchen — flat diamond bonus per quiz (returns the MAX of the range) */
+export function calcKitchenMaxDiamonds(totalBonus: number): number {
+  return totalBonus * 3; // range is (1×bonus) to (3×bonus); store max
+}
+
+/** Kitchen — roll the actual bonus at quiz time */
+export function rollKitchenBonus(totalBonus: number): number {
+  if (totalBonus === 0) return 0;
+  const min = totalBonus * 1;
+  const max = totalBonus * 3;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/** School — quiz diamond multiplier */
+export function calcSchoolMultiplier(totalBonus: number): number {
+  return 1 + totalBonus * 0.1;
+}
+
+/** Beach — chance % to double quiz diamonds (capped at 100%) */
+export function calcBeachDoubleChance(totalBonus: number): number {
+  return Math.min(totalBonus * 5, 100);
+}
+
+/** Beach — roll whether diamonds are doubled at quiz time */
+export function rollBeachDouble(totalBonus: number): boolean {
+  return Math.random() * 100 < calcBeachDoubleChance(totalBonus);
+}
+
+/** Toilet — diamonds awarded on daily login */
+export function calcToiletLoginDiamonds(totalBonus: number): number {
+  return 5 + totalBonus * 2;
+}
+
+/** Gas Station — number of extra slots available to distribute */
+export function calcGasStationExtraSlots(totalBonus: number): number {
+  return totalBonus;
+}
+
+/** Boutique — shop discount % (capped at 50%) */
+export function calcBoutiqueDiscount(totalBonus: number): number {
+  return Math.min(totalBonus * 2, 50);
+}
+
+// ─── Quiz Diamond Chain ───────────────────────────────────────
+
+/**
+ * Full quiz diamond chain:
+ *   base → + Kitchen flat → × School multiplier → Beach double chance
+ *
+ * Called by the quizReward Cloud Function — NOT the client.
+ * Exposed here for unit tests and the Cloud Function to import.
+ */
+export function computeQuizDiamonds(
+  baseDiamonds: number,
+  bonuses: ActiveBonuses,
+): number {
+  let total = baseDiamonds;
+
+  // Step 1: Kitchen flat bonus (randomised per quiz)
+  const kitchenBonus = bonuses.quizFlatDiamondBonus > 0
+    ? rollKitchenBonus(/* totalBonus */ bonuses.quizFlatDiamondBonus / 3)
+    : 0;
+  total += kitchenBonus;
+
+  // Step 2: School multiplier
+  total = Math.floor(total * bonuses.quizDiamondMultiplier);
+
+  // Step 3: Beach double chance
+  if (rollBeachDouble(bonuses.quizDoubleChancePercent / 5)) {
+    total *= 2;
+  }
+
+  return Math.max(0, total);
+}
+
+// ─── Main Bonus Recompute ─────────────────────────────────────
+
+/**
+ * Recomputes all 8 active bonuses from the current equipped state.
+ *
+ * Call after every equip/unequip, then persist result to:
+ *   users/{userId}.activeBonuses
+ *
+ * This is a PURE function — no Firestore reads. Fast and testable.
+ */
+export function computeActiveBonuses(
+  equipped: Record<string, string>,
+  slimItems: SlimItemDocument[],
+): ActiveBonuses {
+  const totals = sumBonusByPlace(equipped, slimItems);
+
+  const gardenBonus = totals['garden'] ?? 0;
+  const labBonus = totals['lab'] ?? 0;
+  const kitchenBonus = totals['kitchen'] ?? 0;
+  const schoolBonus = totals['school'] ?? 0;
+  const beachBonus = totals['beach'] ?? 0;
+  const toiletBonus = totals['toilet'] ?? 0;
+  const gasStationBonus = totals['gas_station'] ?? 0;
+  const boutiqueBonus = totals['lifestyle_boutique'] ?? 0;
+
+  const gardenBase = calcGardenCoinsPerHour(gardenBonus);
+  const labMult = calcLabMultiplier(labBonus);
+
+  return {
+    passiveBaseCoinsPerHour: Math.round(gardenBase * labMult),
+    passiveMultiplier: labMult,
+    quizFlatDiamondBonus: calcKitchenMaxDiamonds(kitchenBonus),
+    quizDiamondMultiplier: calcSchoolMultiplier(schoolBonus),
+    quizDoubleChancePercent: calcBeachDoubleChance(beachBonus),
+    dailyLoginDiamonds: calcToiletLoginDiamonds(toiletBonus),
+    extraSlotsTotal: calcGasStationExtraSlots(gasStationBonus),
+    shopDiscountPercent: calcBoutiqueDiscount(boutiqueBonus),
+  };
+}
+
+// ─── Shop Price Helper ────────────────────────────────────────
+
+/**
+ * Returns the discounted price of an item given active bonuses.
+ * Always used before displaying prices in ChemStore.
+ */
+export function getShopPrice(
+  baseCost: number,
+  currency: 'coins' | 'diamonds',
+  bonuses: ActiveBonuses,
+): number {
+  if (currency === 'diamonds') return baseCost; // diamonds never discounted
+  const discount = bonuses.shopDiscountPercent / 100;
+  return Math.max(1, Math.floor(baseCost * (1 - discount)));
+}
+
+
+===== src/lib/chemcity/cloudFunctions.ts =====
+
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import type {
+  EquipCardRequest,
+  UnequipCardRequest,
+  PurchaseCardRequest,
+  UnlockPlaceRequest,
+  UnlockSlotRequest,
+  QuizRewardRequest,
+  QuizRewardResult,
+} from './types';
+
+function getFns() {
+  return getFunctions(undefined, 'asia-east1');
+}
+
+export async function callChemCityInitUser(): Promise<void> {
+  const fn = httpsCallable(getFns(), 'chemcityInitUser');
+  await fn({});
+}
+
+export async function callChemCityEquipCard(slotId: string, itemId: string): Promise<void> {
+  const fn = httpsCallable<EquipCardRequest, { ok?: boolean }>(getFns(), 'chemcityEquipCard');
+  await fn({ slotId, itemId });
+}
+
+export async function callChemCityUnequipCard(slotId: string): Promise<void> {
+  const fn = httpsCallable<UnequipCardRequest, { ok?: boolean }>(getFns(), 'chemcityUnequipCard');
+  await fn({ slotId });
+}
+
+export async function callChemCityCollectPassiveIncome(): Promise<{ coinsAwarded: number } & Record<string, unknown>> {
+  const fn = httpsCallable<{}, { coinsAwarded: number } & Record<string, unknown>>(
+    getFns(),
+    'chemcityCollectPassiveIncome',
+  );
+  const result = await fn({});
+  return result.data;
+}
+
+export async function callChemCityGetDailyLoginBonus(): Promise<Record<string, unknown>> {
+  const fn = httpsCallable(getFns(), 'chemcityGetDailyLoginBonus');
+  const result = await fn({});
+  return result.data as Record<string, unknown>;
+}
+
+export async function callChemCityPurchaseCard(itemId: string, currency: 'coins' | 'diamonds'): Promise<void> {
+  const fn = httpsCallable<PurchaseCardRequest, { ok?: boolean }>(getFns(), 'chemcityPurchaseCard');
+  await fn({ itemId, currency });
+}
+
+export async function callChemCityUnlockStoreSlot(): Promise<Record<string, unknown>> {
+  const fn = httpsCallable(getFns(), 'chemcityUnlockStoreSlot');
+  const result = await fn({});
+  return result.data as Record<string, unknown>;
+}
+
+export async function callChemCityUnlockPlace(placeId: string): Promise<void> {
+  const fn = httpsCallable<UnlockPlaceRequest, { ok?: boolean }>(getFns(), 'chemcityUnlockPlace');
+  await fn({ placeId });
+}
+
+export async function callChemCityUnlockSlot(
+  placeId: string,
+  slotId: string,
+  useExtraSlotBudget?: boolean,
+): Promise<void> {
+  const fn = httpsCallable<UnlockSlotRequest, { ok?: boolean }>(getFns(), 'chemcityUnlockSlot');
+  await fn({ placeId, slotId, useExtraSlotBudget });
+}
+
+export async function callChemCityQuizReward(req: QuizRewardRequest): Promise<QuizRewardResult> {
+  const fn = httpsCallable<QuizRewardRequest, QuizRewardResult>(getFns(), 'chemcityQuizReward');
+  const result = await fn(req);
+  return result.data;
+}
+
+// ─── Phase 4 aliases (used by the Phase 4 handoff code) ───────────────────────
+
+export const callPurchaseCard = (req: PurchaseCardRequest) =>
+  callChemCityPurchaseCard(req.itemId, req.currency).then(() => ({ success: true }));
+
+export const callUnlockPlace = (req: UnlockPlaceRequest) =>
+  callChemCityUnlockPlace(req.placeId).then(() => ({ success: true, coinsDeducted: 0 }));
+
+export const callUnlockSlot = (req: UnlockSlotRequest) =>
+  httpsCallable<UnlockSlotRequest, { ok?: boolean }>(getFns(), 'chemcityUnlockSlot')(req).then((r) => ({
+    success: true,
+    ...((r.data as any) ?? {}),
+  }));
+
+export const callUnlockStoreSlot = (_req: Record<string, never>) =>
+  callChemCityUnlockStoreSlot().then((data: any) => ({
+    success: true,
+    newSlotCount: data?.newSlotCount ?? data?.storeSlotCount ?? 0,
+    coinsDeducted: data?.coinsDeducted ?? data?.cost ?? 0,
+  }));
+
+
+===== src/lib/chemcity/dailyStore.ts =====
+
+// ============================================================
+// dailyStore.ts — Daily rotating ChemStore logic
+// ============================================================
+
+import type { SlimItemDocument } from './types';
+
+export const STORE_SLOT_UNLOCK_COSTS: Record<number, number> = {
+  4: 1_000,
+  5: 2_500,
+  6: 5_000,
+};
+export const STORE_MIN_SLOTS = 3;
+export const STORE_MAX_SLOTS = 6;
+
+const RARITY_WEIGHT: Record<string, number> = {
+  common: 60,
+  rare: 25,
+  epic: 12,
+  legendary: 3,
+};
+
+function rarityWeight(item: SlimItemDocument): number {
+  return RARITY_WEIGHT[item.rarity] ?? 60;
+}
+
+function makePrng(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s += 0x6d2b79f5;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) >>> 0;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashString(str: string): number {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = (Math.imul(h, 33) ^ str.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
+export function utcDateString(date: Date = new Date()): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function msUntilUtcMidnight(now: Date = new Date()): number {
+  const tomorrow = new Date(now);
+  tomorrow.setUTCHours(24, 0, 0, 0);
+  return tomorrow.getTime() - now.getTime();
+}
+
+export function countdownToMidnight(now: Date = new Date()): string {
+  const ms = msUntilUtcMidnight(now);
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  if (h > 0) return `${h}h ${m}m`;
+  const s = Math.floor((ms % 60_000) / 1_000);
+  return `${m}m ${s}s`;
+}
+
+export function getDailyStoreItems(
+  userId: string,
+  slimItems: SlimItemDocument[],
+  slotCount: number,
+  dateOverride?: Date,
+): SlimItemDocument[] {
+  const n = Math.max(STORE_MIN_SLOTS, Math.min(STORE_MAX_SLOTS, slotCount));
+
+  const pool = slimItems.filter(
+    (item) =>
+      !item.deprecated &&
+      (item.shopData?.coinCost != null || item.shopData?.diamondCost != null),
+  );
+
+  if (pool.length === 0) return [];
+  if (pool.length <= n) return [...pool];
+
+  const seed = hashString(userId + utcDateString(dateOverride));
+  const rand = makePrng(seed);
+
+  const selected: SlimItemDocument[] = [];
+  const remaining = [...pool];
+
+  for (let i = 0; i < n && remaining.length > 0; i++) {
+    const weights = remaining.map(rarityWeight);
+    const total = weights.reduce((a, b) => a + b, 0);
+    let pick = rand() * total;
+
+    let chosenIdx = remaining.length - 1;
+    for (let j = 0; j < weights.length; j++) {
+      pick -= weights[j];
+      if (pick <= 0) {
+        chosenIdx = j;
+        break;
+      }
+    }
+
+    selected.push(remaining[chosenIdx]);
+    remaining.splice(chosenIdx, 1);
+  }
+
+  return selected;
+}
+
+
+===== src/lib/chemcity/income.ts =====
+
+import type { ActiveBonuses } from "./types";
+import { Timestamp } from "firebase/firestore";
+
+export const MAX_OFFLINE_HOURS = 24;
+
+export function estimateUnclaimedCoins(
+  activeBonuses: ActiveBonuses,
+  lastCollected: Timestamp | null
+): number {
+  if (!lastCollected || activeBonuses.passiveBaseCoinsPerHour === 0) return 0;
+
+  const nowMs = Date.now();
+  const lastMs = lastCollected.toMillis();
+  const elapsedHours = Math.min(
+    (nowMs - lastMs) / (1000 * 60 * 60),
+    MAX_OFFLINE_HOURS
+  );
+
+  return Math.floor(activeBonuses.passiveBaseCoinsPerHour * elapsedHours);
+}
+
+export function formatCoinsPerHour(coinsPerHour: number): string {
+  if (coinsPerHour === 0) return "0 🪙/hr";
+  if (coinsPerHour >= 1000) return `${(coinsPerHour / 1000).toFixed(1)}k 🪙/hr`;
+  return `${Math.round(coinsPerHour)} 🪙/hr`;
+}
+
+
+===== src/lib/chemcity/shop.ts =====
+
+import type { ActiveBonuses } from './types';
+
+export function getEffectiveCoinPrice(
+  rawCoinPrice: number,
+  bonuses: ActiveBonuses | null | undefined,
+): number {
+  const discount = bonuses?.shopDiscountPercent ?? 0;
+  if (discount <= 0) return rawCoinPrice;
+  const discounted = rawCoinPrice * (1 - discount / 100);
+  return Math.max(1, Math.floor(discounted));
+}
+
+export function getDisplayPrice(
+  rawCoinPrice: number | undefined,
+  rawDiamondPrice: number | undefined,
+  currency: 'coins' | 'diamonds',
+  bonuses: ActiveBonuses | null | undefined,
+): number | null {
+  if (currency === 'coins') {
+    if (rawCoinPrice == null) return null;
+    return getEffectiveCoinPrice(rawCoinPrice, bonuses);
+  }
+  return rawDiamondPrice ?? null;
+}
+
+export function canAffordItem(
+  rawCoinPrice: number | undefined,
+  rawDiamondPrice: number | undefined,
+  currency: 'coins' | 'diamonds',
+  userCoins: number,
+  userDiamonds: number,
+  bonuses: ActiveBonuses | null | undefined,
+): boolean {
+  if (currency === 'coins') {
+    if (rawCoinPrice == null) return false;
+    return userCoins >= getEffectiveCoinPrice(rawCoinPrice, bonuses);
+  }
+  if (rawDiamondPrice == null) return false;
+  return userDiamonds >= rawDiamondPrice;
+}
+
+
+===== src/lib/chemcity/types.ts =====
+
+// ============================================================
+// ChemCity — TypeScript Types
+// Single source of truth for all data shapes.
+// DO NOT change field names once users have data in Firestore.
+// ============================================================
+
+// ─── Item Documents ──────────────────────────────────────────
+
+/**
+ * Slim fields only — what is cached in localStorage.
+ * ~170 bytes per card. Never includes educational content.
+ */
+export interface SlimItemDocument {
+  id: string;                  // e.g. "item_nacl"
+  name: string;                // e.g. "Salt"
+  chemicalFormula: string;     // e.g. "NaCl" (Unicode subscripts)
+  emoji: string;               // e.g. "🧂"
+  imageUrl?: string;
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  rarityValue: 1 | 2 | 3 | 4;
+  placeId: PlaceId;            // which city location this belongs to
+  validSlots: string[];        // slot IDs within that place
+  shopData: {
+    coinCost?: number;         // undefined = not coin-purchasable
+    diamondCost?: number;      // undefined = not diamond-purchasable
+  };
+  skillContribution: number;   // this card's bonus value added to its place's skill total
+  collections: string[];       // collection group IDs only — not full objects
+  deprecated: boolean;         // true = hidden from UI, never delete the row
+}
+
+/**
+ * Full fields — fetched from Firestore on card detail tap only.
+ * ~800 bytes per card. NEVER stored in localStorage.
+ */
+export interface FullItemDocument extends SlimItemDocument {
+  displayName: string;         // e.g. "The Seasoning of Life"
+  description: string;
+  cardBackground?: string;     // CSS gradient or colour token
+  imageUrl?: string;
+  topicConnections: string[];  // topic IDs this card relates to
+  educational: {
+    funFact: string;
+    everydayUses: string[];
+    category: 'element' | 'compound' | 'mixture' | 'process';
+  };
+  albumMetadata: {
+    flavorText: string;
+    sortOrder: number;
+    tags: string[];
+  };
+}
+
+// ─── Places ──────────────────────────────────────────────────
+
+export type PlaceId =
+  | 'lab'
+  | 'kitchen'
+  | 'toilet'
+  | 'garden'
+  | 'gas_station'
+  | 'lifestyle_boutique'
+  | 'beach'
+  | 'school';
+
+export interface SlotDocument {
+  slotId: string;
+  unlockCost?: number;         // undefined = free by default
+  unlockCurrency?: 'coins' | 'diamonds';
+  budgetOnly?: boolean;        // if true, can only be unlocked via extraSlotsBudget
+  equippedItemId?: string;     // null = empty
+}
+
+export interface PlaceDocument {
+  id: PlaceId;
+  displayName: string;
+  emoji: string;
+  unlockCost: number;          // coin cost to unlock the place itself
+  slots: SlotDocument[];
+  skill: {
+    description: string;
+    formula: string;           // human-readable formula string for display
+  };
+}
+
+// ─── User Documents ──────────────────────────────────────────
+
+/**
+ * Main user document — users/{userId}
+ * Kept lean: only IDs and numbers, never full objects.
+ */
+export interface UserChemCityData {
+  userId: string;
+  currencies: {
+    coins: number;
+    diamonds: number;
+  };
+  storeSlotCount: number;
+  ownedItems: string[];        // array of item IDs only
+  equipped: {
+    [slotId: string]: string;  // slotId → itemId
+  };
+  activeBonuses: ActiveBonuses;
+  unlockedPlaces: PlaceId[];
+  unlockedSlots: string[];     // slot IDs unlocked by the user
+  extraSlotsBudget: number;    // remaining Gas Station bonus slots to distribute
+  passiveIncome: {
+    lastCollected: Date | null; // Firestore Timestamp — set by server
+  };
+  streaks: {
+    currentStreak: number;
+    longestStreak: number;
+    lastLoginDate: string;     // ISO date string YYYY-MM-DD
+    streakFreezeCount: number;
+  };
+  cacheVersion: number;        // last known version when user doc was written
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Progress sub-document — users/{userId}/progress/data
+ * Separated to protect the 1MB Firestore doc limit.
+ */
+export interface UserProgressData {
+  collections: {
+    [collectionId: string]: {
+      collected: number;
+      total: number;
+      completed: boolean;
+      rewardClaimed: boolean;
+    };
+  };
+  topicMastery: {
+    [topicId: string]: {
+      quizzesCompleted: number;
+      correctAnswers: number;
+      totalQuestions: number;
+    };
+  };
+}
+
+// ─── Bonus Engine ─────────────────────────────────────────────
+
+/**
+ * Computed bonuses — recalculated after every equip/unequip.
+ * Persisted to user doc so they're available instantly on load.
+ */
+export interface ActiveBonuses {
+  passiveBaseCoinsPerHour: number;      // Garden: total_bonus × 10
+  passiveMultiplier: number;            // Lab:    1 + (total_bonus × 0.1)
+  quizFlatDiamondBonus: number;         // Kitchen: total_bonus × random(1,3) — stored as max
+  quizDiamondMultiplier: number;        // School: 1 + (total_bonus × 0.1)
+  quizDoubleChancePercent: number;      // Beach:  min(total_bonus × 5, 100)
+  dailyLoginDiamonds: number;           // Toilet: 5 + (total_bonus × 2)
+  extraSlotsTotal: number;              // Gas Station: total_bonus
+  shopDiscountPercent: number;          // Boutique: min(total_bonus × 2, 50) — capped at 50%
+}
+
+// ─── Cache ────────────────────────────────────────────────────
+
+export interface CacheManifest {
+  version: number;
+  fetchedAt: number;           // Date.now() timestamp
+  itemIds: string[];           // IDs of what's cached
+}
+
+// ─── Collections ─────────────────────────────────────────────
+
+export interface CollectionDocument {
+  id: string;
+  displayName: string;
+  description: string;
+  itemIds: string[];
+  rewardCoins?: number;
+  rewardDiamonds?: number;
+}
+
+// ─── Topics ──────────────────────────────────────────────────
+
+export interface TopicDocument {
+  id: string;
+  name: string;
+  dseUnit: string;
+  description?: string;
+}
+
+// ─── Cloud Function Request/Response Types ────────────────────
+
+export interface EquipCardRequest {
+  slotId: string;
+  itemId: string;
+}
+
+export interface UnequipCardRequest {
+  slotId: string;
+}
+
+export interface PurchaseCardRequest {
+  itemId: string;
+  currency: 'coins' | 'diamonds';
+}
+
+export interface UnlockPlaceRequest {
+  placeId: string;
+}
+
+export interface UnlockSlotRequest {
+  placeId: string;
+  slotId: string;
+  useExtraSlotBudget?: boolean;
+}
+
+export interface QuizRewardRequest {
+  baseCoins: number;
+  baseDiamonds: number;
+  topicId?: string;
+  correctAnswers?: number;
+  totalQuestions?: number;
+}
+
+export interface QuizRewardResult {
+  coinsAwarded: number;
+  diamondsAwarded: number;
+  didDouble?: boolean;
+  breakdown?: {
+    flatBonus: number;
+    afterSchool: number;
+    afterBeach: number;
+  };
+  ok?: boolean;
+}
+
+
+===== src/store/chemcityStore.ts =====
+
+import { create } from 'zustand';
+import { doc, getDoc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { fetchSlimItems, fetchPlaces, fetchFullItem } from '../lib/cache';
+import type {
+  UserChemCityData,
+  UserProgressData,
+  SlimItemDocument,
+  PlaceDocument,
+  FullItemDocument,
+} from '../lib/chemcity/types';
+import {
+  callChemCityInitUser,
+  callChemCityEquipCard,
+  callChemCityUnequipCard,
+  callChemCityCollectPassiveIncome,
+  callChemCityUnlockPlace,
+  callChemCityUnlockSlot,
+  callChemCityGetDailyLoginBonus,
+  callChemCityQuizReward,
+  callChemCityPurchaseCard,
+  callChemCityUnlockStoreSlot,
+} from '../lib/chemcity/cloudFunctions';
+import { estimateUnclaimedCoins } from '../lib/chemcity/income';
+import { getDailyStoreItems, STORE_MIN_SLOTS } from '../lib/chemcity/dailyStore';
+import type { QuizRewardRequest, QuizRewardResult } from '../lib/chemcity/types';
+
+type View = 'map' | 'place' | 'inventory' | 'store' | 'gas_station_distributor';
+
+type RootUserDoc = {
+  chemcity?: UserChemCityData;
+} & Record<string, unknown>;
+
+interface ChemCityStore {
+  user: UserChemCityData | null;
+  progress: UserProgressData | null;
+  slimItems: SlimItemDocument[];
+  places: PlaceDocument[];
+
+  isLoading: boolean;
+  error: string | null;
+
+  view: View;
+  selectedPlaceId: string | null;
+
+  cardPickerSlotId: string | null;
+
+  cardDetailItemId: string | null;
+  cardDetailData: FullItemDocument | null;
+  cardDetailLoading: boolean;
+
+  passiveDisplayCoins: number;
+
+  // Phase 4: store + unlock modals
+  dailyStoreItems: SlimItemDocument[];
+  storeSlotCount: number;
+  storePurchaseItemId: string | null;
+  storePurchaseData: FullItemDocument | null;
+  storePurchaseLoading: boolean;
+  placeUnlockModalId: string | null;
+
+  quizReward: {
+    result: QuizRewardResult | null;
+    correctAnswers: number;
+    totalQuestions: number;
+    isAwarding: boolean;
+  };
+
+  dailyLogin: {
+    diamonds: number;
+    coins: number;
+    streak: number;
+    showModal: boolean;
+    checked: boolean;
+  };
+
+  _unsubUser: Unsubscribe | null;
+
+  loadAll: (userId: string) => Promise<void>;
+  teardown: () => void;
+
+  navigateToMap: () => void;
+  navigateToPlace: (placeId: string) => void;
+  navigateToInventory: () => void;
+  navigateToStore: () => void;
+  navigateToGasStationDistributor: () => void;
+
+  openCardPicker: (slotId: string) => void;
+  closeCardPicker: () => void;
+
+  openCardDetail: (itemId: string) => Promise<void>;
+  closeCardDetail: () => void;
+
+  equipCard: (slotId: string, itemId: string) => Promise<void>;
+  unequipCard: (slotId: string) => Promise<void>;
+
+  collectIncome: () => Promise<{ coinsAwarded: number }>;
+
+  unlockPlace: (placeId: string) => Promise<void>;
+  unlockSlot: (placeId: string, slotId: string, useExtraSlotBudget?: boolean) => Promise<void>;
+
+  tickPassiveDisplay: () => void;
+
+  awardQuizReward: (request: QuizRewardRequest) => Promise<void>;
+  clearQuizReward: () => void;
+
+  checkDailyLogin: () => Promise<void>;
+  dismissDailyLogin: () => void;
+
+  computeDailyStore: (userId: string) => void;
+  unlockStoreSlot: () => Promise<void>;
+
+  openPurchaseConfirm: (itemId: string) => void;
+  closePurchaseConfirm: () => void;
+  purchaseCard: (itemId: string, currency: 'coins' | 'diamonds') => Promise<void>;
+
+  openPlaceUnlockModal: (placeId: string) => void;
+  closePlaceUnlockModal: () => void;
+}
+
+export const useChemCityStore = create<ChemCityStore>((set, get) => ({
+  user: null,
+  progress: null,
+  slimItems: [],
+  places: [],
+
+  isLoading: false,
+  error: null,
+
+  view: 'map',
+  selectedPlaceId: null,
+
+  cardPickerSlotId: null,
+
+  cardDetailItemId: null,
+  cardDetailData: null,
+  cardDetailLoading: false,
+
+  passiveDisplayCoins: 0,
+
+  dailyStoreItems: [],
+  storeSlotCount: STORE_MIN_SLOTS,
+  storePurchaseItemId: null,
+  storePurchaseData: null,
+  storePurchaseLoading: false,
+  placeUnlockModalId: null,
+
+  quizReward: {
+    result: null,
+    correctAnswers: 0,
+    totalQuestions: 0,
+    isAwarding: false,
+  },
+
+  dailyLogin: {
+    diamonds: 0,
+    coins: 0,
+    streak: 0,
+    showModal: false,
+    checked: false,
+  },
+
+  _unsubUser: null,
+
+  loadAll: async (userId: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const [slimItems, places] = await Promise.all([fetchSlimItems(), fetchPlaces()]);
+
+      await callChemCityInitUser();
+
+      const userRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userRef);
+      const root = (userSnap.data() || {}) as RootUserDoc;
+      const chemcity = (root.chemcity || null) as UserChemCityData | null;
+
+      const progressRef = doc(db, 'users', userId, 'chemcity_progress', 'data');
+      const progressSnap = await getDoc(progressRef);
+      const progress = (progressSnap.data() || null) as UserProgressData | null;
+
+      const existing = get()._unsubUser;
+      if (existing) existing();
+
+      const unsub = onSnapshot(userRef, (snap) => {
+        if (!snap.exists()) return;
+        const freshRoot = (snap.data() || {}) as RootUserDoc;
+        const fresh = (freshRoot.chemcity || null) as UserChemCityData | null;
+
+        // Phase 4: mirror storeSlotCount (default 3) + compute daily store items
+        const slotCount = (fresh as any)?.storeSlotCount ?? STORE_MIN_SLOTS;
+        const dailyStoreItems = fresh
+          ? getDailyStoreItems(userId, slimItems, slotCount)
+          : [];
+
+        set({ user: fresh, storeSlotCount: slotCount, dailyStoreItems });
+      });
+
+      set({
+        user: chemcity,
+        progress,
+        slimItems,
+        places,
+        isLoading: false,
+        passiveDisplayCoins: 0,
+        storeSlotCount: (chemcity as any)?.storeSlotCount ?? STORE_MIN_SLOTS,
+        dailyStoreItems: chemcity ? getDailyStoreItems(userId, slimItems, (chemcity as any)?.storeSlotCount ?? STORE_MIN_SLOTS) : [],
+        _unsubUser: unsub,
+      });
+
+      // Phase 3: check daily login bonus (non-blocking)
+      get().checkDailyLogin();
+
+      // Phase 4: compute store (non-blocking)
+      setTimeout(() => get().computeDailyStore(userId), 200);
+    } catch (err: any) {
+      set({ isLoading: false, error: err?.message || 'Failed to load ChemCity' });
+    }
+  },
+
+  teardown: () => {
+    const unsub = get()._unsubUser;
+    if (unsub) unsub();
+    set({ _unsubUser: null });
+  },
+
+  navigateToMap: () => set({ view: 'map', selectedPlaceId: null }),
+  navigateToPlace: (placeId) => set({ view: 'place', selectedPlaceId: placeId }),
+  navigateToInventory: () => set({ view: 'inventory' }),
+  navigateToStore: () => set({ view: 'store' }),
+  navigateToGasStationDistributor: () => set({ view: 'gas_station_distributor' }),
+
+  openCardPicker: (slotId) => set({ cardPickerSlotId: slotId }),
+  closeCardPicker: () => set({ cardPickerSlotId: null }),
+
+  openCardDetail: async (itemId: string) => {
+    set({ cardDetailItemId: itemId, cardDetailData: null, cardDetailLoading: true });
+    try {
+      const full = await fetchFullItem(itemId);
+      set({ cardDetailData: full ?? null, cardDetailLoading: false });
+    } catch {
+      set({ cardDetailLoading: false });
+    }
+  },
+  closeCardDetail: () => set({ cardDetailItemId: null, cardDetailData: null, cardDetailLoading: false }),
+
+  equipCard: async (slotId, itemId) => {
+    await callChemCityEquipCard(slotId, itemId);
+  },
+
+  unequipCard: async (slotId) => {
+    await callChemCityUnequipCard(slotId);
+  },
+
+  collectIncome: async () => {
+    const result = await callChemCityCollectPassiveIncome();
+    set({ passiveDisplayCoins: 0 });
+    return { coinsAwarded: Number(result.coinsAwarded || 0) };
+  },
+
+  unlockPlace: async (placeId) => {
+    await callChemCityUnlockPlace(placeId);
+  },
+
+  unlockSlot: async (placeId, slotId, useExtraSlotBudget) => {
+    await callChemCityUnlockSlot(placeId, slotId, useExtraSlotBudget);
+  },
+
+  computeDailyStore: (userId: string) => {
+    const { slimItems, storeSlotCount } = get();
+    if (!slimItems.length) return;
+    set({ dailyStoreItems: getDailyStoreItems(userId, slimItems, storeSlotCount) });
+  },
+
+  unlockStoreSlot: async () => {
+    await callChemCityUnlockStoreSlot();
+  },
+
+  openPurchaseConfirm: (itemId: string) => {
+    set({ storePurchaseItemId: itemId, storePurchaseData: null, storePurchaseLoading: true });
+    fetchFullItem(itemId)
+      .then((data) => set({ storePurchaseData: data ?? null, storePurchaseLoading: false }))
+      .catch(() => set({ storePurchaseLoading: false }));
+  },
+
+  closePurchaseConfirm: () =>
+    set({ storePurchaseItemId: null, storePurchaseData: null, storePurchaseLoading: false }),
+
+  purchaseCard: async (itemId: string, currency: 'coins' | 'diamonds') => {
+    await callChemCityPurchaseCard(itemId, currency);
+  },
+
+  openPlaceUnlockModal: (placeId: string) => set({ placeUnlockModalId: placeId }),
+  closePlaceUnlockModal: () => set({ placeUnlockModalId: null }),
+
+  tickPassiveDisplay: () => {
+    const user = get().user;
+    if (!user) return;
+
+    const lastCollected = (user.passiveIncome?.lastCollected ?? null) as any;
+    const coins = estimateUnclaimedCoins(user.activeBonuses, lastCollected);
+    set({ passiveDisplayCoins: coins });
+  },
+
+  awardQuizReward: async (request) => {
+    set((s) => ({
+      quizReward: {
+        ...s.quizReward,
+        isAwarding: true,
+        result: null,
+      },
+    }));
+
+    try {
+      const result = await callChemCityQuizReward(request);
+      set({
+        quizReward: {
+          result,
+          correctAnswers: request.correctAnswers ?? 0,
+          totalQuestions: request.totalQuestions ?? 0,
+          isAwarding: false,
+        },
+      });
+    } catch {
+      set((s) => ({
+        quizReward: { ...s.quizReward, isAwarding: false },
+      }));
+    }
+  },
+
+  clearQuizReward: () => {
+    set({
+      quizReward: {
+        result: null,
+        correctAnswers: 0,
+        totalQuestions: 0,
+        isAwarding: false,
+      },
+    });
+  },
+
+  checkDailyLogin: async () => {
+    const { dailyLogin } = get();
+    if (dailyLogin.checked) return;
+
+    try {
+      const result = await callChemCityGetDailyLoginBonus();
+      const alreadyClaimed = Boolean((result as any)?.alreadyClaimed);
+      if (alreadyClaimed) {
+        set((s) => ({ dailyLogin: { ...s.dailyLogin, checked: true } }));
+        return;
+      }
+
+      set({
+        dailyLogin: {
+          diamonds: Number((result as any)?.diamondsAwarded || 0),
+          coins: 0,
+          streak: Number((result as any)?.currentStreak || 0),
+          showModal: true,
+          checked: true,
+        },
+      });
+    } catch {
+      set((s) => ({ dailyLogin: { ...s.dailyLogin, checked: true } }));
+    }
+  },
+
+  dismissDailyLogin: () => {
+    set((s) => ({ dailyLogin: { ...s.dailyLogin, showModal: false } }));
+  },
+}));
+
+
+===== tests/chemcity/bonuses.test.ts =====
 
 import {
   calcGardenCoinsPerHour,
@@ -2557,7 +4505,190 @@ describe("getShopPrice", () => {
 });
 
 
-===== FILE: tests/chemcity/quizReward.test.ts =====
+===== tests/chemcity/phase4.test.ts =====
+
+import {
+  getDailyStoreItems,
+  utcDateString,
+  msUntilUtcMidnight,
+  countdownToMidnight,
+  STORE_SLOT_UNLOCK_COSTS,
+  STORE_MIN_SLOTS,
+  STORE_MAX_SLOTS,
+} from '../../src/lib/chemcity/dailyStore';
+
+import { getEffectiveCoinPrice, canAffordItem, getDisplayPrice } from '../../src/lib/chemcity/shop';
+
+import type { SlimItemDocument, ActiveBonuses } from '../../src/lib/chemcity/types';
+
+function makeItem(id: string, rarity: SlimItemDocument['rarity'], coinCost: number): SlimItemDocument {
+  return {
+    id,
+    name: id,
+    chemicalFormula: 'X',
+    emoji: '🧪',
+    rarity,
+    rarityValue: { common: 1, rare: 2, epic: 3, legendary: 4 }[rarity] as any,
+    placeId: 'lab',
+    validSlots: ['lab_bench_1'],
+    shopData: { coinCost },
+    skillContribution: 0,
+    collections: [],
+    deprecated: false,
+  };
+}
+
+function makeActiveBonuses(shopDiscountPercent: number): ActiveBonuses {
+  return {
+    passiveBaseCoinsPerHour: 0,
+    passiveMultiplier: 1,
+    quizFlatDiamondBonus: 0,
+    quizDiamondMultiplier: 1,
+    quizDoubleChancePercent: 0,
+    dailyLoginDiamonds: 5,
+    extraSlotsTotal: 0,
+    shopDiscountPercent,
+  };
+}
+
+const POOL = [
+  ...Array.from({ length: 20 }, (_, i) => makeItem(`common_${i}`, 'common', 100)),
+  ...Array.from({ length: 8 }, (_, i) => makeItem(`rare_${i}`, 'rare', 300)),
+  ...Array.from({ length: 4 }, (_, i) => makeItem(`epic_${i}`, 'epic', 600)),
+  ...Array.from({ length: 1 }, (_, i) => makeItem(`legendary_${i}`, 'legendary', 1000)),
+];
+
+describe('getDailyStoreItems — determinism', () => {
+  const DATE = new Date('2026-03-01T12:00:00Z');
+
+  it('returns exactly storeSlotCount items', () => {
+    const items = getDailyStoreItems('user123', POOL, 3, DATE);
+    expect(items).toHaveLength(3);
+  });
+
+  it('returns correct count for 6 slots', () => {
+    const items = getDailyStoreItems('user123', POOL, 6, DATE);
+    expect(items).toHaveLength(6);
+  });
+
+  it('same user + same date → same items (deterministic)', () => {
+    const a = getDailyStoreItems('user123', POOL, 3, DATE);
+    const b = getDailyStoreItems('user123', POOL, 3, DATE);
+    expect(a.map((i) => i.id)).toEqual(b.map((i) => i.id));
+  });
+
+  it('different users on same date → different selections', () => {
+    const a = getDailyStoreItems('user_A', POOL, 3, DATE);
+    const b = getDailyStoreItems('user_B', POOL, 3, DATE);
+    expect(a.map((i) => i.id).join(',')).not.toBe(b.map((i) => i.id).join(','));
+  });
+
+  it('same user on different days → different selections', () => {
+    const day1 = new Date('2026-03-01T00:00:00Z');
+    const day2 = new Date('2026-03-02T00:00:00Z');
+    const a = getDailyStoreItems('user123', POOL, 3, day1);
+    const b = getDailyStoreItems('user123', POOL, 3, day2);
+    expect(a.map((i) => i.id).join(',')).not.toBe(b.map((i) => i.id).join(','));
+  });
+
+  it('no duplicate items in same day selection', () => {
+    const items = getDailyStoreItems('user123', POOL, 6, DATE);
+    const ids = items.map((i) => i.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('excludes deprecated items', () => {
+    const poolWithDeprecated = [...POOL, { ...makeItem('deprecated_1', 'legendary', 500), deprecated: true }];
+    for (let u = 0; u < 20; u++) {
+      const items = getDailyStoreItems(`u${u}`, poolWithDeprecated, 6, DATE);
+      items.forEach((item) => expect(item.deprecated).toBeFalsy());
+    }
+  });
+
+  it('excludes items with no shop price', () => {
+    const poolWithUnpurchasable = [...POOL, { ...makeItem('noshop_1', 'epic', 0), shopData: {} } as any];
+    for (let u = 0; u < 20; u++) {
+      const items = getDailyStoreItems(`u${u}`, poolWithUnpurchasable, 6, DATE);
+      items.forEach((item) => {
+        const hasCoin = item.shopData?.coinCost != null;
+        const hasDia = item.shopData?.diamondCost != null;
+        expect(hasCoin || hasDia).toBe(true);
+      });
+    }
+  });
+});
+
+describe('utcDateString', () => {
+  it('formats date as YYYY-MM-DD UTC', () => {
+    expect(utcDateString(new Date('2026-03-05T23:59:59Z'))).toBe('2026-03-05');
+  });
+
+  it('rolls over at UTC midnight', () => {
+    expect(utcDateString(new Date('2026-03-05T23:59:59.999Z'))).toBe('2026-03-05');
+    expect(utcDateString(new Date('2026-03-06T00:00:00.000Z'))).toBe('2026-03-06');
+  });
+});
+
+describe('msUntilUtcMidnight', () => {
+  it('always returns a positive number', () => {
+    expect(msUntilUtcMidnight()).toBeGreaterThan(0);
+  });
+});
+
+describe('Store slot constants', () => {
+  it('STORE_MIN_SLOTS is 3', () => expect(STORE_MIN_SLOTS).toBe(3));
+  it('STORE_MAX_SLOTS is 6', () => expect(STORE_MAX_SLOTS).toBe(6));
+
+  it('unlock costs are defined for slots 4, 5, 6', () => {
+    expect(STORE_SLOT_UNLOCK_COSTS[4]).toBeGreaterThan(0);
+    expect(STORE_SLOT_UNLOCK_COSTS[5]).toBeGreaterThan(STORE_SLOT_UNLOCK_COSTS[4]);
+    expect(STORE_SLOT_UNLOCK_COSTS[6]).toBeGreaterThan(STORE_SLOT_UNLOCK_COSTS[5]);
+  });
+});
+
+describe('getEffectiveCoinPrice', () => {
+  it('no discount → original price', () => {
+    expect(getEffectiveCoinPrice(200, makeActiveBonuses(0))).toBe(200);
+  });
+
+  it('50% discount halves the price', () => {
+    expect(getEffectiveCoinPrice(200, makeActiveBonuses(50))).toBe(100);
+  });
+
+  it('never reduces below 1', () => {
+    expect(getEffectiveCoinPrice(1, makeActiveBonuses(50))).toBe(1);
+  });
+});
+
+describe('canAffordItem', () => {
+  it('can afford exact coin price', () => {
+    expect(canAffordItem(100, undefined, 'coins', 100, 0, makeActiveBonuses(0))).toBe(true);
+  });
+
+  it('discount makes unaffordable item affordable', () => {
+    expect(canAffordItem(200, undefined, 'coins', 100, 0, makeActiveBonuses(50))).toBe(true);
+  });
+});
+
+describe('getDisplayPrice', () => {
+  it('coin price with 20% discount → 80', () => {
+    expect(getDisplayPrice(100, undefined, 'coins', makeActiveBonuses(20))).toBe(80);
+  });
+
+  it('returns null when currency path unavailable', () => {
+    expect(getDisplayPrice(undefined, 100, 'coins', makeActiveBonuses(0))).toBeNull();
+    expect(getDisplayPrice(100, undefined, 'diamonds', makeActiveBonuses(0))).toBeNull();
+  });
+});
+
+describe('countdownToMidnight', () => {
+  it('returns a string', () => {
+    expect(typeof countdownToMidnight(new Date('2026-03-05T22:30:00.000Z'))).toBe('string');
+  });
+});
+
+
+===== tests/chemcity/quizReward.test.ts =====
 
 import { BASE_DIAMONDS_PER_QUIZ, COINS_PER_CORRECT_ANSWER } from '../../src/hooks/useQuizReward';
 

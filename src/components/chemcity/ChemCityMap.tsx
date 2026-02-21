@@ -6,6 +6,7 @@ export const ChemCityMap: React.FC = () => {
   const user = useChemCityStore((s) => s.user);
   const places = useChemCityStore((s) => s.places);
   const navigateToPlace = useChemCityStore((s) => s.navigateToPlace);
+  const openPlaceUnlockModal = useChemCityStore((s) => s.openPlaceUnlockModal);
   const [mapLevel, setMapLevel] = useState<'world' | 'home'>('world');
 
   const isHotspotEditorEnabled = false;
@@ -67,6 +68,11 @@ export const ChemCityMap: React.FC = () => {
   if (!user) return null;
 
   const placeById = (id: string) => places.find((p) => p.id === id) ?? null;
+  const isPlaceUnlocked = (placeId: string) => {
+    const place = placeById(placeId);
+    if (!place) return false;
+    return place.unlockCost === 0 || user.unlockedPlaces.includes(placeId as any);
+  };
 
   const mapSrc = mapLevel === 'world' ? '/Map1.png' : '/Map2.png';
 
@@ -133,12 +139,13 @@ export const ChemCityMap: React.FC = () => {
     scale: number;
     onClick: () => void;
     disabled?: boolean;
-  }> = ({ label, leftPct, topPct, scale, onClick, disabled }) => {
+    locked?: boolean;
+  }> = ({ label, leftPct, topPct, scale, onClick, disabled, locked }) => {
     return (
       <button
         type="button"
         aria-label={label}
-        title={label}
+        title={locked ? `${label} (Locked — tap to unlock)` : label}
         onClick={(e) => {
           e.stopPropagation();
           if (disabled) return;
@@ -148,6 +155,8 @@ export const ChemCityMap: React.FC = () => {
         className={`absolute rounded-full border font-bold shadow-md transition-all px-4 py-2 text-xs ${
           disabled
             ? 'bg-slate-800/80 border-slate-700 text-slate-500 cursor-not-allowed'
+            : locked
+            ? 'bg-slate-800/90 hover:bg-slate-700 border-amber-600/80 text-amber-300 active:scale-95'
             : 'bg-indigo-500/90 hover:bg-indigo-400 border-indigo-200 text-white active:scale-95'
         }`}
         style={{
@@ -157,7 +166,7 @@ export const ChemCityMap: React.FC = () => {
           transformOrigin: 'center',
         }}
       >
-        {label}
+        {locked ? `🔒 ${label}` : label}
       </button>
     );
   };
@@ -221,6 +230,7 @@ export const ChemCityMap: React.FC = () => {
               leftPct={h.leftPct}
               topPct={h.topPct}
               scale={hotspotScale}
+              locked={h.placeId ? !isPlaceUnlocked(h.placeId) : false}
               onClick={() => {
                 if (isHotspotEditorEnabled && editMode) {
                   setSelectedHotspotKey(h.key);
@@ -230,7 +240,12 @@ export const ChemCityMap: React.FC = () => {
                   setMapLevel('home');
                   return;
                 }
-                if (h.placeId) navigateToPlace(h.placeId);
+                if (!h.placeId) return;
+                if (!isPlaceUnlocked(h.placeId)) {
+                  openPlaceUnlockModal(h.placeId);
+                  return;
+                }
+                navigateToPlace(h.placeId);
               }}
               disabled={h.placeId ? !placeById(h.placeId) : false}
             />
@@ -247,9 +262,14 @@ export const ChemCityMap: React.FC = () => {
                   setSelectedHotspotKey(h.key);
                   return;
                 }
+                if (!isPlaceUnlocked(h.placeId)) {
+                  openPlaceUnlockModal(h.placeId);
+                  return;
+                }
                 navigateToPlace(h.placeId);
               }}
               disabled={!placeById(h.placeId)}
+              locked={!isPlaceUnlocked(h.placeId)}
             />
           ))}
 

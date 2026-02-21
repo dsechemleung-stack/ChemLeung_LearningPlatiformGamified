@@ -25,6 +25,7 @@ export const ChemCard: React.FC<ChemCardProps> = ({
   onClick,
 }) => {
   const style = RARITY_STYLES[item.rarity] ?? RARITY_STYLES.common;
+  const isLegendary = item.rarity === 'legendary';
 
   const sizeClasses = {
     sm: 'w-20 h-28 text-xs',
@@ -40,10 +41,22 @@ export const ChemCard: React.FC<ChemCardProps> = ({
     <button
       onClick={onClick}
       className={`relative flex flex-col items-center justify-between ${sizeClasses} bg-gradient-to-b ${style.bg} border-2 ${style.border} rounded-xl p-2 cursor-pointer transition-transform duration-150 active:scale-95 ${
+        isLegendary ? 'shimmer' : ''
+      } ${
         isEquipped ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-slate-900' : ''
       } ${!isOwned ? 'opacity-50 grayscale' : ''} ${size === 'lg' ? 'shadow-lg' : 'shadow-md'}`}
       aria-label={`${item.name} card`}
     >
+      {isLegendary && (
+        <span
+          className="pointer-events-none absolute inset-0 rounded-xl"
+          style={{
+            background:
+              'linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 50%, rgba(255,215,0,0.15) 100%)',
+          }}
+        />
+      )}
+
       <span className={`absolute top-1 right-1 text-xs font-bold rounded px-1 py-0.5 ${style.badge} ${size === 'sm' ? 'hidden' : ''}`}>
         {item.rarityValue === 4 ? '★★★' : item.rarityValue === 3 ? '★★' : item.rarityValue === 2 ? '★' : '·'}
       </span>
