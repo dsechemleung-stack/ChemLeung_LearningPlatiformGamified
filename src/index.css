@@ -10,8 +10,32 @@ body {
   @apply bg-slate-50 text-carbon-grey antialiased;
 }
 
+ .chem-sans {
+  font-family: 'Quicksand', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+ }
+
+ .chem-script {
+  font-family: 'Pacifico', cursive;
+  background: linear-gradient(135deg, #C5D7B5 0%, #76A8A5 50%, #ffffff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter:
+    drop-shadow(0 0 24px rgba(118,168,165,0.55))
+    drop-shadow(0 2px 4px rgba(0,0,0,0.35));
+ }
+
+ .chem-script-green {
+  font-family: 'Pacifico', cursive;
+  color: #76A8A5;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.55),
+    0 10px 22px rgba(118,168,165, 0.22);
+ }
+
  html,
  body {
+  font-family: 'Quicksand', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
    overflow-x: hidden;
  }
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { TreeDeciduous, Mail, Lock, User, UserPlus, AlertCircle, Sparkles, Languages } from 'lucide-react';
+import { Mail, Lock, User, UserPlus, AlertCircle, Languages } from 'lucide-react';
 
 export default function RegisterPage() {
   const [displayName, setDisplayName] = useState('');
@@ -12,25 +12,14 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signup } = useAuth();
-  const { t, toggleLanguage } = useLanguage();
+  const { t, toggleLanguage, isEnglish } = useLanguage();
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
     e.preventDefault();
-
-    // Validation
-    if (password !== confirmPassword) {
-      return setError(t('auth.passwordsNoMatch'));
-    }
-
-    if (password.length < 6) {
-      return setError(t('auth.passwordMinLength'));
-    }
-
-    if (displayName.trim().length < 2) {
-      return setError(t('auth.enterFullName'));
-    }
-
+    if (password !== confirmPassword) return setError(t('auth.passwordsNoMatch'));
+    if (password.length < 6) return setError(t('auth.passwordMinLength'));
+    if (displayName.trim().length < 2) return setError(t('auth.enterFullName'));
     try {
       setError('');
       setLoading(true);
@@ -38,254 +27,260 @@ export default function RegisterPage() {
       navigate('/dashboard');
     } catch (err) {
       console.error(err);
-      if (err.code === 'auth/email-already-in-use') {
-        setError(t('auth.emailAlreadyInUse'));
-      } else if (err.code === 'auth/invalid-email') {
-        setError(t('auth.invalidEmail'));
-      } else if (err.code === 'auth/weak-password') {
-        setError(t('auth.weakPassword'));
-      } else {
-        setError(t('auth.failedCreateAccount'));
-      }
+      if (err.code === 'auth/email-already-in-use') setError(t('auth.emailAlreadyInUse'));
+      else if (err.code === 'auth/invalid-email') setError(t('auth.invalidEmail'));
+      else if (err.code === 'auth/weak-password') setError(t('auth.weakPassword'));
+      else setError(t('auth.failedCreateAccount'));
     }
     setLoading(false);
   }
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900 p-4">
-      {/* Language Toggle - Top Right */}
-      <button
-        onClick={toggleLanguage}
-        className="fixed top-6 right-6 z-50 flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-md border-2 border-white/20 rounded-xl font-bold text-white hover:bg-white/20 transition-all shadow-lg"
-        title={t('auth.switchToChinese')}
-      >
-        <Languages size={20} strokeWidth={3} />
-        <span className="text-sm">{t('auth.switchToEnglish')}</span>
+    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center p-4"
+      style={{ background: '#081413' }}>
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Quicksand:wght@500;600;700;800&display=swap');
+        .auth-script {
+          font-family: 'Pacifico', cursive;
+          background: linear-gradient(135deg, #C5D7B5 0%, #76A8A5 50%, #ffffff 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        .reg-input {
+          width: 100%;
+          padding: 13px 16px 13px 48px;
+          background: rgba(255,255,255,0.06);
+          border: 1.5px solid rgba(197,215,181,0.2);
+          border-radius: 14px;
+          color: #fff;
+          font-family: 'Quicksand', sans-serif;
+          font-weight: 600;
+          font-size: 14px;
+          outline: none;
+          transition: all 0.2s ease;
+        }
+        .reg-input::placeholder { color: rgba(255,255,255,0.3); }
+        .reg-input:focus {
+          border-color: #76A8A5;
+          box-shadow: 0 0 0 3px rgba(118,168,165,0.18);
+          background: rgba(255,255,255,0.09);
+        }
+        .reg-label {
+          font-family: 'Quicksand', sans-serif;
+          font-weight: 700;
+          font-size: 13px;
+          color: rgba(197,215,181,0.85);
+          margin-bottom: 7px;
+          display: block;
+        }
+        .reg-btn {
+          width: 100%;
+          padding: 14px;
+          background: linear-gradient(135deg, #76A8A5, #5d9190);
+          color: #fff;
+          border: none;
+          border-radius: 14px;
+          font-family: 'Quicksand', sans-serif;
+          font-weight: 800;
+          font-size: 16px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          box-shadow: 0 4px 20px rgba(118,168,165,0.4);
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .reg-btn:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 28px rgba(118,168,165,0.5);
+        }
+        .reg-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .lang-btn {
+          font-family: 'Quicksand', sans-serif;
+          font-weight: 700;
+          font-size: 13px;
+          display: flex; align-items: center; gap: 6px;
+          padding: 8px 16px;
+          background: rgba(255,255,255,0.07);
+          border: 1.5px solid rgba(255,255,255,0.15);
+          border-radius: 10px;
+          color: rgba(255,255,255,0.8);
+          cursor: pointer;
+          transition: all 0.2s;
+          position: fixed; top: 24px; right: 24px; z-index: 50;
+        }
+        .lang-btn:hover { background: rgba(118,168,165,0.15); border-color: rgba(118,168,165,0.4); color: #fff; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
+
+      {/* ── Background Video ── */}
+      <div className="absolute inset-0">
+        <video className="w-full h-full object-cover" src="/ChemistreeIcon.mp4"
+          autoPlay muted loop playsInline preload="auto" style={{ opacity: 0.45 }} />
+        <div className="absolute inset-0" style={{
+          background: 'radial-gradient(ellipse 80% 80% at 50% 50%, rgba(8,20,19,0.3) 0%, rgba(8,20,19,0.75) 100%)',
+        }} />
+      </div>
+
+      {/* Language Toggle */}
+      <button className="lang-btn" onClick={toggleLanguage}>
+        <Languages size={16} />
+        <span>{isEnglish ? t('auth.switchToChinese') : t('auth.switchToEnglish')}</span>
       </button>
 
-      {/* Animated Background Elements */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-green-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
-        <div className="absolute top-40 right-10 w-72 h-72 bg-emerald-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
-        <div className="absolute -bottom-8 left-20 w-72 h-72 bg-teal-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
-      </div>
+      {/* Card */}
+      <div className="relative z-10 w-full max-w-md" style={{ fontFamily: "'Quicksand', sans-serif" }}>
 
-      {/* Floating Chemistry Icons */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 text-6xl opacity-10 animate-float">⚛️</div>
-        <div className="absolute top-1/3 right-1/4 text-5xl opacity-10 animate-float animation-delay-1000">🧪</div>
-        <div className="absolute bottom-1/4 left-1/3 text-7xl opacity-10 animate-float animation-delay-2000">🔬</div>
-        <div className="absolute top-1/2 right-1/3 text-4xl opacity-10 animate-float animation-delay-3000">⚗️</div>
-      </div>
-
-      <div className="max-w-md w-full relative z-10">
         {/* Logo Header */}
-        <div className="text-center mb-8 animate-in fade-in slide-in-from-top duration-700">
-          <div className="flex justify-center mb-6">
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl blur-xl opacity-75 animate-pulse"></div>
-              <div className="relative bg-gradient-to-r from-green-500 to-emerald-600 p-5 rounded-2xl shadow-2xl transform hover:scale-110 transition-transform duration-300">
-                <TreeDeciduous className="text-white" size={56} strokeWidth={2.5} />
+        <div className="text-center mb-6">
+          <div style={{ filter: 'drop-shadow(0 0 16px rgba(118,168,165,0.45))' }}
+            className="flex justify-center mb-4">
+            <div style={{
+              clipPath: 'polygon(50% 0%, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%)',
+              background: 'linear-gradient(135deg, #76A8A5, #C5D7B5)',
+              width: 80, height: 80,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <div style={{
+                clipPath: 'polygon(50% 0%, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%)',
+                background: '#0d1f1e',
+                width: 72, height: 72,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <img src="/ChemistreeIcon_square.png" alt="Chemistree" draggable="false"
+                  style={{ width: 48, height: 48, objectFit: 'contain' }} />
               </div>
             </div>
           </div>
-          <h1 className="text-4xl font-black text-white mb-2 tracking-tight">
-            Chemistree
-          </h1>
-          <div className="text-slate-200 text-sm font-bold -mt-1">
-            by ChemLeung
-          </div>
-          <p className="text-emerald-200 text-lg font-medium">
+          <h1 className="auth-script" style={{ fontSize: 32 }}>Chemistree</h1>
+          <p style={{ color: 'rgba(197,215,181,0.7)', fontSize: 14, fontWeight: 600, marginTop: 4 }}>
             {t('tagline')}
           </p>
-          <div className="flex items-center justify-center gap-2 mt-3 text-emerald-300 text-sm">
-            <Sparkles size={16} />
-            <span>{t('auth.joinCommunity')}</span>
-          </div>
         </div>
 
-        {/* Register Form */}
-        <div className="bg-white/10 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden animate-in fade-in slide-in-from-bottom duration-700">
-          <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-6 text-center">
-            <h2 className="text-2xl font-bold text-white flex items-center justify-center gap-2">
-              <UserPlus size={24} />
-              {t('auth.register')}
-            </h2>
-            <p className="text-green-100 text-sm mt-1">
-              {t('auth.joinCommunity')}
-            </p>
+        {/* Glass Form Card */}
+        <div style={{
+          background: 'rgba(255,255,255,0.06)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(197,215,181,0.15)',
+          borderRadius: 24,
+          overflow: 'hidden',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.07)',
+        }}>
+          {/* Card Header */}
+          <div style={{
+            padding: '18px 26px',
+            borderBottom: '1px solid rgba(197,215,181,0.1)',
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <div style={{
+              background: 'rgba(118,168,165,0.2)',
+              borderRadius: 10, padding: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <UserPlus size={18} color="#76A8A5" />
+            </div>
+            <div>
+              <div style={{ color: '#fff', fontWeight: 800, fontSize: 16 }}>{t('auth.register')}</div>
+              <div style={{ color: 'rgba(197,215,181,0.6)', fontSize: 12, fontWeight: 600 }}>{t('auth.joinCommunity')}</div>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          <form onSubmit={handleSubmit} style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
             {error && (
-              <div className="bg-red-500/20 backdrop-blur border-2 border-red-400/50 rounded-xl p-4 flex items-start gap-3 animate-in shake">
-                <AlertCircle className="text-red-300 flex-shrink-0 mt-0.5" size={20} />
-                <p className="text-red-100 text-sm font-medium">{error}</p>
+              <div style={{
+                background: 'rgba(220,60,60,0.15)',
+                border: '1.5px solid rgba(220,60,60,0.35)',
+                borderRadius: 12, padding: '11px 14px',
+                display: 'flex', alignItems: 'flex-start', gap: 10,
+              }}>
+                <AlertCircle size={17} color="#f87171" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p style={{ color: '#fca5a5', fontSize: 13, fontWeight: 600, margin: 0 }}>{error}</p>
               </div>
             )}
 
-            {/* Display Name Field */}
-            <div className="space-y-2">
-              <label className="block text-sm font-bold text-white/90 ml-1">
-                {t('auth.fullName')}
-              </label>
-              <div className="relative group">
-                <User className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-300 group-focus-within:text-green-400 transition-colors" size={20} />
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  required
-                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
-                  placeholder={t('auth.fullNamePlaceholder')}
-                />
+            {/* Display Name */}
+            <div>
+              <label className="reg-label">{t('auth.fullName')}</label>
+              <div style={{ position: 'relative' }}>
+                <User size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#76A8A5' }} />
+                <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)}
+                  required className="reg-input" placeholder={t('auth.fullNamePlaceholder')} />
               </div>
             </div>
 
-            {/* Email Field */}
-            <div className="space-y-2">
-              <label className="block text-sm font-bold text-white/90 ml-1">
-                {t('auth.email')}
-              </label>
-              <div className="relative group">
-                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-300 group-focus-within:text-green-400 transition-colors" size={20} />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
-                  placeholder={t('auth.emailPlaceholder')}
-                />
+            {/* Email */}
+            <div>
+              <label className="reg-label">{t('auth.email')}</label>
+              <div style={{ position: 'relative' }}>
+                <Mail size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#76A8A5' }} />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  required className="reg-input" placeholder={t('auth.emailPlaceholder')} />
               </div>
             </div>
 
-            {/* Password Field */}
-            <div className="space-y-2">
-              <label className="block text-sm font-bold text-white/90 ml-1">
-                {t('auth.password')}
-              </label>
-              <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-300 group-focus-within:text-green-400 transition-colors" size={20} />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
-                  placeholder={t('auth.passwordPlaceholder')}
-                />
+            {/* Password */}
+            <div>
+              <label className="reg-label">{t('auth.password')}</label>
+              <div style={{ position: 'relative' }}>
+                <Lock size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#76A8A5' }} />
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  required className="reg-input" placeholder={t('auth.passwordPlaceholder')} />
               </div>
-              <p className="text-xs text-green-200 ml-1">
+              <p style={{ color: 'rgba(197,215,181,0.5)', fontSize: 11, fontWeight: 600, marginTop: 6, marginLeft: 2 }}>
                 {t('auth.minimumCharacters')}
               </p>
             </div>
 
-            {/* Confirm Password Field */}
-            <div className="space-y-2">
-              <label className="block text-sm font-bold text-white/90 ml-1">
-                {t('auth.confirmPassword')}
-              </label>
-              <div className="relative group">
-                <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-300 group-focus-within:text-green-400 transition-colors" size={20} />
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur border-2 border-white/20 rounded-xl focus:border-green-400 focus:ring-4 focus:ring-green-500/20 outline-none transition-all text-white placeholder-white/50 font-medium"
-                  placeholder={t('auth.passwordPlaceholder')}
-                />
+            {/* Confirm Password */}
+            <div>
+              <label className="reg-label">{t('auth.confirmPassword')}</label>
+              <div style={{ position: 'relative' }}>
+                <Lock size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: '#76A8A5' }} />
+                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                  required className="reg-input" placeholder={t('auth.passwordPlaceholder')} />
               </div>
             </div>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="relative w-full py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-lg shadow-2xl hover:shadow-green-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all overflow-hidden group"
-            >
-              <div className="relative flex items-center justify-center gap-2">
-                {loading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    <span>{t('auth.creatingAccount')}</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus size={20} />
-                    <span>{t('auth.createAccount')}</span>
-                  </>
-                )}
-              </div>
+            <button type="submit" disabled={loading} className="reg-btn" style={{ marginTop: 6 }}>
+              {loading ? (
+                <>
+                  <div style={{ width: 18, height: 18, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  <span>{t('auth.creatingAccount')}</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus size={18} />
+                  <span>{t('auth.createAccount')}</span>
+                </>
+              )}
             </button>
           </form>
 
-          {/* Login Link */}
-          <div className="bg-white/5 px-8 py-6 border-t border-white/10 text-center">
-            <p className="text-white/70 text-sm">
+          {/* Footer */}
+          <div style={{
+            padding: '14px 26px',
+            borderTop: '1px solid rgba(197,215,181,0.1)',
+            textAlign: 'center',
+            background: 'rgba(0,0,0,0.1)',
+          }}>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, fontWeight: 600 }}>
               {t('auth.alreadyHaveAccount')}{' '}
-              <Link 
-                to="/login" 
-                className="text-green-300 font-bold hover:text-green-200 transition-colors hover:underline"
-              >
+              <Link to="/login" style={{ color: '#76A8A5', fontWeight: 800, textDecoration: 'none' }}
+                onMouseEnter={e => e.target.style.color = '#C5D7B5'}
+                onMouseLeave={e => e.target.style.color = '#76A8A5'}>
                 {t('auth.loginHere')}
               </Link>
             </p>
           </div>
         </div>
 
-        {/* Footer Note */}
-        <p className="text-center text-white/50 text-xs mt-6 animate-in fade-in duration-1000">
+        <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 12, fontWeight: 600, marginTop: 18 }}>
           {t('auth.secureRegistration')}
         </p>
       </div>
-
-      {/* Custom CSS for animations */}
-      <style jsx>{`
-        @keyframes blob {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(30px, -50px) scale(1.1); }
-          66% { transform: translate(-20px, 20px) scale(0.9); }
-        }
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-20px); }
-        }
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-          20%, 40%, 60%, 80% { transform: translateX(5px); }
-        }
-        .animate-blob {
-          animation: blob 7s infinite;
-        }
-        .animate-float {
-          animation: float 3s ease-in-out infinite;
-        }
-        .animation-delay-1000 {
-          animation-delay: 1s;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-3000 {
-          animation-delay: 3s;
-        }
-        .animation-delay-4000 {
-          animation-delay: 4s;
-        }
-        .animate-in {
-          animation: fadeIn 0.5s ease-out;
-        }
-        .shake {
-          animation: shake 0.5s;
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }

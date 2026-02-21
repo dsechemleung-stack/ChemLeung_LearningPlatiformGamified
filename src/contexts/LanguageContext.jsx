@@ -1237,7 +1237,7 @@ const translations = {
       signInToContinue: "Sign in to continue",
       emailPlaceholder: "your.email@example.com",
       passwordPlaceholder: "••••••••",
-      fullNamePlaceholder: "John Doe",
+      fullNamePlaceholder: "Chem Leung",
       noAccountFound: "No account found with this email.",
       incorrectPassword: "Incorrect password.",
       invalidEmail: "Invalid email address.",

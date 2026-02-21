@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { TreeDeciduous, Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle, Building2 } from 'lucide-react';
+import { Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle, Building2 } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 import { forumService } from '../services/forumService';
 import Avatar from './Avatar';
@@ -115,7 +115,7 @@ export default function Header() {
     async function handleLogoutConfirm() {
         try {
             await logout();
-            navigate('/login');
+            navigate('/');
         } catch (error) {
             console.error('Failed to log out:', error);
         }
@@ -164,21 +164,26 @@ export default function Header() {
 
     return (
         <>
-            <header className="fixed top-0 left-0 right-0 z-50 py-2">
+            <header className="fixed top-0 left-0 right-0 z-50 py-1">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="floating-island island-amber w-full md:mx-auto px-3 sm:px-3 py-1">
-                        <div className="floating-island-content flex justify-between items-center h-12 gap-4 min-w-0">
+                    <div className="floating-island island-amber w-full md:mx-auto px-3 sm:px-3 py-0.5">
+                        <div className="floating-island-content flex justify-between items-center h-14 gap-4 min-w-0">
                         {/* Logo and Brand */}
                         <div className="flex-shrink min-w-0">
-                            <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleNavigation('/dashboard')}>
-                                <div className="bg-lab-blue p-1.5 rounded-lg shadow-sm transition-transform active:scale-95">
-                                    <TreeDeciduous className="text-white" size={24} />
+                            <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavigation('/dashboard')}>
+                                <div className="transition-transform active:scale-95">
+                                    <img
+                                        src="/ChemistreeIcon_square.png"
+                                        alt="Chemistree"
+                                        className="w-10 h-10"
+                                        draggable="false"
+                                    />
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                    <h1 className="text-xl font-black text-lab-blue leading-tight whitespace-nowrap">
+                                    <h1 className="text-xl font-black leading-tight whitespace-nowrap chem-sans" style={{ color: '#76A8A5' }}>
                                         Chemistree
                                     </h1>
-                                    <p className="text-[10px] text-slate-500 font-bold -mt-1 hidden sm:block whitespace-nowrap overflow-hidden text-ellipsis">
+                                    <p className="text-[10px] text-slate-500 font-bold -mt-1 hidden sm:block whitespace-nowrap overflow-hidden text-ellipsis chem-sans">
                                         by ChemLeung
                                     </p>
                                 </div>
@@ -475,7 +480,7 @@ export default function Header() {
                             className="fixed inset-0 bg-black bg-opacity-25 z-30"
                             onClick={() => setShowMobileNav(false)}
                         />
-                        <div className="md:hidden fixed top-[76px] left-0 right-0 bg-white border-b-2 border-slate-200 shadow-xl z-40 animate-in slide-in-from-top duration-200">
+                        <div className="md:hidden fixed top-[64px] left-0 right-0 bg-white border-b-2 border-slate-200 shadow-xl z-40 animate-in slide-in-from-top duration-200">
                             <nav className="flex flex-col p-2">
                                 {/* Token Display - Mobile */}
                                 <div className="mb-2 p-3 bg-gradient-to-r from-amber-400 to-orange-500 rounded-lg">
@@ -512,7 +517,12 @@ export default function Header() {
                                             : 'text-slate-900 hover:bg-slate-100'
                                         }`}
                                 >
-                                    <TreeDeciduous size={20} />
+                                    <img
+                                        src="/ChemistreeIcon_square.png"
+                                        alt="Chemistree"
+                                        className="w-8 h-8"
+                                        draggable="false"
+                                    />
                                     <span>{t('nav.practice')}</span>
                                 </button>
                                 

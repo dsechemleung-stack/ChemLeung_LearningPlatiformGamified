@@ -25,6 +25,8 @@ import ChemistryLoading from './components/ChemistryLoading';
 import ChemStore from './components/ChemStore';
 import TokenLog from './components/TokenLog';
 import { ChemCityRoot } from './components/chemcity/ChemCityRoot';
+import LandingPage from './pages/LandingPage';
+import VisionPage from './pages/VisionPage';
 
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
 
@@ -33,9 +35,9 @@ function AppContent() {
   const { questions, loading, error } = useQuizData(SHEET_URL);
   const isNotebookRoute = location.pathname === '/notebook';
   const isChemCityRoute = location.pathname === '/chemcity';
-  const noShellRoutes = new Set(['/dashboard', '/login', '/register', '/millionaire']);
+  const noShellRoutes = new Set(['/', '/vision', '/dashboard', '/login', '/register', '/millionaire']);
   const useNoShell = noShellRoutes.has(location.pathname);
-  const hideHeaderRoutes = new Set(['/login', '/register', '/millionaire']);
+  const hideHeaderRoutes = new Set(['/', '/vision', '/login', '/register', '/millionaire']);
   const showHeader = !hideHeaderRoutes.has(location.pathname);
 
   if (loading) {
@@ -65,6 +67,8 @@ function AppContent() {
       >
         <Routes>
           {/* Public Routes */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/vision" element={<VisionPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
@@ -80,7 +84,7 @@ function AppContent() {
           />
           
           <Route
-            path="/"
+            path="/home"
             element={
               <PrivateRoute>
                 <Navigate to="/dashboard" replace />
@@ -249,7 +253,7 @@ function AppContent() {
 
 function AppShell() {
   const location = useLocation();
-  const noShellRoutes = new Set(['/dashboard', '/login', '/register']);
+  const noShellRoutes = new Set(['/', '/dashboard', '/login', '/register', '/millionaire']);
   const useNoShell = noShellRoutes.has(location.pathname);
 
   return (
