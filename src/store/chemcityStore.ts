@@ -12,6 +12,7 @@ import type {
 } from '../lib/chemcity/types';
 import {
   callChemCityInitUser,
+  callChemCityMigrateSlotIds,
   callChemCityEquipCard,
   callChemCityUnequipCard,
   callChemCityCollectPassiveIncome,
@@ -22,6 +23,7 @@ import {
   callChemCityPurchaseCard,
   callChemCityUnlockStoreSlot,
   callChemCityClaimCollectionReward,
+  callChemCityDevGrantCoins,
 } from '../lib/chemcity/cloudFunctions';
 import { estimateUnclaimedCoins } from '../lib/chemcity/income';
 import { getDailyStoreItems, STORE_MIN_SLOTS } from '../lib/chemcity/dailyStore';
@@ -134,6 +136,10 @@ interface ChemCityStore {
   computeDailyStore: (userId: string) => void;
   unlockStoreSlot: () => Promise<void>;
 
+  devRefreshStaticData: () => Promise<void>;
+  devGrantCoins: (amount: number) => Promise<void>;
+  devRerollStore: () => void;
+
   openPurchaseConfirm: (itemId: string) => void;
   closePurchaseConfirm: () => void;
   purchaseCard: (itemId: string, currency: 'coins' | 'diamonds') => Promise<void>;
@@ -202,6 +208,7 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
       ]);
 
       await callChemCityInitUser();
+      await callChemCityMigrateSlotIds();
 
       const userRef = doc(db, 'users', userId);
       const userSnap = await getDoc(userRef);
@@ -222,8 +229,9 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
 
         // Phase 4: mirror storeSlotCount (default 3) + compute daily store items
         const slotCount = (fresh as any)?.storeSlotCount ?? STORE_MIN_SLOTS;
+        const pool = get().slimItems;
         const dailyStoreItems = fresh
-          ? getDailyStoreItems(userId, slimItems, slotCount)
+          ? getDailyStoreItems(userId, pool, slotCount)
           : [];
 
         set({ user: fresh, storeSlotCount: slotCount, dailyStoreItems });
@@ -279,6 +287,21 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
     }
   },
 
+  devGrantCoins: async (amount: number) => {
+    if (!Number.isFinite(amount) || amount === 0) return;
+    await callChemCityDevGrantCoins(amount);
+  },
+
+  devRerollStore: () => {
+    const userId = get().user?.userId;
+    if (!userId) return;
+    const pool = get().slimItems;
+    const slotCount = get().storeSlotCount ?? STORE_MIN_SLOTS;
+    const salt = Math.random().toString(36).slice(2, 10);
+    const dailyStoreItems = getDailyStoreItems(`${userId}:dev:${salt}`, pool, slotCount);
+    set({ dailyStoreItems });
+  },
+
   teardown: () => {
     const unsub = get()._unsubUser;
     if (unsub) unsub();
@@ -307,11 +330,60 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   closeCardDetail: () => set({ cardDetailItemId: null, cardDetailData: null, cardDetailLoading: false }),
 
   equipCard: async (slotId, itemId) => {
-    await callChemCityEquipCard(slotId, itemId);
+    const { user } = get();
+    if (!user) return;
+
+    // Optimistic update - show equipped immediately
+    const previousEquipped = user.equipped?.[slotId];
+    set({
+      user: {
+        ...user,
+        equipped: { ...user.equipped, [slotId]: itemId },
+      },
+    });
+
+    try {
+      await callChemCityEquipCard(slotId, itemId);
+    } catch (err) {
+      // Revert on error
+      set({
+        user: {
+          ...user,
+          equipped: { ...user.equipped, [slotId]: previousEquipped },
+        },
+      });
+      throw err;
+    }
   },
 
   unequipCard: async (slotId) => {
-    await callChemCityUnequipCard(slotId);
+    const { user } = get();
+    if (!user) return;
+
+    // Optimistic update - show unequipped immediately
+    const previousEquipped = user.equipped?.[slotId];
+    const newEquipped = { ...user.equipped };
+    delete newEquipped[slotId];
+
+    set({
+      user: {
+        ...user,
+        equipped: newEquipped,
+      },
+    });
+
+    try {
+      await callChemCityUnequipCard(slotId);
+    } catch (err) {
+      // Revert on error
+      set({
+        user: {
+          ...user,
+          equipped: { ...user.equipped, [slotId]: previousEquipped },
+        },
+      });
+      throw err;
+    }
   },
 
   collectIncome: async () => {
@@ -329,9 +401,42 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   },
 
   computeDailyStore: (userId: string) => {
-    const { slimItems, storeSlotCount } = get();
-    if (!slimItems.length) return;
-    set({ dailyStoreItems: getDailyStoreItems(userId, slimItems, storeSlotCount) });
+    const state = get();
+    if (!state.user) return;
+    const slotCount = state.storeSlotCount ?? STORE_MIN_SLOTS;
+    const dailyStoreItems = getDailyStoreItems(userId, state.slimItems, slotCount);
+    set({ dailyStoreItems });
+  },
+
+  devRefreshStaticData: async () => {
+    try {
+      localStorage.removeItem('cc_manifest');
+      localStorage.removeItem('cc_slim_items');
+      localStorage.removeItem('cc_places');
+      localStorage.removeItem('cc_collections');
+      localStorage.removeItem('cc_topics');
+    } catch {
+      // ignore
+    }
+
+    const userId = get().user?.userId;
+    if (!userId) return;
+
+    set({ isLoading: true, error: null });
+    try {
+      const [slimItems, places, collections] = await Promise.all([
+        fetchSlimItems(),
+        fetchPlaces(),
+        fetchCollections(),
+      ]);
+
+      const slotCount = get().storeSlotCount ?? STORE_MIN_SLOTS;
+      const dailyStoreItems = getDailyStoreItems(userId, slimItems, slotCount);
+
+      set({ slimItems, places, collections, dailyStoreItems, isLoading: false });
+    } catch (err: any) {
+      set({ isLoading: false, error: err?.message || 'Failed to refresh ChemCity data' });
+    }
   },
 
   unlockStoreSlot: async () => {

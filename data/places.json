@@ -9,18 +9,16 @@
       "formula": "multiplier = 1 + (totalBonus × 0.1)"
     },
     "slots": [
-      { "slotId": "lab_bench_1" },
-      { "slotId": "lab_bench_2" },
-      { "slotId": "lab_bench_3" },
-      { "slotId": "lab_bench_4" },
-      { "slotId": "lab_bench_5" },
-      { "slotId": "lab_bench_6" },
-      { "slotId": "lab_premium_1", "budgetOnly": true },
-      { "slotId": "lab_premium_2", "budgetOnly": true },
-      { "slotId": "lab_premium_3", "budgetOnly": true },
-      { "slotId": "lab_premium_4", "budgetOnly": true },
-      { "slotId": "lab_premium_5", "budgetOnly": true },
-      { "slotId": "lab_premium_6", "budgetOnly": true }
+      { "slotId": "lab_bench" },
+      { "slotId": "lab_fume_hood" },
+      { "slotId": "lab_acid_alkali_cabinet" },
+      { "slotId": "lab_apparatus_1" },
+      { "slotId": "lab_metal_shelf" },
+      { "slotId": "lab_salt_shelf" },
+      { "slotId": "lab_hazardous_chemical_shelf", "budgetOnly": true },
+      { "slotId": "lab_apparatus_2", "budgetOnly": true },
+      { "slotId": "lab_chemical_shelf", "budgetOnly": true },
+      { "slotId": "lab_gas_tank", "budgetOnly": true }
     ]
   },
   {
@@ -33,14 +31,14 @@
       "formula": "bonus_diamonds = totalBonus × random(1, 3)"
     },
     "slots": [
-      { "slotId": "kitchen_counter_1" },
-      { "slotId": "kitchen_counter_2" },
-      { "slotId": "kitchen_counter_3" },
-      { "slotId": "kitchen_counter_4" },
-      { "slotId": "kitchen_shelf_1", "budgetOnly": true },
-      { "slotId": "kitchen_shelf_2", "budgetOnly": true },
-      { "slotId": "kitchen_shelf_3", "budgetOnly": true },
-      { "slotId": "kitchen_shelf_4", "budgetOnly": true }
+      { "slotId": "kitchen_cutlery_drawer" },
+      { "slotId": "kitchen_pantry_1" },
+      { "slotId": "kitchen_stove_oven" },
+      { "slotId": "kitchen_dinette" },
+      { "slotId": "kitchen_fridge", "budgetOnly": true },
+      { "slotId": "kitchen_pantry_2", "budgetOnly": true },
+      { "slotId": "kitchen_base_cabinet", "budgetOnly": true },
+      { "slotId": "kitchen_countertop", "budgetOnly": true }
     ]
   },
   {
@@ -53,14 +51,13 @@
       "formula": "diamonds = 5 + (totalBonus × 2)"
     },
     "slots": [
-      { "slotId": "toilet_tank_1" },
-      { "slotId": "toilet_tank_2" },
-      { "slotId": "toilet_tank_3" },
-      { "slotId": "toilet_tank_4" },
-      { "slotId": "toilet_cabinet_1", "budgetOnly": true },
-      { "slotId": "toilet_cabinet_2", "budgetOnly": true },
-      { "slotId": "toilet_cabinet_3", "budgetOnly": true },
-      { "slotId": "toilet_cabinet_4", "budgetOnly": true }
+      { "slotId": "toilet_faucet" },
+      { "slotId": "toilet_vanity_cabinet" },
+      { "slotId": "toilet_bathtub" },
+      { "slotId": "toilet_mirror_cabinet_1" },
+      { "slotId": "toilet_toilet", "budgetOnly": true },
+      { "slotId": "toilet_vanity_top", "budgetOnly": true },
+      { "slotId": "toilet_mirror_cabinet_2", "budgetOnly": true }
     ]
   },
   {
@@ -73,14 +70,13 @@
       "formula": "coins_per_hour = totalBonus × 10"
     },
     "slots": [
-      { "slotId": "garden_bed_1" },
-      { "slotId": "garden_bed_2" },
-      { "slotId": "garden_bed_3" },
-      { "slotId": "garden_bed_4" },
-      { "slotId": "garden_plot_1", "budgetOnly": true },
-      { "slotId": "garden_plot_2", "budgetOnly": true },
-      { "slotId": "garden_plot_3", "budgetOnly": true },
-      { "slotId": "garden_plot_4", "budgetOnly": true }
+      { "slotId": "garden_shed_1" },
+      { "slotId": "garden_lawn" },
+      { "slotId": "garden_greenhouse" },
+      { "slotId": "garden_flower_bed" },
+      { "slotId": "garden_mole_hill", "budgetOnly": true },
+      { "slotId": "garden_broadcast_spreader", "budgetOnly": true },
+      { "slotId": "garden_shed_2", "budgetOnly": true }
     ]
   },
   {
@@ -93,14 +89,14 @@
       "formula": "extra_slots_count = totalBonus"
     },
     "slots": [
-      { "slotId": "gas_pump_1" },
-      { "slotId": "gas_pump_2" },
-      { "slotId": "gas_pump_3" },
-      { "slotId": "gas_pump_4" },
-      { "slotId": "gas_shelf_1", "budgetOnly": true },
-      { "slotId": "gas_shelf_2", "budgetOnly": true },
-      { "slotId": "gas_shelf_3", "budgetOnly": true },
-      { "slotId": "gas_shelf_4", "budgetOnly": true }
+      { "slotId": "gas_station_car_1" },
+      { "slotId": "gas_station_construction_site" },
+      { "slotId": "gas_station_factory" },
+      { "slotId": "gas_station_petrol_pump" },
+      { "slotId": "gas_station_car_2", "budgetOnly": true },
+      { "slotId": "gas_station_motel", "budgetOnly": true },
+      { "slotId": "gas_station_street_light", "budgetOnly": true },
+      { "slotId": "gas_station_firework", "budgetOnly": true }
     ]
   },
   {
@@ -113,12 +109,12 @@
       "formula": "discount% = min(totalBonus × 2, 50)"
     },
     "slots": [
-      { "slotId": "boutique_shelf_1" },
-      { "slotId": "boutique_shelf_2" },
-      { "slotId": "boutique_shelf_3" },
-      { "slotId": "boutique_shelf_4" },
-      { "slotId": "boutique_display_1", "budgetOnly": true },
-      { "slotId": "boutique_display_2", "budgetOnly": true }
+      { "slotId": "lifestyle_boutique_poseur_table_1" },
+      { "slotId": "lifestyle_boutique_service_desk" },
+      { "slotId": "lifestyle_boutique_jewellery_display" },
+      { "slotId": "lifestyle_boutique_power_essentials" },
+      { "slotId": "lifestyle_boutique_apparel_gallery", "budgetOnly": true },
+      { "slotId": "lifestyle_boutique_poseur_table_2", "budgetOnly": true }
     ]
   },
   {
@@ -131,14 +127,13 @@
       "formula": "chance% = min(totalBonus × 5, 100)"
     },
     "slots": [
-      { "slotId": "beach_sand_1" },
-      { "slotId": "beach_sand_2" },
-      { "slotId": "beach_sand_3" },
-      { "slotId": "beach_sand_4" },
-      { "slotId": "beach_pier_1", "budgetOnly": true },
-      { "slotId": "beach_pier_2", "budgetOnly": true },
-      { "slotId": "beach_pier_3", "budgetOnly": true },
-      { "slotId": "beach_pier_4", "budgetOnly": true }
+      { "slotId": "beach_sky" },
+      { "slotId": "beach_sea" },
+      { "slotId": "beach_rock_1" },
+      { "slotId": "beach_dry_sand" },
+      { "slotId": "beach_strandline", "budgetOnly": true },
+      { "slotId": "beach_rock_2", "budgetOnly": true },
+      { "slotId": "beach_cliffside", "budgetOnly": true }
     ]
   },
   {
@@ -151,16 +146,13 @@
       "formula": "multiplier = 1 + (totalBonus × 0.1)"
     },
     "slots": [
-      { "slotId": "school_desk_1" },
-      { "slotId": "school_desk_2" },
-      { "slotId": "school_desk_3" },
-      { "slotId": "school_desk_4" },
-      { "slotId": "school_desk_5" },
-      { "slotId": "school_locker_1", "budgetOnly": true },
-      { "slotId": "school_locker_2", "budgetOnly": true },
-      { "slotId": "school_locker_3", "budgetOnly": true },
-      { "slotId": "school_locker_4", "budgetOnly": true },
-      { "slotId": "school_locker_5", "budgetOnly": true }
+      { "slotId": "school_student_desk_1" },
+      { "slotId": "school_teacher_desk" },
+      { "slotId": "school_blackboard" },
+      { "slotId": "school_science_corner" },
+      { "slotId": "school_poster" },
+      { "slotId": "school_window_side_table", "budgetOnly": true },
+      { "slotId": "school_student_desk_2", "budgetOnly": true }
     ]
   }
 ]

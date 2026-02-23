@@ -13,7 +13,7 @@ function makeSlimItem(id: string, collections: string[]): SlimItemDocument {
     rarity: 'common',
     rarityValue: 1,
     placeId: 'lab',
-    validSlots: ['lab_bench_1'],
+    validSlots: ['lab_bench'],
     shopData: { coinCost: 100 },
     skillContribution: 1,
     collections,

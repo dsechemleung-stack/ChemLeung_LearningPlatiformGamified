@@ -1,46 +1,56 @@
 import React, { useEffect, useState } from 'react';
+import { X, Coins, Gem, CheckCircle, FlaskConical, Star, BookOpen, Zap } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { getEffectiveCoinPrice } from '../../lib/chemcity/shop';
 
-const RARITY_BG: Record<string, string> = {
-  common: 'from-slate-700 to-slate-600',
-  rare: 'from-blue-800 to-indigo-700',
-  epic: 'from-purple-800 to-pink-700',
-  legendary: 'from-amber-700 to-yellow-500',
+function needsAnonymousCrossOrigin(url?: string | null): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  return u.includes('drive.google.com') || u.includes('googleusercontent.com');
+}
+
+const RARITY_CONFIG: Record<string, {
+  borderColor: string; glowColor: string; bgGradient: string; artBg: string;
+  badgeColor: string; badgeText: string;
+}> = {
+  common:    { borderColor: '#94a3b8', glowColor: 'rgba(148,163,184,0.3)', bgGradient: 'linear-gradient(165deg,#1e293b,#0f172a)', artBg: 'rgba(255,255,255,0.04)', badgeColor: 'rgba(148,163,184,0.2)', badgeText: '#94a3b8' },
+  uncommon:  { borderColor: '#34d399', glowColor: 'rgba(52,211,153,0.35)',  bgGradient: 'linear-gradient(165deg,#0f3d33,#071a16)', artBg: 'rgba(52,211,153,0.06)',  badgeColor: 'rgba(52,211,153,0.18)', badgeText: '#34d399' },
+  rare:      { borderColor: '#60a5fa', glowColor: 'rgba(96,165,250,0.4)',  bgGradient: 'linear-gradient(165deg,#1e3a5f,#0f172a)', artBg: 'rgba(96,165,250,0.07)',  badgeColor: 'rgba(96,165,250,0.2)',  badgeText: '#60a5fa' },
+  epic:      { borderColor: '#a855f7', glowColor: 'rgba(168,85,247,0.4)',  bgGradient: 'linear-gradient(165deg,#2d1b4e,#0f0a1e)', artBg: 'rgba(168,85,247,0.07)',  badgeColor: 'rgba(168,85,247,0.2)',  badgeText: '#a855f7' },
+  legendary: { borderColor: '#fbbf24', glowColor: 'rgba(251,191,36,0.5)',  bgGradient: 'linear-gradient(165deg,#3d2800,#1a0f00)', artBg: 'rgba(251,191,36,0.09)',  badgeColor: 'rgba(251,191,36,0.2)',  badgeText: '#fbbf24' },
 };
 
 type PurchaseCurrency = 'coins' | 'diamonds';
 
 export const PurchaseConfirmModal: React.FC = () => {
-  const user = useChemCityStore((s) => s.user);
-  const slimItems = useChemCityStore((s) => s.slimItems);
-  const storePurchaseItemId = useChemCityStore((s) => s.storePurchaseItemId);
-  const storePurchaseData = useChemCityStore((s) => s.storePurchaseData);
-  const storePurchaseLoading = useChemCityStore((s) => s.storePurchaseLoading);
-  const closePurchaseConfirm = useChemCityStore((s) => s.closePurchaseConfirm);
-  const purchaseCard = useChemCityStore((s) => s.purchaseCard);
+  const user                  = useChemCityStore(s => s.user);
+  const slimItems             = useChemCityStore(s => s.slimItems);
+  const storePurchaseItemId   = useChemCityStore(s => s.storePurchaseItemId);
+  const storePurchaseData     = useChemCityStore(s => s.storePurchaseData);
+  const storePurchaseLoading  = useChemCityStore(s => s.storePurchaseLoading);
+  const closePurchaseConfirm  = useChemCityStore(s => s.closePurchaseConfirm);
+  const purchaseCard          = useChemCityStore(s => s.purchaseCard);
 
-  const [purchasing, setPurchasing] = useState(false);
+  const [purchasing, setPurchasing]         = useState(false);
   const [purchaseCurrency, setPurchaseCurrency] = useState<PurchaseCurrency>('coins');
-  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [purchaseError, setPurchaseError]   = useState<string | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState(false);
 
   const isOpen = !!storePurchaseItemId;
-  const slim = slimItems.find((i) => i.id === storePurchaseItemId);
-  const full = storePurchaseData;
+  const slim   = slimItems.find(i => i.id === storePurchaseItemId);
+  const full   = storePurchaseData;
 
-  const isOwned = !!user?.ownedItems?.includes(storePurchaseItemId ?? '');
-  const rarity = slim?.rarity ?? 'common';
-  const gradBg = RARITY_BG[rarity] ?? RARITY_BG.common;
+  const isOwned  = !!user?.ownedItems?.includes(storePurchaseItemId ?? '');
+  const rarity   = slim?.rarity ?? 'common';
+  const cfg      = RARITY_CONFIG[rarity] ?? RARITY_CONFIG.common;
+  const rarityStars = { common:1, uncommon:2, rare:2, epic:3, legendary:4 }[rarity] ?? 1;
   const discount = user?.activeBonuses.shopDiscountPercent ?? 0;
-  const rawCoin = slim?.shopData?.coinCost;
+  const rawCoin  = slim?.shopData?.coinCost;
   const rawDiamond = slim?.shopData?.diamondCost;
-  const effCoin = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
-
-  const coins = user?.currencies.coins ?? 0;
+  const effCoin  = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
+  const coins    = user?.currencies.coins ?? 0;
   const diamonds = user?.currencies.diamonds ?? 0;
-
-  const canAffordCoins = effCoin != null && coins >= effCoin;
+  const canAffordCoins    = effCoin != null && coins >= effCoin;
   const canAffordDiamonds = rawDiamond != null && diamonds >= rawDiamond;
 
   useEffect(() => {
@@ -59,13 +69,12 @@ export const PurchaseConfirmModal: React.FC = () => {
     if (purchasing || isOwned) return;
     const canAfford = purchaseCurrency === 'coins' ? canAffordCoins : canAffordDiamonds;
     if (!canAfford) return;
-
     setPurchasing(true);
     setPurchaseError(null);
     try {
       await purchaseCard(slim.id, purchaseCurrency);
       setPurchaseSuccess(true);
-      setTimeout(() => closePurchaseConfirm(), 1500);
+      setTimeout(() => closePurchaseConfirm(), 1800);
     } catch (err: any) {
       setPurchaseError(err?.message ?? 'Purchase failed. Please try again.');
     } finally {
@@ -75,205 +84,307 @@ export const PurchaseConfirmModal: React.FC = () => {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/75 z-[80]" onClick={closePurchaseConfirm} />
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Quicksand:wght@500;600;700;800&display=swap');
+        @keyframes purchaseIn { from{opacity:0;transform:scale(0.9) translateY(20px)} to{opacity:1;transform:scale(1) translateY(0)} }
+        @keyframes shimmerSlide { 0%,100%{transform:translateX(-200%)} 50%{transform:translateX(200%)} }
+        @keyframes legendGlow { 0%,100%{box-shadow:0 0 24px rgba(251,191,36,0.4)} 50%{box-shadow:0 0 44px rgba(251,191,36,0.7)} }
+        @keyframes successPop { 0%{transform:scale(0.7);opacity:0} 60%{transform:scale(1.12)} 100%{transform:scale(1);opacity:1} }
+        .purchase-panel { animation: purchaseIn 0.3s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+        .curr-tab { font-family:'Quicksand',sans-serif; font-weight:800; font-size:12px; padding:8px 16px; border-radius:10px; border:1.5px solid; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:6px; }
+      `}</style>
 
-      <div className="fixed inset-x-3 top-10 bottom-4 z-[90] bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden flex flex-col shadow-2xl">
-        <button
-          onClick={closePurchaseConfirm}
-          className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-slate-800/80 text-slate-300 hover:text-white text-lg"
-          aria-label="Close"
-        >
-          ×
-        </button>
+      {/* Backdrop */}
+      <div onClick={closePurchaseConfirm} style={{
+        position: 'fixed', inset: 0, zIndex: 80,
+        background: 'rgba(4,10,9,0.9)',
+        backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}>
+        <div className="purchase-panel" onClick={e => e.stopPropagation()} style={{
+          width: 'min(620px, 94vw)', maxHeight: '90vh',
+          background: 'rgba(8,20,19,0.97)',
+          backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)',
+          border: '1.5px solid rgba(197,215,181,0.18)',
+          borderRadius: 24,
+          boxShadow: '0 40px 100px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
+          overflow: 'hidden', display: 'flex', flexDirection: 'column',
+          fontFamily: "'Quicksand',sans-serif",
+        }}>
+          {/* Close */}
+          <button onClick={closePurchaseConfirm} style={{
+            position: 'absolute', top: 14, right: 14, zIndex: 10,
+            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 8, width: 30, height: 30, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8',
+          }}><X size={14} /></button>
 
-        <div className="overflow-y-auto flex-1">
-          <div className={`w-full bg-gradient-to-b ${gradBg} p-6 flex flex-col items-center gap-3`}>
-            {full?.imageUrl ? (
-              <img
-                src={full.imageUrl}
-                alt={full.name}
-                className="w-28 h-28 object-contain rounded-xl shadow-lg"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <span className="text-6xl">{slim.emoji}</span>
-            )}
-            <div className="text-center">
-              <h2 className="text-white font-bold text-xl leading-tight">{full?.displayName || slim.name}</h2>
-              <p className="text-white/70 font-mono text-lg mt-0.5">{slim.chemicalFormula}</p>
-              <div className="flex items-center justify-center gap-2 mt-2">
-                <span className="bg-white/20 text-white text-xs font-semibold rounded-full px-3 py-0.5 capitalize">{rarity}</span>
+          <div style={{ display: 'flex', gap: 0, flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            {/* ── Left: Vertical RPG Card ── */}
+            <div style={{
+              width: 200, flexShrink: 0, padding: '24px 0 24px 24px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+            }}>
+              {/* Card */}
+              <div style={{
+                width: 155, height: 220, borderRadius: 16,
+                border: `2.5px solid ${cfg.borderColor}`,
+                background: cfg.bgGradient,
+                boxShadow: rarity === 'legendary'
+                  ? `0 0 40px ${cfg.glowColor}, 0 8px 24px rgba(0,0,0,0.7)`
+                  : `0 0 20px ${cfg.glowColor}, 0 6px 16px rgba(0,0,0,0.6)`,
+                overflow: 'hidden', position: 'relative', flexShrink: 0,
+                animation: rarity === 'legendary' ? 'legendGlow 2.5s ease-in-out infinite' : 'none',
+              }}>
+                {rarity === 'legendary' && (
+                  <div style={{
+                    position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
+                    background: 'linear-gradient(105deg,transparent 30%,rgba(255,215,0,0.13) 50%,transparent 70%)',
+                    animation: 'shimmerSlide 3s ease-in-out infinite',
+                  }} />
+                )}
+                {/* Stars */}
+                <div style={{ position:'absolute', top:6, right:8, zIndex:3, color:cfg.badgeText, fontSize:10, letterSpacing:1 }}>
+                  {'✦'.repeat(rarityStars)}
+                </div>
+                {/* Art */}
+                <div style={{
+                  height: 140, margin: '14px 10px 6px',
+                  background: cfg.artBg, border: `1px solid ${cfg.borderColor}`,
+                  borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  overflow: 'hidden', position: 'relative', zIndex: 2,
+                }}>
+                  {(full?.imageUrl || slim.imageUrl) ? (
+                    <img
+                      src={full?.imageUrl || slim.imageUrl}
+                      alt={slim.name}
+                      style={{ width:'100%', height:'100%', objectFit:'cover' }}
+                      {...(needsAnonymousCrossOrigin(full?.imageUrl || slim.imageUrl)
+                        ? { crossOrigin: 'anonymous' as const, referrerPolicy: 'no-referrer' as const }
+                        : {})}
+                      onError={e => { (e.target as HTMLImageElement).style.display='none'; }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 52 }}>{slim.emoji}</span>
+                  )}
+                </div>
+                {/* Name / formula */}
+                <div style={{ padding:'0 10px 4px', textAlign:'center', position:'relative', zIndex:2 }}>
+                  <div style={{ color:'#f1f5f9', fontSize:11, fontWeight:800, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {full?.displayName || slim.name}
+                  </div>
+                  <div style={{ color:'rgba(255,255,255,0.4)', fontSize:9, fontFamily:'monospace', marginTop:1 }}>
+                    {slim.chemicalFormula}
+                  </div>
+                </div>
+                {/* Rarity footer */}
+                <div style={{
+                  position:'absolute', bottom:8, left:10, right:10,
+                  background:cfg.badgeColor, borderRadius:4, padding:'2px 0',
+                  textAlign:'center', fontSize:8, fontWeight:800, color:cfg.badgeText,
+                  textTransform:'uppercase', letterSpacing:'0.06em', zIndex:2,
+                }}>{rarity}</div>
+
+                {/* Owned stamp */}
                 {isOwned && (
-                  <span className="bg-green-500 text-white text-xs font-bold rounded-full px-3 py-0.5">✓ Owned</span>
+                  <div style={{
+                    position:'absolute', inset:0, background:'rgba(0,0,0,0.55)', zIndex:4, borderRadius:14,
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                  }}>
+                    <div style={{ background:'rgba(74,222,128,0.9)', borderRadius:8, padding:'6px 14px', fontWeight:800, fontSize:12, color:'#052e16' }}>✓ Owned</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Skill contribution */}
+              {slim.skillContribution > 0 && (
+                <div style={{
+                  display:'flex', alignItems:'center', gap:6,
+                  background:'rgba(118,168,165,0.12)', border:'1px solid rgba(118,168,165,0.3)',
+                  borderRadius:8, padding:'6px 12px',
+                }}>
+                  <Zap size={12} color="#76A8A5" />
+                  <span style={{ color:'rgba(197,215,181,0.8)', fontSize:11, fontWeight:700 }}>+{slim.skillContribution} Power</span>
+                </div>
+              )}
+            </div>
+
+            {/* ── Right: Info + Purchase ── */}
+            <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0, overflow:'hidden' }}>
+              {/* Scrollable info */}
+              <div style={{ flex:1, overflowY:'auto', padding:'24px 24px 12px' }}>
+                <div style={{ color:'#fff', fontWeight:800, fontSize:17, marginBottom:4 }}>
+                  {full?.displayName || slim.name}
+                </div>
+                <div style={{ color:'rgba(255,255,255,0.35)', fontFamily:'monospace', fontSize:12, marginBottom:12 }}>
+                  {slim.chemicalFormula}
+                </div>
+
+                {storePurchaseLoading && (
+                  <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                    {[1,2,3].map(i => <div key={i} style={{ height:14, background:'rgba(255,255,255,0.06)', borderRadius:6, animation:'pulse 1.5s infinite' }} />)}
+                    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+                  </div>
+                )}
+
+                {full?.description && (
+                  <p style={{ color:'rgba(255,255,255,0.6)', fontSize:12, lineHeight:1.7, margin:'0 0 12px', fontFamily:"'Quicksand',sans-serif" }}>
+                    {full.description}
+                  </p>
+                )}
+
+                {full?.educational?.funFact && (
+                  <div style={{ background:'rgba(96,165,250,0.07)', border:'1px solid rgba(96,165,250,0.2)', borderRadius:10, padding:'10px 12px', marginBottom:10 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5 }}>
+                      <FlaskConical size={11} color="#60a5fa" />
+                      <span style={{ color:'#60a5fa', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.07em' }}>Fun Fact</span>
+                    </div>
+                    <p style={{ color:'rgba(255,255,255,0.65)', fontSize:11, lineHeight:1.6, margin:0 }}>{full.educational.funFact}</p>
+                  </div>
+                )}
+
+                {full?.educational?.everydayUses && full.educational.everydayUses.length > 0 && (
+                  <div style={{ marginBottom:10 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <Star size={10} color="#c5d7b5" />
+                      <span style={{ color:'rgba(197,215,181,0.7)', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.07em' }}>Uses</span>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                      {full.educational.everydayUses.slice(0,5).map(use => (
+                        <span key={use} style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:6, padding:'3px 8px', fontSize:10, color:'rgba(255,255,255,0.6)', fontFamily:"'Quicksand',sans-serif", fontWeight:600 }}>{use}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {full?.topicConnections && full.topicConnections.length > 0 && (
+                  <div>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <BookOpen size={10} color="#86efac" />
+                      <span style={{ color:'rgba(134,239,172,0.7)', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.07em' }}>DSE Topics</span>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                      {full.topicConnections.map(tid => (
+                        <span key={tid} style={{ background:'rgba(134,239,172,0.08)', border:'1px solid rgba(134,239,172,0.25)', borderRadius:6, padding:'3px 8px', fontSize:10, color:'#86efac', fontFamily:"'Quicksand',sans-serif", fontWeight:600 }}>{tid}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Purchase Footer ── */}
+              <div style={{ borderTop:'1px solid rgba(255,255,255,0.08)', padding:'14px 24px 20px', background:'rgba(0,0,0,0.2)', flexShrink:0 }}>
+                {purchaseSuccess ? (
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, padding:'10px 0', animation:'successPop 0.4s ease forwards' }}>
+                    <CheckCircle size={32} color="#4ade80" />
+                    <span style={{ color:'#4ade80', fontWeight:800, fontSize:14 }}>Added to your collection!</span>
+                  </div>
+                ) : isOwned ? (
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'12px', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:12 }}>
+                    <CheckCircle size={16} color="rgba(255,255,255,0.3)" />
+                    <span style={{ color:'rgba(255,255,255,0.35)', fontWeight:700, fontSize:13 }}>Already in your collection</span>
+                  </div>
+                ) : (
+                  <>
+                    {/* Currency toggle */}
+                    {effCoin != null && rawDiamond != null && (
+                      <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+                        <button className="curr-tab" onClick={() => setPurchaseCurrency('coins')} style={{
+                          flex:1, background: purchaseCurrency==='coins' ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.05)',
+                          borderColor: purchaseCurrency==='coins' ? 'rgba(251,191,36,0.5)' : 'rgba(255,255,255,0.1)',
+                          color: purchaseCurrency==='coins' ? '#fbbf24' : 'rgba(255,255,255,0.4)',
+                          justifyContent:'center',
+                        }}>
+                          <Coins size={14} /> Coins
+                        </button>
+                        <button className="curr-tab" onClick={() => setPurchaseCurrency('diamonds')} style={{
+                          flex:1, background: purchaseCurrency==='diamonds' ? 'rgba(103,232,249,0.12)' : 'rgba(255,255,255,0.05)',
+                          borderColor: purchaseCurrency==='diamonds' ? 'rgba(103,232,249,0.5)' : 'rgba(255,255,255,0.1)',
+                          color: purchaseCurrency==='diamonds' ? '#67e8f9' : 'rgba(255,255,255,0.4)',
+                          justifyContent:'center',
+                        }}>
+                          <Gem size={13} /> Diamonds
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Price + balance */}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10, padding:'10px 12px', background:'rgba(255,255,255,0.03)', borderRadius:10 }}>
+                      <div>
+                        {purchaseCurrency === 'coins' && effCoin != null && (
+                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                              <Coins size={15} color="#fbbf24" />
+                              <span style={{ color:'#fbbf24', fontWeight:800, fontSize:16 }}>{effCoin.toLocaleString()}</span>
+                            </div>
+                            {rawCoin != null && rawCoin !== effCoin && (
+                              <span style={{ color:'rgba(255,255,255,0.25)', fontSize:12, textDecoration:'line-through' }}>{rawCoin.toLocaleString()}</span>
+                            )}
+                            {discount > 0 && (
+                              <span style={{ background:'rgba(52,211,153,0.2)', border:'1px solid rgba(52,211,153,0.4)', borderRadius:20, padding:'1px 7px', fontSize:10, color:'#34d399', fontWeight:800 }}>{discount}% OFF</span>
+                            )}
+                          </div>
+                        )}
+                        {purchaseCurrency === 'diamonds' && rawDiamond != null && (
+                          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                            <Gem size={14} color="#67e8f9" />
+                            <span style={{ color:'#67e8f9', fontWeight:800, fontSize:16 }}>{rawDiamond.toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
+                      <span style={{ color:'rgba(255,255,255,0.3)', fontSize:11, fontWeight:600 }}>
+                        You have: {purchaseCurrency === 'coins' ? `${coins.toLocaleString()} 🪙` : `${diamonds.toLocaleString()} 💎`}
+                      </span>
+                    </div>
+
+                    {purchaseError && <p style={{ color:'#f87171', fontSize:11, textAlign:'center', marginBottom:8 }}>{purchaseError}</p>}
+
+                    {/* Shortfall notice */}
+                    {purchaseCurrency === 'coins' && effCoin != null && !canAffordCoins && (
+                      <p style={{ color:'rgba(251,191,36,0.7)', fontSize:11, textAlign:'center', marginBottom:8 }}>
+                        Need {(effCoin - coins).toLocaleString()} more coins
+                      </p>
+                    )}
+                    {purchaseCurrency === 'diamonds' && rawDiamond != null && !canAffordDiamonds && (
+                      <p style={{ color:'rgba(103,232,249,0.7)', fontSize:11, textAlign:'center', marginBottom:8 }}>
+                        Need {(rawDiamond - diamonds).toLocaleString()} more diamonds
+                      </p>
+                    )}
+
+                    <button onClick={handlePurchase} disabled={
+                      purchasing ||
+                      (purchaseCurrency==='coins' && (!canAffordCoins || effCoin==null)) ||
+                      (purchaseCurrency==='diamonds' && (!canAffordDiamonds || rawDiamond==null))
+                    } style={{
+                      width:'100%', padding:'13px',
+                      borderRadius:12, border:'none',
+                      background: purchasing ? 'rgba(255,255,255,0.08)'
+                        : purchaseCurrency==='coins' && canAffordCoins ? 'linear-gradient(135deg, #b45309, #92400e)'
+                        : purchaseCurrency==='diamonds' && canAffordDiamonds ? 'linear-gradient(135deg, #0e7490, #164e63)'
+                        : 'rgba(255,255,255,0.06)',
+                      color: (purchaseCurrency==='coins' && canAffordCoins) || (purchaseCurrency==='diamonds' && canAffordDiamonds) ? '#fff' : 'rgba(255,255,255,0.3)',
+                      fontWeight:800, fontSize:14, cursor: purchasing ? 'not-allowed' : 'pointer',
+                      fontFamily:"'Quicksand',sans-serif",
+                      boxShadow: (purchaseCurrency==='coins' && canAffordCoins) ? '0 4px 20px rgba(180,83,9,0.4)' : 'none',
+                      transition:'all 0.2s',
+                      display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                    }}>
+                      {purchasing ? (
+                        <div style={{ width:16, height:16, border:'2px solid rgba(255,255,255,0.2)', borderTopColor:'#fff', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+                      ) : purchaseCurrency==='coins' && effCoin != null ? (
+                        <><Coins size={16} />Buy for {effCoin.toLocaleString()} coins</>
+                      ) : rawDiamond != null ? (
+                        <><Gem size={15} />Buy for {rawDiamond.toLocaleString()} diamonds</>
+                      ) : 'Not for sale'}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
           </div>
-
-          {storePurchaseLoading && (
-            <div className="animate-pulse px-4 py-3 flex flex-col gap-2">
-              <div className="h-4 bg-slate-700 rounded w-3/4" />
-              <div className="h-4 bg-slate-700 rounded w-full" />
-              <div className="h-4 bg-slate-700 rounded w-5/6" />
-            </div>
-          )}
-
-          <div className="p-4 flex flex-col gap-4">
-            {full?.description && <p className="text-slate-300 text-sm leading-relaxed">{full.description}</p>}
-
-            {full?.educational?.funFact && (
-              <div className="bg-indigo-900/40 border border-indigo-700 rounded-xl p-3">
-                <p className="text-indigo-300 text-xs font-semibold mb-1">🔬 Fun Fact</p>
-                <p className="text-slate-200 text-sm leading-relaxed">{full.educational.funFact}</p>
-              </div>
-            )}
-
-            {full?.educational?.everydayUses && full.educational.everydayUses.length > 0 && (
-              <div>
-                <p className="text-slate-400 text-xs font-semibold mb-2">🏠 Everyday Uses</p>
-                <div className="flex flex-wrap gap-2">
-                  {full.educational.everydayUses.map((use) => (
-                    <span key={use} className="bg-slate-700 text-slate-200 text-xs rounded-full px-3 py-1">
-                      {use}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {full?.topicConnections && full.topicConnections.length > 0 && (
-              <div>
-                <p className="text-slate-400 text-xs font-semibold mb-2">📚 DSE Topics</p>
-                <div className="flex flex-wrap gap-2">
-                  {full.topicConnections.map((tid) => (
-                    <span
-                      key={tid}
-                      className="bg-emerald-900/50 text-emerald-300 text-xs rounded-full px-3 py-1 border border-emerald-800"
-                    >
-                      {tid}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {full?.albumMetadata?.flavorText && (
-              <div className="border-t border-slate-700 pt-3">
-                <p className="text-slate-500 text-xs italic leading-relaxed">"{full.albumMetadata.flavorText}"</p>
-              </div>
-            )}
-
-            {slim.skillContribution > 0 && (
-              <div className="bg-slate-800 rounded-xl p-3 flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Skill Contribution</span>
-                <span className="text-white font-bold">+{slim.skillContribution}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="shrink-0 border-t border-slate-700 p-4 bg-slate-900">
-          {purchaseSuccess ? (
-            <div className="flex items-center justify-center gap-2 bg-green-600 rounded-xl py-3">
-              <span className="text-white font-bold">🎉 Added to your collection!</span>
-            </div>
-          ) : isOwned ? (
-            <div className="flex items-center justify-center gap-2 bg-slate-700 rounded-xl py-3">
-              <span className="text-slate-300 font-semibold">✓ Already in your collection</span>
-            </div>
-          ) : (
-            <>
-              {effCoin != null && rawDiamond != null && (
-                <div className="flex gap-2 mb-3">
-                  <button
-                    onClick={() => setPurchaseCurrency('coins')}
-                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-colors ${
-                      purchaseCurrency === 'coins'
-                        ? 'bg-yellow-500/20 border-yellow-500 text-yellow-300'
-                        : 'bg-slate-800 border-slate-600 text-slate-400'
-                    }`}
-                  >
-                    🪙 Coins
-                  </button>
-                  <button
-                    onClick={() => setPurchaseCurrency('diamonds')}
-                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-colors ${
-                      purchaseCurrency === 'diamonds'
-                        ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
-                        : 'bg-slate-800 border-slate-600 text-slate-400'
-                    }`}
-                  >
-                    💎 Diamonds
-                  </button>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between mb-3 px-1">
-                <div>
-                  {purchaseCurrency === 'coins' && effCoin != null && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-yellow-300 font-black text-xl tabular-nums">🪙 {effCoin.toLocaleString()}</span>
-                      {rawCoin != null && rawCoin !== effCoin && (
-                        <span className="text-slate-500 text-sm line-through tabular-nums">{rawCoin.toLocaleString()}</span>
-                      )}
-                      {discount > 0 && (
-                        <span className="bg-emerald-600 text-white text-xs font-bold rounded-full px-2 py-0.5">
-                          {discount}% OFF
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {purchaseCurrency === 'diamonds' && rawDiamond != null && (
-                    <span className="text-cyan-300 font-black text-xl tabular-nums">💎 {rawDiamond.toLocaleString()}</span>
-                  )}
-                </div>
-                <div className="text-right text-xs text-slate-400">
-                  {purchaseCurrency === 'coins' ? `You have: 🪙 ${coins.toLocaleString()}` : `You have: 💎 ${diamonds.toLocaleString()}`}
-                </div>
-              </div>
-
-              {purchaseError && <p className="text-red-400 text-xs mb-2 text-center">{purchaseError}</p>}
-
-              {purchaseCurrency === 'coins' && effCoin != null && !canAffordCoins && (
-                <p className="text-yellow-500 text-xs mb-2 text-center">Not enough coins — need {(effCoin - coins).toLocaleString()} more</p>
-              )}
-              {purchaseCurrency === 'diamonds' && rawDiamond != null && !canAffordDiamonds && (
-                <p className="text-cyan-500 text-xs mb-2 text-center">
-                  Not enough diamonds — need {(rawDiamond - diamonds).toLocaleString()} more
-                </p>
-              )}
-
-              <button
-                onClick={handlePurchase}
-                disabled={
-                  purchasing ||
-                  (purchaseCurrency === 'coins' && (!canAffordCoins || effCoin == null)) ||
-                  (purchaseCurrency === 'diamonds' && (!canAffordDiamonds || rawDiamond == null))
-                }
-                className={`w-full py-3 rounded-xl font-bold text-base transition-all active:scale-95 ${
-                  purchasing
-                    ? 'bg-slate-600 text-slate-400 cursor-not-allowed'
-                    : purchaseCurrency === 'coins' && canAffordCoins
-                      ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-900'
-                      : purchaseCurrency === 'diamonds' && canAffordDiamonds
-                        ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-900'
-                        : 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                }`}
-              >
-                {purchasing
-                  ? 'Purchasing...'
-                  : purchaseCurrency === 'coins' && effCoin != null
-                    ? `Buy for 🪙 ${effCoin.toLocaleString()}`
-                    : rawDiamond != null
-                      ? `Buy for 💎 ${rawDiamond.toLocaleString()}`
-                      : 'Not for sale'}
-              </button>
-            </>
-          )}
         </div>
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
   );
 };

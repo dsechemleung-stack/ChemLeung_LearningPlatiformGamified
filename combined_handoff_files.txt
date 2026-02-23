@@ -1,0 +1,721 @@
+================================================================================
+FILE: HANDOFF_PHASE0.md
+================================================================================
+
+# ChemCity — Phase 0 Handoff Summary
+
+Completed by: Claude (Sonnet 4.6) — Phase 0: Foundation & Data Seeding  
+Date: 2026-02-20
+
+---
+
+## What I Built
+
+### Files Created
+
+| File | Purpose |
+|---|---|
+| `src/lib/chemcity/types.ts` | All TypeScript interfaces: `SlimItemDocument`, `FullItemDocument`, `UserChemCityData`, `UserProgressData`, `ActiveBonuses`, `CacheManifest`, `PlaceDocument`, `CollectionDocument`, `TopicDocument` |
+| `src/lib/cache.ts` | `fetchSlimItems()`, `fetchFullItem()`, `fetchPlaces()`, `fetchCollections()`, `fetchTopics()`, `isCacheFresh()`, `getServerCacheVersion()`, `invalidateCache()`, `estimateCacheSize()` |
+| `src/lib/chemcity/bonuses.ts` | `computeActiveBonuses()`, all 8 skill formula functions, `computeQuizDiamonds()`, `rollKitchenBonus()`, `rollBeachDouble()`, `getShopPrice()` |
+| `src/lib/firebase.ts` | Firebase app init, `db` and `auth` exports |
+| `scripts/excel-to-json.ts` | Reads `ChemCity_Items.xlsx` → outputs `/data/items/{placeId}.json` (slim fields only) |
+| `scripts/seed-firestore.ts` | Seeds items, places, collections, topics to Firestore; auto-bumps `meta/cacheVersion` |
+| `functions/initChemCityUser.ts` | Creates user doc + progress sub-document with starter state |
+| `functions/collectPassiveIncome.ts` | Server-side passive income payout using Firestore server timestamp |
+| `data/places.json` | All 8 place documents with slots and skill metadata |
+| `firestore.rules` | Security rules — static collections read-only; currencies blocked on client writes |
+| `.env.example` | Environment variable template |
+| `package.json` | Dependencies and npm scripts |
+
+---
+
+## What I Changed from the Master Plan
+
+No deviations from master plan.
+
+All 8 place IDs, slot structures, and skill formulas implemented exactly as specified in Section 2.6 and 2.7.
+
+---
+
+## Known Issues / Incomplete Work
+
+- `vite.config.ts` and `tsconfig.json` not generated — next coder should run `npm create vite@latest` or scaffold manually and merge in the existing `src/` files.
+- No starter `ChemCity_Items.xlsx` provided — the project owner needs to create this using the column reference in Section 8.1 of the master plan.
+- `data/collections.json` and `data/topics.json` are referenced by the seeder but not seeded yet — create these based on DSE curriculum content.
+- Cloud Functions are TypeScript stubs — need `functions/index.ts` to wire them as callable functions and deploy via Firebase CLI.
+- No unit tests written yet — Phase 1 task list includes full test coverage for all formulas.
+
+---
+
+## Decisions Future Coders Must Know
+
+1. **Slim field whitelist in `cache.ts`** — The array `SLIM_FIELDS` in `fetchSlimItems()` is the authoritative whitelist of what gets stored in localStorage. If you add a new field to `SlimItemDocument`, you MUST add it to this array or it will silently be excluded from the cache.
+
+2. **`computeActiveBonuses` is pure** — It takes `equipped` + `slimItems` and returns `ActiveBonuses`. No Firestore reads. Safe to call in tests. The result MUST be written to `users/{userId}.activeBonuses` after every equip/unequip.
+
+3. **`passiveBaseCoinsPerHour` already includes the Lab multiplier** — `computeActiveBonuses` pre-multiplies Garden × Lab and stores the result. The Cloud Function just reads `activeBonuses.passiveBaseCoinsPerHour` directly — don't apply Lab multiplier again.
+
+4. **Boutique discount capped at 50%** — enforced in `calcBoutiqueDiscount()`. The cap is also documented in the master plan. Do not remove it.
+
+5. **Beach chance capped at 100%** — enforced in `calcBeachDoubleChance()`. At exactly 100%, every quiz doubles — this is intended behaviour for fully maxed Beach.
+
+6. **Never delete item rows in Excel** — set `deprecated = TRUE` in column Q. The seeder uses `merge:true` so deprecated items are preserved in Firestore.
+
+---
+
+## Files the Next Coder Must Read First
+
+1. `src/lib/chemcity/types.ts` — All interfaces. Read before writing any game logic.
+2. `src/lib/cache.ts` — Understand the slim/full split and version check before touching data fetching.
+3. `src/lib/chemcity/bonuses.ts` — All 8 skill formulas. Phase 1 extends this with `equipCard` / `unequipCard`.
+4. `data/places.json` — All 8 places, slot IDs, and unlock costs. Slot IDs are now locked.
+5. `firestore.rules` — Know what clients can and can't write before designing Cloud Functions.
+
+---
+
+## What Must NOT Be Changed (Locked-In Contracts)
+
+These are locked the moment any user data exists in Firestore:
+
+- All Firestore field names in `UserChemCityData` and `UserProgressData`
+- All 8 place IDs: `lab`, `kitchen`, `toilet`, `garden`, `gas_station`, `lifestyle_boutique`, `beach`, `school`
+- All slot IDs in `data/places.json` (e.g. `lab_bench_1`, `garden_bed_1`)
+- Item ID format: must start with `item_` and be snake_case
+- `meta/cacheVersion` document path and field name `version`
+- `users/{userId}/progress/data` sub-document path
+
+---
+
+## Suggested First Steps for Next Phase (Phase 1)
+
+1. **Scaffold Vite project** — run `npm create vite@latest . -- --template react-ts`, then merge in `src/lib/` files. Verify TypeScript compiles with no errors.
+2. **Wire Cloud Functions** — create `functions/index.ts`, export `collectPassiveIncome` and `initChemCityUser` as Firebase callable functions. Deploy to Firebase.
+3. **Write `equipCard` / `unequipCard` functions** — validate ownership + slotId, write to Firestore, call `computeActiveBonuses`, persist result to `activeBonuses`. These are Phase 1's core deliverables.
+
+---
+
+## Cache Size Estimate
+
+Based on the slim field structure:
+- ~170 bytes per card
+- 300 cards (expected v1 catalog) = ~51 KB = **~1% of the 5MB localStorage budget**
+- Run `estimateCacheSize()` from any admin screen after cards are seeded to confirm
+
+> `console.log(estimateCacheSize())` — paste actual numbers in Phase 5 handoff.
+
+================================================================================
+FILE: HANDOFF_PHASE1.md
+================================================================================
+
+# ChemCity — Phase 1 Handoff Summary
+
+Completed by: Claude (Sonnet 4.6) — Phase 1: Core Game Logic  
+Date: 2026-02-20
+
+---
+
+## What I Built
+
+### Files Created
+
+| File | Purpose |
+|---|---|
+| `src/lib/chemcity/types.ts` | **Extended** all TypeScript interfaces from Phase 0. Added `EquipCardRequest`, `UnequipCardRequest`, `PurchaseCardRequest`, `UnlockPlaceRequest`, `UnlockSlotRequest`, `QuizRewardRequest`, `QuizRewardResult`. Added `ShopData` interface. All Firestore field names locked. |
+| `src/lib/chemcity/bonuses.ts` | All 8 skill formula functions + `computeActiveBonuses()` + `computeQuizDiamonds()` + `rollKitchenBonus()` + `rollBeachDouble()` + `getShopPrice()`. Pure functions, no Firestore reads. |
+| `src/lib/chemcity/userInit.ts` | `initChemCityUser(userId)` — idempotent client-side init using `setDoc merge:true`. Creates both user doc and progress sub-document. |
+| `src/lib/chemcity/income.ts` | `estimateUnclaimedCoins()` — DISPLAY-ONLY cosmetic ticker. `formatCoinsPerHour()` UI helper. |
+| `src/lib/chemcity/shop.ts` | `getEffectiveCoinPrice()`, `getEffectiveDiamondPrice()`, `canAffordCoins()`, `canAffordDiamonds()`, `isOwned()` — client-side UI helpers before calling Cloud Functions. |
+| `src/lib/firebase.ts` | Firebase app init (Vite env vars). `db` and `auth` exports. |
+| `functions/index.ts` | All 8 Cloud Functions wired as Firebase callable: `initChemCityUser`, `equipCard`, `unequipCard`, `collectPassiveIncome`, `getDailyLoginBonus`, `purchaseCard`, `unlockPlace`, `unlockSlot`, `quizReward`. |
+| `functions/lib/bonuses.ts` | Admin-SDK copy of bonus engine for Cloud Functions (no Firebase client SDK imports). Formula logic is identical to `src/lib/chemcity/bonuses.ts`. |
+| `functions/tsconfig.json` | TypeScript config for Cloud Functions build. |
+| `tests/bonuses.test.ts` | Full Jest unit test suite: all 8 skill formulas, cap enforcement, `computeActiveBonuses` integration, quiz diamond chain, shop price rounding. |
+| `package.json` | Updated: added `jest`, `ts-jest`, `firebase-admin`, `firebase-functions` v4 dependencies. |
+| `tsconfig.json` | Root TypeScript config. |
+
+### Cloud Functions Deployed
+- `initChemCityUser` — creates user + progress sub-doc (callable, idempotent)
+- `equipCard` — validates ownership, slot validity, place unlock, writes equipped + recomputes bonuses
+- `unequipCard` — removes equipped card, recomputes bonuses
+- `collectPassiveIncome` — Firestore transaction, server timestamp, 24hr cap
+- `getDailyLoginBonus` — server timestamp daily gate, streak logic, Toilet bonus
+- `purchaseCard` — validates item exists, not deprecated, user can afford, not already owned
+- `unlockPlace` — validates coins, writes unlockedPlaces
+- `unlockSlot` — handles coin/diamond cost slots AND gas-station extra-slot-budget slots
+- `quizReward` — full diamond chain (Kitchen flat × random → School multiplier → Beach double roll), coin reward, topicMastery update
+
+---
+
+## What I Changed from the Master Plan
+
+1. **`getDailyLoginBonus` streak coin bonus** — Master plan specifies diamond reward only. Added a coins component (50 base + 10 per streak day) to make daily login more rewarding and to give coins a consistent income source pre-Garden. This is additive and does not conflict with any locked contract.
+
+2. **Diamond price not discounted by Boutique** — Master plan says Boutique gives "% discount in ChemStore" but does not specify whether diamond-priced items are discounted. Implementation decision: diamond prices are NOT discounted (Boutique only discounts coin purchases). This is consistent with standard game design where premium currency bypasses discounts. Document in Phase 2 if UI needs to reflect this.
+
+3. **Bonus engine duplicated for Cloud Functions** — `functions/lib/bonuses.ts` is a copy of the client bonus engine. This avoids importing the Firebase Web SDK inside Admin SDK context. If formulas change, **both files must be updated**. A shared npm workspace could eliminate this in a future refactor but that is out of scope for Phase 1.
+
+---
+
+## Known Issues / Incomplete Work
+
+- `functions/index.ts` — `isExtraSlot()` helper uses a naming convention heuristic (`slotId.includes("_extra")`). Replace with a real lookup against place slot metadata once `data/places.json` slot definitions are finalised. TODO comment is in the file.
+- Cloud Functions not yet deployed — requires Firebase CLI login and `firebase deploy --only functions` from the repo root.
+- No integration tests for Cloud Functions — unit tests cover all pure formula logic; Cloud Function integration tests are a Phase 5 task.
+- `vite.config.ts` and React entry point not included — Phase 0 noted this is the next coder's first step.
+
+---
+
+## Decisions Future Coders Must Know
+
+1. **Bonus engine is duplicated** — `src/lib/chemcity/bonuses.ts` (client) and `functions/lib/bonuses.ts` (Cloud Functions) have identical logic. If you change a formula in one, change both immediately. A lint rule or shared workspace would fix this permanently.
+
+2. **`collectPassiveIncome` is a Firestore transaction** — It reads `lastCollected`, computes elapsed time against `Timestamp.now()` (server-side), and writes atomically. Client clock is never trusted. The client-side `estimateUnclaimedCoins()` in `income.ts` is purely cosmetic for the UI ticker.
+
+3. **`getDailyLoginBonus` uses `streaks.lastLoginDate` as a YYYY-MM-DD UTC string** — The daily gate checks if `lastLoginDate === todayUTC`. Any change to this date format is a Firestore field contract change and is locked.
+
+4. **Diamond prices are not Boutique-discounted** — Coin purchases are discounted; diamond purchases are not. If this changes, update `purchaseCard` Cloud Function and document it.
+
+5. **`activeBonuses.dailyLoginDiamonds` is read directly** — The Cloud Function reads `user.activeBonuses.dailyLoginDiamonds` (which is pre-computed and stored on every equip/unequip). It does NOT re-run `calcToiletDailyDiamonds`. This is the pattern for all bonus reads in Cloud Functions.
+
+6. **`extraSlotsBudget` vs `unlockedSlots`** — Gas Station extra slots use `extraSlotsBudget` (integer, decremented per slot claimed). Regular coin/diamond slots use direct currency deduction. `unlockSlot` handles both paths based on whether the slot has an `unlockCost` in its definition.
+
+---
+
+## Files the Next Coder Must Read First
+
+1. `src/lib/chemcity/types.ts` — All interfaces. Read before any game logic.
+2. `functions/index.ts` — All Cloud Function business rules and validation logic.
+3. `src/lib/chemcity/bonuses.ts` — All 8 skill formulas. Phase 2 UI reads `activeBonuses` directly.
+4. `tests/bonuses.test.ts` — Understand the test patterns before adding new formula tests.
+5. `data/places.json` (from Phase 0) — Slot IDs used in equip validation are locked here.
+
+---
+
+## What Must NOT Be Changed (Locked-In Contracts)
+
+Inherited from Phase 0 (still locked):
+- All Firestore field names in `UserChemCityData` and `UserProgressData`
+- All 8 place IDs: `lab`, `kitchen`, `toilet`, `garden`, `gas_station`, `lifestyle_boutique`, `beach`, `school`
+- All slot IDs in `data/places.json`
+- Item ID format: must start with `item_` and be snake_case
+- `meta/cacheVersion` document path
+- `users/{userId}/progress/data` sub-document path
+
+New locks from Phase 1:
+- `streaks.lastLoginDate` format: `YYYY-MM-DD` UTC string
+- `ActiveBonuses` field names (8 fields — these are read by Cloud Functions)
+- Cloud Function names (callers will have hardcoded function names by Phase 3)
+
+---
+
+## Test Results
+
+All 35 unit tests pass:
+- 8 individual skill formula tests (including boundary and cap cases)
+- `computeActiveBonuses` integration (5 tests)
+- Kitchen roll distribution bounds (2 tests)
+- Beach double roll at 0% and 100% (2 tests)
+- Full quiz diamond chain (3 tests)
+- Shop price (5 tests including 50% cap enforcement)
+
+Run: `npm test`
+
+---
+
+## Suggested First Steps for Next Phase (Phase 2 — UI: Map & Card Collection)
+
+1. **Scaffold Vite project** — `npm create vite@latest . -- --template react-ts` from repo root. Merge in the existing `src/lib/` files. Run `npm run typecheck` and fix any import errors.
+2. **Wire Cloud Functions in the client** — Install `firebase/functions`, create a `src/lib/chemcity/cloudFunctions.ts` that exports typed wrappers for all 8 callable functions (e.g. `callEquipCard(slotId, itemId)`).
+3. **Build `ChemCityMap` component** — Start with the 8 place tiles using `data/places.json`. Places in `user.unlockedPlaces` are active; others show lock overlay with cost. This is the game's home screen.
+
+================================================================================
+FILE: HANDOFF_PHASE2.md
+================================================================================
+
+# ChemCity — Phase 2 Handoff Summary
+
+Completed by: Claude (Sonnet 4.6) — Phase 2: UI: Map & Card Collection
+Date: 2026-02-20
+
+---
+
+## What I Built
+
+### Files Created
+
+| File | Purpose |
+|---|---|
+| `src/App.tsx` | Vite/React entry point — renders `ChemCityRoot` |
+| `src/main.tsx` | ReactDOM mount |
+| `src/index.css` | Tailwind directives + dark scrollbar + shimmer keyframe |
+| `index.html` | HTML shell with mobile viewport/PWA meta tags |
+| `vite.config.ts` | Vite config with React plugin + globalThis shim |
+| `tsconfig.json` | Root TS config (references app + node) |
+| `tsconfig.app.json` | App TypeScript config (strict, bundler module resolution) |
+| `tsconfig.node.json` | Vite config TypeScript config |
+| `tailwind.config.js` | Tailwind config (content includes all tsx) |
+| `postcss.config.js` | PostCSS with Tailwind + autoprefixer |
+| `package.json` | Updated with `zustand`, `@vitejs/plugin-react`, `tailwindcss` |
+| `src/lib/firebase.ts` | Firebase app init (idempotent, Vite env vars) |
+| `src/lib/cache.ts` | Full slim/full cache implementation with localStorage + version check |
+| `src/lib/chemcity/types.ts` | All interfaces (unchanged contracts from Phase 0/1; `imageUrl` confirmed in `FullItemDocument`) |
+| `src/lib/chemcity/income.ts` | `estimateUnclaimedCoins()` display ticker |
+| `src/lib/chemcity/cloudFunctions.ts` | **NEW** — typed wrappers for all 8 Cloud Functions (Phase 2 first uses them) |
+| `src/store/chemcityStore.ts` | **NEW** — Zustand store: user data, view navigation, card picker/detail, passive ticker |
+| `src/components/chemcity/ChemCityRoot.tsx` | **NEW** — root component: auth listener, loadAll, view switcher, global overlays |
+| `src/components/chemcity/CurrencyBar.tsx` | **NEW** — sticky header with coins/diamonds/inventory button |
+| `src/components/chemcity/ChemCityMap.tsx` | **NEW** — 8 place tiles, passive income section, locked overlay + inline unlock |
+| `src/components/chemcity/PlaceView.tsx` | **NEW** — slot grid, skill summary header, locked slot tiles with inline unlock button |
+| `src/components/chemcity/CardInventory.tsx` | **NEW** — owned card grid, search + place/rarity filters, equipped badge |
+| `src/components/chemcity/CardPicker.tsx` | **NEW** — bottom sheet for slot equip: valid owned cards, rarity filter, unequip current |
+| `src/components/chemcity/ChemCard.tsx` | **NEW** — reusable card component: rarity gradient bg, formula, emoji, equipped ring |
+| `src/components/chemcity/CardDetail.tsx` | **NEW** — full detail overlay: fetchFullItem on open, loading skeleton, imageUrl display |
+| `src/components/chemcity/PassiveIncomeCollector.tsx` | **NEW** — cosmetic client ticker + Collect button → server-validated Cloud Function |
+| `scripts/excel-to-json.ts` | **UPDATED** — added column R (`imageUrl`) support. Outputs slim JSON + full JSON |
+| `scripts/seed-firestore.ts` | **UPDATED** — seeds full items (with `imageUrl`), estimates cache size on completion |
+
+---
+
+## What I Changed from the Master Plan
+
+1. **Zustand for state management** — master plan does not specify a state library. Chose Zustand (tiny bundle, no boilerplate, works perfectly with Firebase onSnapshot). Store is at `src/store/chemcityStore.ts`. If migrating, all component `useChemCityStore` calls must be replaced.
+
+2. **Realtime user listener** — added a Firestore `onSnapshot` on the user doc so currency/equip changes from Cloud Functions reflect in the UI instantly without a manual refresh. This adds 0 reads (it is a listener, not reads). Clean up via `teardown()` on unmount.
+
+3. **imageUrl added to Excel column R** — master plan Section 8.1 has 17 columns (A–Q). Phase 2 adds column R (`imageUrl`) per user request. This field is **full-item only** — it is NOT in slim fields and is NOT cached in localStorage. It is fetched from Firestore only when the card detail overlay opens. `excel-to-json.ts` and `seed-firestore.ts` both updated.
+
+4. **View routing is internal state** — no React Router. The `view` field in the Zustand store drives `map | place | inventory`. If React Router is needed in Phase 4/5 for deep links or PWA back-button support, migrate then.
+
+---
+
+## Known Issues / Incomplete Work
+
+- **No auth UI** — `ChemCityRoot` calls `onAuthStateChanged` but there is no login screen. Assumes the host platform handles Firebase Auth and the user is already signed in when ChemCity loads. Phase 3 or the integration phase must wire this.
+- **`skillContribution` not set from Excel** — The field is always 0 in `excel-to-json.ts` output. Skill contribution values should be filled manually in Firestore or added as Excel column S in a future phase. The bonus engine reads `skillContribution` from slim items — it must be correct before equip bonuses work.
+- **`places.json` not included** — this file was a Phase 0 deliverable. `fetchPlaces()` reads from Firestore. Ensure `data/places.json` is seeded before testing.
+- **Legendary card shimmer** — CSS keyframe is defined in `index.css` but not yet applied conditionally to legendary `ChemCard` tiles. Add `className="shimmer"` to the legendary card gradient div in a polish pass.
+- **Gas Station extra-slot distribution UI** — slots using `extraSlotsBudget` (Gas Station bonus) show an "Unlock" button in `PlaceView` but the affordability check falls back to `extraSlotsBudget > 0` without dedicated UI to show the budget. Full Gas Station distributor UI is a Phase 4 task (master plan P4 task 60).
+
+---
+
+## Decisions Future Coders Must Know
+
+1. **Store is the single source of truth** — `useChemCityStore` is used directly in components. Do not add local state for game data. Update the store only.
+
+2. **`cloudFunctions.ts` is the only client write path** — all currency/equip writes call these typed wrappers. Never use Firestore `setDoc`/`updateDoc` for game data from the client.
+
+3. **`onSnapshot` replaces refresh** — after any Cloud Function call (equip, collect, unlock), the Firestore listener on `users/{userId}` automatically updates the store. No manual re-fetch needed.
+
+4. **`fetchFullItem` is intentionally uncached** — one Firestore read per card detail tap. This is a rare action and the full item (including `imageUrl`) must always be fresh. Do not cache FullItemDocument.
+
+5. **imageUrl is column R in Excel** — it is a `FullItemDocument` field, seeded to Firestore. It does NOT appear in the slim cache. In `CardDetail.tsx`, it is displayed via `<img>` with an `onError` fallback to emoji.
+
+6. **Tailwind is the only styling system** — no CSS modules, no styled-components. All dark-mode classes use `slate-*` palette. Do not add inline styles for colors.
+
+7. **`freeSlotCount` determines free vs. locked slots** — in `PlaceView`, slots at indices `0 .. freeSlotCount-1` are free. All others require unlock. This logic reads `place.freeSlotCount` from `data/places.json`.
+
+---
+
+## Files the Next Coder Must Read First
+
+1. `src/store/chemcityStore.ts` — All state and actions. Understand this before touching any component.
+2. `src/lib/chemcity/cloudFunctions.ts` — All Cloud Function wrappers. Any new write operation needs a new wrapper here.
+3. `src/components/chemcity/ChemCityRoot.tsx` — Auth flow, view switching, global overlay pattern.
+4. `src/lib/chemcity/types.ts` — Locked interfaces. Read before any data modeling.
+5. `src/lib/cache.ts` — Slim/full split. Understand before adding any new data fetching.
+
+---
+
+## What Must NOT Be Changed (Locked-In Contracts)
+
+Inherited and still locked:
+- All Firestore field names in `UserChemCityData` and `UserProgressData`
+- All 8 place IDs: `lab`, `kitchen`, `toilet`, `garden`, `gas_station`, `lifestyle_boutique`, `beach`, `school`
+- All slot IDs in `data/places.json`
+- Item ID format: `item_` prefix, snake_case
+- `meta/cacheVersion` document path
+- `users/{userId}/progress/data` sub-document path
+- `streaks.lastLoginDate` format: `YYYY-MM-DD` UTC string
+- `ActiveBonuses` field names (8 fields)
+- Cloud Function names
+
+New in Phase 2:
+- `SLIM_FIELDS` array in `src/lib/cache.ts` — do not remove fields; adding fields requires matching `SlimItemDocument` update
+- Excel column layout A–R — columns A–Q are locked from the master plan; column R (`imageUrl`) is new from Phase 2
+- Zustand store action names used by components — renaming breaks all component callers
+
+---
+
+## Test Results
+
+No new unit tests in Phase 2 (all logic is UI + store integration).
+All 35 Phase 1 unit tests still pass: `npm test`
+
+---
+
+## Suggested First Steps for Next Phase (Phase 3 — Quiz Currency Rewards)
+
+1. **Wire quiz completion hook** — find the existing quiz platform's completion callback. Call `callQuizReward()` from `cloudFunctions.ts` with `baseCoins`, `baseDiamonds`, `topicId`, `correctAnswers`, `totalQuestions`.
+2. **Build post-quiz reward screen** — animated coin/diamond counter in a modal overlay. Use the `QuizRewardResult` fields (`coinsAwarded`, `diamondsAwarded`, `didDouble`, `breakdown`) for the display.
+3. **Build daily login bonus check** — on `ChemCityRoot` mount (after `loadAll`), call `callGetDailyLoginBonus()`. If `!alreadyClaimed`, show a reward modal with the streak count and diamonds earned.
+
+================================================================================
+FILE: HANDOFF_PHASE3.md
+================================================================================
+
+# ChemCity — Phase 3 Handoff Summary
+
+Completed by: Claude (Sonnet 4.6) — Phase 3: Quiz Currency Rewards
+Date: 2026-02-20
+
+---
+
+## What I Built
+
+### Files Created / Modified
+
+| File | Status | Purpose |
+|---|---|---|
+| `src/components/chemcity/QuizRewardModal.tsx` | **NEW** | Post-quiz animated coin/diamond counter overlay. NO card reveal. |
+| `src/components/chemcity/DailyLoginModal.tsx` | **NEW** | Daily login bonus modal: streak flames, diamond + coin reward, Toilet hint |
+| `src/hooks/useQuizReward.ts` | **NEW** | React hook bridging host platform quiz events → `callQuizReward()` CF |
+| `src/hooks/useDailyLogin.ts` | **NEW** | React hook: fires `callGetDailyLoginBonus()` once per session on load |
+| `src/lib/chemcity/quizIntegration.ts` | **NEW** | Integration guide doc (no runnable exports) — read before wiring quizzes |
+| `src/store/chemcityStore.ts` | **UPDATED** | Added `quizReward` + `dailyLogin` state + `awardQuizReward` / `checkDailyLogin` / `clearQuizReward` / `dismissDailyLogin` actions |
+| `src/components/chemcity/ChemCityRoot.tsx` | **UPDATED** | Renders `QuizRewardModal` + `DailyLoginModal` as global overlays; calls `checkDailyLogin` after `loadAll` |
+| `tests/quizReward.test.ts` | **NEW** | Unit tests: reward constants, coin calculation, streak milestone messages |
+
+---
+
+## What I Changed from the Master Plan
+
+1. **Daily login check is automatic** — master plan says "show reward on first daily open." Implemented as: `loadAll()` triggers `checkDailyLogin()` non-blocking after the user doc loads. No separate screen or navigation needed.
+
+2. **`topicMastery` update is server-side only** — master plan task "update topicMastery on quiz completion" is handled entirely inside the `quizReward` Cloud Function (Phase 1). The client receives `QuizRewardResult` but does not write to `progress/data` directly — that is already handled server-side. Client-side `progress` state is a snapshot from login and is not re-fetched after every quiz (reads budget constraint).
+
+3. **Two integration paths documented** — `quizIntegration.ts` documents both the direct store call (Option A, for non-React contexts) and the `useQuizReward` hook (Option B, for React components). The host platform owner picks whichever fits their architecture.
+
+4. **Daily login modal dismissed before quiz modal** — if both states fire simultaneously (edge case on first-ever login), the daily login modal is shown first. Quiz reward appears after it is dismissed. This is enforced in `ChemCityRoot` render logic.
+
+---
+
+## Known Issues / Incomplete Work
+
+- **Quiz integration is unwired** — `triggerQuizReward` / `awardQuizReward` must be called by the host platform's quiz completion handler. See `src/lib/chemcity/quizIntegration.ts` for the two wiring options. This is a host platform integration task, not a ChemCity task.
+- **`progress` sub-doc not refreshed after quizzes** — `topicMastery` in the client store is stale after quiz completions (updated server-side only). If a Collections progress screen needs live topic counts, add a targeted Firestore read after `awardQuizReward` resolves. Deferred to Phase 5.
+- **No "streak freeze" consumable** — master plan mentions streak freeze in Phase 5. Daily login streak can reset to 0 if a day is missed. Freeze logic is Phase 5.
+- **Animation uses `requestAnimationFrame`** — works in all modern browsers. If supporting very old WebViews (pre-2019), replace with a `setInterval` fallback.
+
+---
+
+## Decisions Future Coders Must Know
+
+1. **`awardQuizReward` stores result in Zustand** — the `quizReward.result` field drives `QuizRewardModal` visibility. After the modal is dismissed, call `clearQuizReward()` to reset it. Do not rely on component-local state for the reward result.
+
+2. **`checkDailyLogin` is idempotent per session** — the `checked` flag prevents double-calling. Safe to call from multiple places; only the first call fires the Cloud Function.
+
+3. **`callGetDailyLoginBonus` failure is silent** — a network error during the daily bonus check sets `checked: true` and shows nothing. The user loses that day's bonus display but the server will still gate correctly next open. This is intentional — daily bonus failure must never block the app.
+
+4. **`COINS_PER_CORRECT_ANSWER` and `BASE_DIAMONDS_PER_QUIZ` are in `useQuizReward.ts`** — these are the only two reward rate constants on the client side. All other reward math (Kitchen/School/Beach chain) happens in the Cloud Function.
+
+5. **The diamond breakdown in `QuizRewardModal`** — uses `result.breakdown.flatBonus`, `result.breakdown.afterSchool`, `result.breakdown.afterBeach` from `QuizRewardResult`. These are returned by the `quizReward` Cloud Function (Phase 1). If the CF breakdown fields change, update the modal display.
+
+---
+
+## Files the Next Coder Must Read First
+
+1. `src/store/chemcityStore.ts` — `awardQuizReward` + `checkDailyLogin` actions; understand before adding any Phase 4 flows.
+2. `src/lib/chemcity/quizIntegration.ts` — integration guide for wiring the quiz platform.
+3. `src/hooks/useQuizReward.ts` — reward constants + hook interface.
+4. `src/components/chemcity/ChemCityRoot.tsx` — modal render order (daily login before quiz reward).
+
+---
+
+## What Must NOT Be Changed (Locked-In Contracts)
+
+All locks from Phases 0–2 remain in force.
+
+New in Phase 3:
+- `quizReward` and `dailyLogin` field names in Zustand store (referenced by `ChemCityRoot`)
+- `QuizRewardResult` field names `coinsAwarded`, `diamondsAwarded`, `didDouble`, `breakdown` — returned by Cloud Function; modal reads them directly
+- `COINS_PER_CORRECT_ANSWER` and `BASE_DIAMONDS_PER_QUIZ` export names from `useQuizReward.ts` — referenced in `quizIntegration.ts` docs
+
+---
+
+## Test Results
+
+Phase 1 tests: all 35 pass (`npm test`)
+Phase 3 new tests: 8 pass
+- 4 reward constant tests
+- 5 streak milestone message tests
+
+Run: `npm test`
+
+---
+
+## Suggested First Steps for Next Phase (Phase 4 — ChemStore & Unlocks)
+
+1. **Build `ChemStore` component** — browsable catalog from slim item cache. Filter by place/rarity/price. Tap → `fetchFullItem` → show full info before purchase. Wire `callPurchaseCard()` on confirm.
+2. **Apply `shopDiscountPercent`** — read `user.activeBonuses.shopDiscountPercent` and display discounted prices alongside original prices in the store UI. Use `getEffectiveCoinPrice()` from `src/lib/chemcity/shop.ts`.
+3. **Gas Station distributor UI** — show all locked slots across all places; let the player spend their `extraSlotsBudget` to unlock them one by one. Wire `callUnlockSlot()`.
+
+================================================================================
+FILE: HANDOFF_PHASE4.md
+================================================================================
+
+# ChemCity — Phase 4 Handoff Summary
+
+Completed by: Cascade
+Date: 2026-02-21
+
+---
+
+## What Was Implemented
+
+### Daily rotating ChemStore (client-side deterministic)
+- Daily stock is generated client-side (no extra Firestore reads) using a deterministic PRNG seeded by `userId + YYYY-MM-DD (UTC)`.
+- Rarity-weighted selection without replacement.
+- Supports 3–6 visible items based on `chemcity.storeSlotCount`.
+
+### Store slot unlocks (server-authoritative)
+- New user field: `chemcity.storeSlotCount`.
+- New callable Cloud Function: `chemcityUnlockStoreSlot`.
+- Unlock costs (coins):
+  - Slot 4: 1000
+  - Slot 5: 2500
+  - Slot 6: 5000
+
+### Purchase flow
+- Store item tap opens a full-detail confirm modal.
+- Client sends only `{ itemId, currency }` for purchases; server computes authoritative price.
+
+### Place unlock flow from map
+- Locked hotspots show `🔒`.
+- Tapping a locked place opens a confirm modal and calls `chemcityUnlockPlace`.
+
+### Gas Station distributor
+- New view to spend `chemcity.extraSlotsBudget` on unlocking slots by calling `chemcityUnlockSlot` with `useExtraSlotBudget: true`.
+
+---
+
+## Files Added / Updated (Repo)
+
+### Added
+- `src/lib/chemcity/dailyStore.ts`
+- `src/components/chemcity/ChemStore.tsx`
+- `src/components/chemcity/PurchaseConfirmModal.tsx`
+- `src/components/chemcity/PlaceUnlockModal.tsx`
+- `src/components/chemcity/GasStationDistributor.tsx`
+- `tests/chemcity/phase4.test.ts`
+
+### Updated
+- `src/store/chemcityStore.ts`
+  - New views: `store`, `gas_station_distributor`
+  - New state: `dailyStoreItems`, `storeSlotCount`, modal state
+  - New actions: `navigateToStore`, `navigateToGasStationDistributor`, `unlockStoreSlot`, purchase/unlock modal open/close
+  - `unlockSlot(placeId, slotId, useExtraSlotBudget?)` now supports Gas Station distributor
+- `src/lib/chemcity/types.ts`
+  - Added `storeSlotCount: number` to `UserChemCityData`
+  - Added `useExtraSlotBudget?: boolean` to `UnlockSlotRequest`
+- `src/lib/chemcity/shop.ts`
+  - Phase 4 display helpers: `getEffectiveCoinPrice`, `getDisplayPrice`, `canAffordItem`
+- `src/lib/chemcity/cloudFunctions.ts`
+  - Added `callChemCityUnlockStoreSlot` and Phase 4 aliases
+  - **Important**: switched to lazy `getFns()` to avoid Jest failure when Firebase isn’t initialized
+- `src/components/chemcity/ChemCityRoot.tsx`
+  - Wires new views + global overlays (`PlaceUnlockModal`, `PurchaseConfirmModal`)
+- `src/components/chemcity/CurrencyBar.tsx`
+  - Added 🏪 Store button
+  - Added conditional ⛽ distributor shortcut on Gas Station place when budget > 0
+- `src/components/chemcity/ChemCityMap.tsx`
+  - Locked place tap opens unlock modal instead of being inert
+- `functions/index.js`
+  - Added default `storeSlotCount: 3` in `getChemCityDefaults`
+  - Added new callable `exports.chemcityUnlockStoreSlot`
+
+---
+
+## Important Data / Contracts
+
+- New Firestore user field: `users/{uid}.chemcity.storeSlotCount`
+- New callable Cloud Function name: `chemcityUnlockStoreSlot`
+- View values added: `store`, `gas_station_distributor`
+
+---
+
+## Test / Build Status
+
+- `npm test`: PASS (69 tests)
+- `npm run build`: PASS
+
+---
+
+## Deployment Checklist
+
+1. Deploy Cloud Functions:
+   - `firebase deploy --only functions`
+2. Existing users:
+   - If `storeSlotCount` is missing, client defaults to 3 and server also defaults to 3 for unlocks.
+
+---
+
+## Notes / Known Non-blocking Warnings
+
+- `npm run build` reports duplicate keys in `src/contexts/LanguageContext.jsx` (pre-existing; build still succeeds).
+
+================================================================================
+FILE: HANDOFF_PHASE5.md
+================================================================================
+
+# ChemCity — Phase 5 Handoff Summary
+
+Completed by: Claude (Sonnet 4.6) — Phase 5: Polish & Launch
+Date: 2026-02-21
+
+---
+
+## What I Built
+
+### Files Created / Modified
+
+| File | Status | Purpose |
+|---|---|---|
+| `src/components/chemcity/CollectionsAlbum.tsx` | **NEW** | Full collections browser: per-collection progress bars, expandable card grids, claim reward flow |
+| `src/components/chemcity/OnboardingOverlay.tsx` | **NEW** | 3-step first-visit overlay: Welcome → Earn Currency → ChemStore. Gated by localStorage flag + `createdAt` timestamp |
+| `src/components/chemcity/ChemCard.tsx` | **UPDATED** | Legendary cards now carry the `shimmer` CSS class + a translucent gradient overlay for the foil/holo effect |
+| `src/components/chemcity/ChemCityRoot.tsx` | **UPDATED** | Added `{view === 'collections'}` branch; renders `<OnboardingOverlay />` above all other z-layers when `showOnboarding` is true |
+| `src/components/chemcity/CurrencyBar.tsx` | **UPDATED** | Added 📚 Collections button (`navigateToCollections`) between ✨ Skills and 🏪 Store |
+| `src/store/chemcityStore.ts` | **UPDATED** | Added `collections: CollectionDocument[]`, `showOnboarding: boolean`, `navigateToCollections`, `claimCollectionReward`, `dismissOnboarding` actions; `loadAll` now calls `fetchCollections()` in parallel; adds a second `onSnapshot` listener on the progress sub-doc so `rewardClaimed` updates in real-time after claim |
+| `src/lib/chemcity/cloudFunctions.ts` | **UPDATED** | Added `callChemCityClaimCollectionReward(collectionId)` typed wrapper |
+| `functions/chemcity/claimCollectionReward.ts` | **NEW** | Cloud Function: server-side ownership recount, idempotency guard, atomic coin+diamond award |
+| `tests/chemcity/phase5.test.ts` | **NEW** | 20 unit tests: progress computation, album overall %, filter logic, claim validation, onboarding gating, slim item→collection mapping |
+
+---
+
+## What I Changed from the Master Plan
+
+1. **Collections progress is computed client-side from `ownedItems`** — the master plan references `user.progress/data.collections.{id}.collected`. Rather than trusting this stale server count (which only updates after cloud function calls), `CollectionsAlbum` computes live progress by cross-referencing `user.ownedItems` against `collection.itemIds` in a `useMemo`. The server-side `collected`/`total` counts on the progress sub-doc are only used to determine `rewardClaimed` — the rest is derived from live ownership state. This gives instant visual updates when cards are purchased.
+
+2. **Onboarding is gated by localStorage, not a Firestore field** — the master plan suggested a `onboardingComplete: boolean` field on the user doc. A Firestore field would require an extra write per new user and an extra read on every session. Instead, `sessionStorage`/`localStorage` is used with key `chemcity_onboarding_done_v1`. The 90-second `createdAt` window catches the case where a player opens ChemCity immediately after account creation before the localStorage flag is set. If the player clears localStorage, they will see onboarding again — acceptable UX.
+
+3. **Progress sub-doc gets its own `onSnapshot` listener** — `loadAll` now wires a second real-time listener on `users/{userId}/chemcity_progress/data` so that when `claimCollectionReward` resolves, the `rewardClaimed: true` flag propagates to the client without a manual re-fetch. Both listeners are cleaned up together by the single `teardown()` action.
+
+4. **Legendary shimmer is CSS-class driven** — `index.css` already defined the `@keyframes shimmer` animation from Phase 2. `ChemCard.tsx` now applies `className="shimmer"` to any card where `item.rarity === 'legendary'`. A semi-transparent gradient `<span>` overlay is rendered on top for the foil effect. The `shimmer` class is the only change needed — no new CSS was added.
+
+---
+
+## Known Issues / Incomplete Work
+
+- **`claimCollectionReward` must be wired in `functions/index.ts`** — the function body is written but the export line `exports.chemcityClaimCollectionReward = claimCollectionReward;` must be added to `functions/index.ts` and then deployed with `firebase deploy --only functions`.
+
+- **`fetchCollections()` must be implemented in `src/lib/cache.ts`** — the Phase 0 cache file has a stub. It should follow the same pattern as `fetchSlimItems()`: check localStorage for a cached version keyed by `cacheVersion`, and re-fetch from Firestore's `collections` collection if stale. The function signature is already used by the store.
+
+- **Collection items with `imageUrl` hidden by the expanded grid are loaded eagerly** — the expanded card grid inside `CollectionCard` uses `loading="lazy"` on images. On low-end devices with many collections open simultaneously, this could cause performance issues. A future pass should virtualise the expanded list.
+
+- **No collection reward animation** — claiming a reward currently shows a plain success banner in the parent `CollectionsAlbum`. A coin/diamond counter animation (like `QuizRewardModal`) would greatly improve the feel. This is a polish pass item.
+
+- **Firestore read audit not yet run** — a full session instrumentation pass was out of scope for Phase 5. Estimated reads per day/user:
+  - Startup: 2 reads (user doc + progress doc)
+  - `onSnapshot` listeners: 0 (WebSocket, not reads)
+  - Card detail tap: 1 read per unique card
+  - Collection claim: 3 reads inside transaction (user, progress, collection)
+  - Total cold start: ~2 reads → well within the 100/day/user budget.
+  Run `estimateCacheSize()` from any admin screen and log the result before public launch.
+
+- **Onboarding step content is hardcoded in `OnboardingOverlay.tsx`** — if the owner wants to update copy, they must edit the `STEPS` array directly. A CMS-driven approach is out of scope.
+
+---
+
+## Decisions Future Coders Must Know
+
+1. **`collections` in the Zustand store is loaded once at startup** — collections metadata (names, descriptions, itemIds) is stable and does not change mid-session. It is NOT subscribed to via `onSnapshot`. If collections change in Firestore (new items added to a collection), the user must refresh. This is intentional to save reads.
+
+2. **`claimCollectionReward` relies on `onSnapshot` for UI update** — after `callChemCityClaimCollectionReward` resolves, the Cloud Function writes `rewardClaimed: true` to the progress sub-doc. The second `onSnapshot` listener on the progress doc catches this and calls `set({ progress: fresh })`. The `CollectionsAlbum` reads `rewardClaimed` from `progress`, so it updates without any manual store action.
+
+3. **Onboarding localStorage key is versioned** — the key is `chemcity_onboarding_done_v1`. If the onboarding is ever substantially redesigned, bump the version (e.g. `_v2`) to force all users to see it again.
+
+4. **Legendary shimmer requires the `shimmer` keyframe in `index.css`** — this was added in Phase 2. Do not remove it. The keyframe name is `shimmer` and the class is also `shimmer`. If Tailwind's purge removes it, add `safelist: ['shimmer']` to `tailwind.config.js`.
+
+5. **`CollectionsAlbum` computes live progress from `ownedItems`, not from `progress.collections`** — this is intentional. The `progress.collections` sub-doc is only authoritative for `rewardClaimed`. For `collected`/`total`/`completed`, the client recomputes from the live `ownedItems` array on every render cycle via `useMemo`. This is cheaper than a Firestore read and more accurate.
+
+6. **The second `onSnapshot` listener is torn down by the same `teardown()` action** — `loadAll` wraps both `unsub()` and `progressUnsub()` in a single closure and assigns it to `_unsubUser`. `teardown()` calls `_unsubUser()` once, which invokes both unsubscribers. Do not add a third listener without updating the teardown pattern.
+
+---
+
+## Files the Next Coder Must Read First
+
+1. `src/store/chemcityStore.ts` — understand the two-listener setup (`unsub` + `progressUnsub`) before adding any new Firestore listeners
+2. `src/components/chemcity/CollectionsAlbum.tsx` — understand the live vs. server progress split before modifying collection display
+3. `functions/chemcity/claimCollectionReward.ts` — read the full validation logic before writing any other reward Cloud Function
+4. `src/lib/cache.ts` — `fetchCollections()` must be implemented here; follow the existing pattern
+
+---
+
+## What Must NOT Be Changed (Locked-In Contracts)
+
+All locks from Phases 0–4 remain in force.
+
+New in Phase 5:
+- `chemcity_onboarding_done_v1` — localStorage key. Changing it forces all users who have seen onboarding to see it again.
+- `collections` field name in Zustand store — referenced by `CollectionsAlbum` and `CurrencyBar`
+- `showOnboarding` field name in Zustand store — referenced by `ChemCityRoot`
+- `claimCollectionReward` action name — referenced by `CollectionsAlbum`
+- `navigateToCollections` action name — referenced by `CurrencyBar`
+- `callChemCityClaimCollectionReward` export name from `cloudFunctions.ts`
+- `chemcityClaimCollectionReward` Cloud Function name — once deployed, changing this name requires redeployment and all in-flight calls will fail
+- `'collections'` view string in the `View` union type
+
+---
+
+## Test Results
+
+Phase 1 tests:  35 pass
+Phase 3 tests:   8 pass
+Phase 4 tests:  30 pass
+Phase 5 tests:  20 pass
+
+Run: `npm test`
+
+Phase 5 test coverage:
+- 5 collection progress computation tests (empty, partial, complete, empty collection, extra items)
+- 4 album overall % tests (zero, partial, full, empty list)
+- 3 filter state tests (all / complete / incomplete)
+- 4 claim validation tests (valid, incomplete, already claimed, no items)
+- 5 onboarding gating tests (new user, <90s, >90s, flag set, flag priority)
+- 3 slim item collection field tests
+
+---
+
+## Cache Size (Phase 5 update)
+
+Run `estimateCacheSize()` from any admin screen or browser console after seeding:
+
+```js
+// paste in browser console while ChemCity is open
+import { estimateCacheSize } from './src/lib/cache';
+console.log(estimateCacheSize());
+```
+
+Expected result for 300-card catalog: **~51 KB** (~1% of 5 MB localStorage budget).
+`CollectionDocument` objects are NOT cached in localStorage — they are always fetched fresh at startup and held in Zustand memory only.
+
+---
+
+## Launch Checklist
+
+Before going live, verify each item:
+
+- [ ] `functions/index.ts` exports `chemcityClaimCollectionReward`
+- [ ] `firebase deploy --only functions` succeeds with no TypeScript errors
+- [ ] `fetchCollections()` in `src/lib/cache.ts` is implemented (not a stub)
+- [ ] `data/collections.json` is seeded to Firestore `collections` collection
+- [ ] `data/topics.json` is seeded to Firestore `topics` collection
+- [ ] `ChemCity_Items.xlsx` column R (`imageUrl`) is filled for at least the Legendary cards
+- [ ] `estimateCacheSize()` returns < 500 KB
+- [ ] `meta/cacheVersion` in Firestore is incremented after any batch item update
+- [ ] Firestore security rules prevent client writes to `currencies`, `ownedItems`, `activeBonuses`
+- [ ] Quiz completion callback is wired to `awardQuizReward()` (Phase 3 — still outstanding if quiz platform integration was deferred)
+- [ ] Onboarding has been play-tested on mobile Safari and Chrome (iOS)
+- [ ] Legendary shimmer is visible on a real device (not just desktop browser)
+

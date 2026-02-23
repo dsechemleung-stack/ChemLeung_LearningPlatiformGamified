@@ -110,7 +110,7 @@ describe("computeActiveBonuses", () => {
 
   it("garden card contribution adds coins/hr", () => {
     const items: SlimItemDocument[] = [makeItem("item_plant", "garden", 10)];
-    const bonuses = computeActiveBonuses({ garden_bed_1: "item_plant" }, items);
+    const bonuses = computeActiveBonuses({ garden_shed_1: "item_plant" }, items);
     expect(bonuses.passiveBaseCoinsPerHour).toBe(100);
     expect(bonuses.passiveMultiplier).toBe(1);
   });
@@ -121,7 +121,7 @@ describe("computeActiveBonuses", () => {
       makeItem("item_flask", "lab", 10),
     ];
     const bonuses = computeActiveBonuses(
-      { garden_bed_1: "item_plant", lab_bench_1: "item_flask" },
+      { garden_shed_1: "item_plant", lab_bench: "item_flask" },
       items
     );
     expect(bonuses.passiveBaseCoinsPerHour).toBe(200);
@@ -134,7 +134,7 @@ describe("computeActiveBonuses", () => {
     for (let i = 1; i <= 26; i++) {
       const id = `item_b${i}`;
       items.push(makeItem(id, "lifestyle_boutique", 1));
-      equipped[`lifestyle_boutique_slot_${i}`] = id;
+      equipped[`lifestyle_boutique_test_slot_${i}`] = id;
     }
     const bonuses = computeActiveBonuses(equipped, items);
     expect(bonuses.shopDiscountPercent).toBe(50);
@@ -143,7 +143,7 @@ describe("computeActiveBonuses", () => {
   it("deprecated cards do not contribute", () => {
     const item = makeItem("item_old", "garden", 10);
     item.deprecated = true;
-    const bonuses = computeActiveBonuses({ garden_bed_1: "item_old" }, [item]);
+    const bonuses = computeActiveBonuses({ garden_shed_1: "item_old" }, [item]);
     expect(bonuses.passiveBaseCoinsPerHour).toBe(0);
   });
 });

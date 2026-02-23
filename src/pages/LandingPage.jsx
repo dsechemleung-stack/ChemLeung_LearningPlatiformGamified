@@ -18,7 +18,7 @@ export default function LandingPage() {
   }, [currentUser, navigate]);
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden" style={{ background: '#081413' }}>
+    <div className="min-h-screen w-full relative overflow-hidden" style={{ background: '#0a1a18' }}>
 
       {/* ── Google Font (add to index.html for production) ── */}
       <style>{`
@@ -103,22 +103,17 @@ export default function LandingPage() {
       `}</style>
 
       {/* ── Background Video ── */}
-      <div className="absolute inset-0">
-        <video
-          className="w-full h-full object-cover"
-          src="/ChemistreeIcon.mp4"
-          autoPlay muted loop playsInline preload="auto"
-          style={{ opacity: 0.75 }}
-        />
-        {/* Subtle vignette — keeps edges dark, center open */}
-        <div className="absolute inset-0" style={{
-          background: 'radial-gradient(ellipse 80% 70% at 50% 50%, transparent 40%, rgba(8,20,19,0.6) 100%)',
-        }} />
-        {/* Bottom fade for footer legibility */}
-        <div className="absolute bottom-0 left-0 right-0 h-32" style={{
-          background: 'linear-gradient(to top, rgba(8,20,19,0.9), transparent)',
+      <div className="absolute inset-0 flex items-center justify-center" style={{ background: '#0a1a18' }}>
+        <video className="max-w-full max-h-full w-auto h-auto object-contain" src="/ChemistreeIcon.mp4"
+          autoPlay muted loop playsInline preload="auto" style={{ opacity: 0.45 }} />
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: 'radial-gradient(ellipse 80% 80% at 50% 50%, rgba(10,26,24,0.2) 0%, rgba(10,26,24,0.9) 100%)',
         }} />
       </div>
+      {/* Bottom fade for footer legibility */}
+      <div className="absolute bottom-0 left-0 right-0 h-32 pointer-events-none" style={{
+        background: 'linear-gradient(to top, rgba(8,20,19,0.95), transparent)',
+      }} />
 
       {/* ══════════════════════════════════════════
           TOP NAVIGATION BAR

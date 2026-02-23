@@ -18,6 +18,20 @@ export async function callChemCityInitUser(): Promise<void> {
   await fn({});
 }
 
+export interface MigrateSlotIdsResult {
+  ok: boolean;
+  alreadyMigrated?: boolean;
+  version?: number;
+  equippedKeysMigrated?: number;
+  unlockedSlotsMigrated?: number;
+}
+
+export async function callChemCityMigrateSlotIds(): Promise<MigrateSlotIdsResult> {
+  const fn = httpsCallable(getFns(), 'chemcityMigrateSlotIds');
+  const result = await fn({});
+  return result.data as MigrateSlotIdsResult;
+}
+
 export async function callChemCityEquipCard(slotId: string, itemId: string): Promise<void> {
   const fn = httpsCallable<EquipCardRequest, { ok?: boolean }>(getFns(), 'chemcityEquipCard');
   await fn({ slotId, itemId });
@@ -35,6 +49,11 @@ export async function callChemCityCollectPassiveIncome(): Promise<{ coinsAwarded
   );
   const result = await fn({});
   return result.data;
+}
+
+export async function callChemCityDevGrantCoins(amount: number): Promise<void> {
+  const fn = httpsCallable<{ amount: number }, { ok?: boolean }>(getFns(), 'chemcityDevGrantCoins');
+  await fn({ amount });
 }
 
 export async function callChemCityGetDailyLoginBonus(): Promise<Record<string, unknown>> {

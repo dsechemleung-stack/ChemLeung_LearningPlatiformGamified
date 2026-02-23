@@ -29,6 +29,7 @@ const OUTPUT_DIR = path.resolve(__dirname, '../data/items');
 
 const RARITY_VALUES: Record<string, 1 | 2 | 3 | 4> = {
   common: 1,
+  uncommon: 2,
   rare: 2,
   epic: 3,
   legendary: 4,
@@ -39,16 +40,63 @@ const VALID_PLACE_IDS = new Set([
   'gas_station', 'lifestyle_boutique', 'beach', 'school',
 ]);
 
+function normalizeImageUrl(raw: string): string | undefined {
+  const s0 = String(raw || '').trim();
+  const s = s0.replace(/^['\"]|['\"]$/g, '').trim();
+  if (!s) return undefined;
+  const upper = s.toUpperCase();
+  if (upper === 'N/A' || upper === 'NA' || upper === 'NULL') return undefined;
+
+  const toDriveThumbnail = (id: string) => `https://drive.google.com/thumbnail?id=${id}&sz=w512`;
+  const isGoogleUserContentDirect = (url: string): boolean => {
+    return /^https?:\/\/lh3\.googleusercontent\.com\/d\/[^\/\?]+\/?$/i.test(url.trim());
+  };
+  const driveIdFrom = (url: string): string | null => {
+    // file/d/<id>/view
+    const m1 = url.match(/drive\.google\.com\/file\/d\/([^\/\?]+)\//i);
+    if (m1?.[1]) return m1[1];
+    // open?id=<id>
+    const m2 = url.match(/drive\.google\.com\/open\?id=([^&]+)/i);
+    if (m2?.[1]) return m2[1];
+    // uc?export=view&id=<id>
+    const m3 = url.match(/drive\.google\.com\/uc\?[^#]*\bid=([^&]+)/i);
+    if (m3?.[1]) return m3[1];
+    return null;
+  };
+
+  const normalizeUrl = (url: string): string => {
+    if (isGoogleUserContentDirect(url)) return url;
+    const driveId = driveIdFrom(url);
+    if (driveId) return toDriveThumbnail(driveId);
+    return url;
+  };
+
+  // Supports formats like:
+  // - (image:https://example.com/foo.png)
+  // - image:https://example.com/foo.png
+  // - https://example.com/foo.png
+  const m = s.match(/\(\s*image\s*:\s*([^\)\s]+)\s*\)/i);
+  if (m?.[1]) return normalizeUrl(m[1].trim());
+
+  const m2 = s.match(/^image\s*:\s*(\S+)$/i);
+  if (m2?.[1]) return normalizeUrl(m2[1].trim());
+
+  return normalizeUrl(s);
+}
+
 // ─── Column mapping (0-indexed) ───────────────────────────────
 // A=0  B=1  C=2  D=3  E=4  F=5  G=6  H=7  I=8  J=9
 // K=10 L=11 M=12 N=13 O=14 P=15 Q=16
 
 interface ExcelRow {
   id: string;             // A
+  baseId?: string;        // (new schema)
   name: string;           // B
   chemicalFormula: string;// C
   displayName: string;    // D  (full only)
+  description?: string;   // (new schema, full only)
   emoji: string;          // E
+  cardBackground?: string;// (new schema, full only)
   imageUrl?: string;      // (optional)
   rarity: string;         // F
   placeId: string;        // G
@@ -151,14 +199,19 @@ function buildRowsFromHeaderMappedGrid(grid: unknown[][]): ExcelRow[] {
     if (!id || idNorm === 'id' || idNorm.startsWith('id ')) continue;
     if (id.includes('←') || id.includes('Copy this row')) continue;
 
+    const baseIdRaw = getCell(raw, 'baseid') || getCell(raw, 'chemicalgroupid');
+
     // Map new schema → legacy ExcelRow shape used by the rest of this script
     rows.push({
       id,
+      baseId: baseIdRaw || undefined,
       name: getCell(raw, 'name'),
       chemicalFormula: getCell(raw, 'chemicalformula'),
       displayName: getCell(raw, 'displayname'),
+      description: getCell(raw, 'description') || undefined,
       emoji: getCell(raw, 'emoji'),
-      imageUrl: getCell(raw, 'imageurl') || undefined,
+      cardBackground: getCell(raw, 'cardbackground') || undefined,
+      imageUrl: normalizeImageUrl(getCell(raw, 'imageurl')),
       rarity: getCell(raw, 'rarity'),
       placeId: getCell(raw, 'primaryplaceid'),
       // In the new sheet, “primarySubPlaceId” corresponds to slot IDs like lab_acid_cabinet
@@ -260,7 +313,7 @@ async function run() {
     const placeId = String(row.placeId || '').trim().toLowerCase();
 
     if (!RARITY_VALUES[rarity]) {
-      errors.push(`  Row "${id}": invalid rarity "${rarity}" — must be common/rare/epic/legendary`);
+      errors.push(`  Row "${id}": invalid rarity "${rarity}" — must be common/uncommon/rare/epic/legendary`);
     }
     if (!VALID_PLACE_IDS.has(placeId)) {
       errors.push(`  Row "${id}": invalid placeId "${placeId}" — must be one of the 8 place IDs`);
@@ -294,6 +347,7 @@ async function run() {
 
     const slim = {
       id,
+      ...(row.baseId ? { baseId: String(row.baseId).trim() } : {}),
       name: String(row.name || '').trim(),
       chemicalFormula: String(row.chemicalFormula || '').trim(),
       emoji: String(row.emoji || '').trim(),

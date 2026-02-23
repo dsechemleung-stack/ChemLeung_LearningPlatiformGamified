@@ -22,18 +22,84 @@
     "deprecated": false
   },
   {
-    "id": "item_hydrochloric_acid",
-    "name": "Hydrochloric Acid",
-    "chemicalFormula": "HCl (dil.)",
+    "id": "item_dilute_hcl",
+    "name": "Dilute HCl",
+    "chemicalFormula": "HCl",
     "emoji": "🧪",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_alkali_cabinet"
+    ],
+    "shopData": {
+      "coinCost": 120,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_acids"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_dilute_h2so4",
+    "name": "Dilute H₂SO₄",
+    "chemicalFormula": "H₂SO₄",
+    "emoji": "⚗️",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_alkali_cabinet"
+    ],
+    "shopData": {
+      "coinCost": 140,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_acids"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_dilute_hno3",
+    "name": "Dilute HNO₃",
+    "chemicalFormula": "HNO₃",
+    "emoji": "💧",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_alkali_cabinet",
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 150,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_acids"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_conc_h2so4",
+    "name": "Conc. H₂SO₄",
+    "chemicalFormula": "H₂SO₄",
+    "emoji": "☣️",
     "rarity": "rare",
     "rarityValue": 2,
     "placeId": "lab",
     "validSlots": [
-      "lab_acid_cabinet"
+      "lab_acid_alkali_cabinet",
+      "lab_hazardous_chemical_shelf"
     ],
     "shopData": {
-      "coinCost": 400
+      "coinCost": 750,
+      "diamondCost": 5
     },
     "skillContribution": 2,
     "collections": [
@@ -42,89 +108,1016 @@
     "deprecated": false
   },
   {
-    "id": "item_sodium_hydroxide",
-    "name": "Sodium Hydroxide",
-    "chemicalFormula": "NaOH",
-    "emoji": "⚗️",
-    "rarity": "epic",
-    "rarityValue": 3,
+    "id": "item_conc_hcl",
+    "name": "Conc. HCl",
+    "chemicalFormula": "HCl",
+    "emoji": "🌫️",
+    "rarity": "uncommon",
+    "rarityValue": 2,
     "placeId": "lab",
     "validSlots": [
-      "lab_alkali_cabinet"
+      "lab_acid_alkali_cabinet",
+      "lab_hazardous_chemical_shelf"
     ],
     "shopData": {
-      "coinCost": 700
+      "coinCost": 320,
+      "diamondCost": 0
     },
-    "skillContribution": 3,
+    "skillContribution": 2,
     "collections": [
-      "col_ionic_compounds",
       "col_acids"
     ],
     "deprecated": false
   },
   {
-    "id": "item_conc_h2so4",
-    "name": "Conc. Sulfuric Acid",
-    "chemicalFormula": "H₂SO₄ (conc.)",
-    "emoji": "☠️",
-    "rarity": "epic",
-    "rarityValue": 3,
+    "id": "item_conc_hno3",
+    "name": "Conc. HNO₃",
+    "chemicalFormula": "HNO₃",
+    "emoji": "⚠️",
+    "rarity": "rare",
+    "rarityValue": 2,
     "placeId": "lab",
     "validSlots": [
-      "lab_fume_cupboard"
+      "lab_acid_alkali_cabinet",
+      "lab_hazardous_chemical_shelf"
     ],
     "shopData": {
-      "coinCost": 800
+      "coinCost": 820,
+      "diamondCost": 5
     },
-    "skillContribution": 3,
+    "skillContribution": 2,
     "collections": [
-      "col_acids",
-      "col_industrial_chemistry"
+      "col_acids"
     ],
     "deprecated": false
   },
   {
-    "id": "item_copper",
-    "name": "Copper",
-    "chemicalFormula": "Cu",
-    "emoji": "🟤",
+    "id": "item_hf",
+    "name": "HF",
+    "chemicalFormula": "HF",
+    "emoji": "💀",
+    "rarity": "legendary",
+    "rarityValue": 4,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_alkali_cabinet",
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 1800,
+      "diamondCost": 15
+    },
+    "skillContribution": 4,
+    "collections": [
+      "col_acids",
+      "col_hydrogen_bond"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_ca_oh_2",
+    "name": "Ca(OH)₂",
+    "chemicalFormula": "Ca(OH)₂",
+    "emoji": "🪨",
     "rarity": "common",
     "rarityValue": 1,
     "placeId": "lab",
     "validSlots": [
-      "lab_metal_shelf",
-      "kitchen"
+      "lab_acid_alkali_cabinet"
     ],
     "shopData": {
-      "coinCost": 150
+      "coinCost": 100,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_dilute_nh3",
+    "name": "Dilute NH₃",
+    "chemicalFormula": "NH₃",
+    "emoji": "🫧",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_alkali_cabinet"
+    ],
+    "shopData": {
+      "coinCost": 110,
+      "diamondCost": 0
     },
     "skillContribution": 1,
     "collections": [
-      "col_metals",
-      "col_transition_metals"
+      "col_hydrogen_bond"
     ],
+    "deprecated": false
+  },
+  {
+    "id": "item_naoh",
+    "name": "NaOH",
+    "chemicalFormula": "NaOH",
+    "emoji": "🧱",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_alkali_cabinet"
+    ],
+    "shopData": {
+      "coinCost": 130,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_conc_nh3",
+    "name": "Conc. NH₃",
+    "chemicalFormula": "NH₃",
+    "emoji": "😤",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_acid_alkali_cabinet",
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 350,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_mno2",
+    "name": "MnO₂",
+    "chemicalFormula": "MnO₂",
+    "emoji": "🔮",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 280,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_br2",
+    "name": "Br₂",
+    "chemicalFormula": "Br₂",
+    "emoji": "🟠",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf",
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 680,
+      "diamondCost": 5
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_i2",
+    "name": "I₂",
+    "chemicalFormula": "I₂",
+    "emoji": "🟣",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 310,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_so3_2minus",
+    "name": "SO₃²⁻",
+    "chemicalFormula": "SO₃",
+    "emoji": "🫗",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 260,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_cl2",
+    "name": "Cl₂",
+    "chemicalFormula": "Cl₂",
+    "emoji": "🟡",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf",
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 700,
+      "diamondCost": 5
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_k2cr2o7",
+    "name": "K₂Cr₂O₇",
+    "chemicalFormula": "K₂Cr₂O₇",
+    "emoji": "🧡",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 650,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_kmno4",
+    "name": "KMnO₄",
+    "chemicalFormula": "KMnO₄",
+    "emoji": "🟪",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 620,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_graphite",
+    "name": "Graphite (Carbon)",
+    "chemicalFormula": "C",
+    "emoji": "✏️",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 90,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_diamond",
+    "name": "Diamond (Carbon)",
+    "chemicalFormula": "C",
+    "emoji": "💎",
+    "rarity": "legendary",
+    "rarityValue": 4,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 2000,
+      "diamondCost": 20
+    },
+    "skillContribution": 4,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_sio2",
+    "name": "SiO₂",
+    "chemicalFormula": "SiO₂",
+    "emoji": "🪟",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 220,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_s8",
+    "name": "S₈ (Sulfur)",
+    "chemicalFormula": "S₈",
+    "emoji": "🌕",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 240,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_p4",
+    "name": "P₄ (White Phosphorus)",
+    "chemicalFormula": "P₄",
+    "emoji": "🔥",
+    "rarity": "legendary",
+    "rarityValue": 4,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 1900,
+      "diamondCost": 18
+    },
+    "skillContribution": 4,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_ni",
+    "name": "Ni (Nickel)",
+    "chemicalFormula": "Ni",
+    "emoji": "🪙",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 300,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_ag",
+    "name": "Ag (Silver)",
+    "chemicalFormula": "Ag",
+    "emoji": "🥈",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1bZ_vuFoT4Y7bmSw-f3yZepybc8v3cT09",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 700,
+      "diamondCost": 5
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_al",
+    "name": "Al (Aluminium)",
+    "chemicalFormula": "Al",
+    "emoji": "🏗️",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1cr87Dc1bfTimnX2oYADf5Lo6Qice3i06",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 160,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_au",
+    "name": "Au (Gold)",
+    "chemicalFormula": "Au",
+    "emoji": "🥇",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1DWi9SkTWL5E7QJuIABIygDVNzWAtjFpK",
+    "rarity": "legendary",
+    "rarityValue": 4,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 1500,
+      "diamondCost": 12
+    },
+    "skillContribution": 4,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_ca",
+    "name": "Ca (Calcium)",
+    "chemicalFormula": "Ca",
+    "emoji": "🦴",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1nWdd3gol0wLJJHvn4-tB2tw8OzCERuU_",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 580,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_hg",
+    "name": "Hg (Mercury)",
+    "chemicalFormula": "Hg",
+    "emoji": "☿",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1iDHPXV8Unm_s8l8If_8uZlobp35mJKSp",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf",
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 900,
+      "diamondCost": 8
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_k",
+    "name": "K (Potassium)",
+    "chemicalFormula": "K",
+    "emoji": "💥",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1oHB6ZC7ldpD8_RQXxzn285XvaLUS8y83",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf",
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 750,
+      "diamondCost": 5
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_mg",
+    "name": "Mg (Magnesium)",
+    "chemicalFormula": "Mg",
+    "emoji": "✨",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1cJjG3zRVEMsH6hcaMmaW1nvlGYoiMx_v",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 180,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_na",
+    "name": "Na (Sodium)",
+    "chemicalFormula": "Na",
+    "emoji": "🧂",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1okasW4Aza-LcKnHL7tj0xTzEijY4yuN7",
+    "rarity": "rare",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf",
+      "lab_hazardous_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 670,
+      "diamondCost": 5
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_pb",
+    "name": "Pb (Lead)",
+    "chemicalFormula": "Pb",
+    "emoji": "🔩",
+    "imageUrl": "https://lh3.googleusercontent.com/d/11yRsXwKOQQEi3P4IjTnnK4W_EB3FJi_u",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 340,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_fe",
+    "name": "Fe (Iron)",
+    "chemicalFormula": "Fe",
+    "emoji": "⚙️",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 130,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_pt",
+    "name": "Pt (Platinum)",
+    "chemicalFormula": "Pt",
+    "emoji": "⚗️",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1WJczz358btrbKW32fnnJY0XrV-PEXkd0",
+    "rarity": "legendary",
+    "rarityValue": 4,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 1400,
+      "diamondCost": 12
+    },
+    "skillContribution": 4,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_cu",
+    "name": "Cu (Copper)",
+    "chemicalFormula": "Cu",
+    "emoji": "🟤",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1Ntr1sI0MPypahV7aZ0F8GauJtiDrk0_T",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 150,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_zn",
+    "name": "Zn (Zinc)",
+    "chemicalFormula": "Zn",
+    "emoji": "🔋",
+    "imageUrl": "https://lh3.googleusercontent.com/d/17BbsQzQNTLCDuK3qlafZpqxSnoLQpXAM",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_metal_shelf"
+    ],
+    "shopData": {
+      "coinCost": 160,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [
+      "col_metals"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_air_compressed",
+    "name": "Air (Compressed)",
+    "chemicalFormula": "N₂/O₂/Ar",
+    "emoji": "💨",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
+    ],
+    "shopData": {
+      "coinCost": 80,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_ar",
+    "name": "Ar (Argon)",
+    "chemicalFormula": "Ar",
+    "emoji": "🫧",
+    "imageUrl": "https://drive.google.com/uc?export=view&id=1_SFMKZVAxbIlTVAzfwg4_02m_uMSa4Re",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
+    ],
+    "shopData": {
+      "coinCost": 230,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
     "deprecated": false
   },
   {
     "id": "item_co2",
-    "name": "Carbon Dioxide",
+    "name": "CO₂",
     "chemicalFormula": "CO₂",
-    "emoji": "🌫️",
+    "emoji": "🫁",
+    "imageUrl": "https://lh3.googleusercontent.com/d/1aFh7DhQSEgPYLSWnLJX5zVzRb2WLkM6r",
     "rarity": "common",
     "rarityValue": 1,
     "placeId": "lab",
     "validSlots": [
-      "lab_gas_tanks",
-      "kitchen"
+      "lab_gas_tank"
     ],
     "shopData": {
-      "coinCost": 100
+      "coinCost": 100,
+      "diamondCost": 0
     },
     "skillContribution": 1,
-    "collections": [
-      "col_atmosphere",
-      "col_everyday_chemistry"
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_ethene",
+    "name": "Ethene (Ethylene)",
+    "chemicalFormula": "C₂H₄",
+    "emoji": "🌿",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
     ],
+    "shopData": {
+      "coinCost": 290,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_methane",
+    "name": "Methane",
+    "chemicalFormula": "CH₄",
+    "emoji": "🔥",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
+    ],
+    "shopData": {
+      "coinCost": 260,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_n2",
+    "name": "N₂ (Nitrogen)",
+    "chemicalFormula": "N₂",
+    "emoji": "🌡️",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
+    ],
+    "shopData": {
+      "coinCost": 90,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_ne",
+    "name": "Ne (Neon)",
+    "chemicalFormula": "Ne",
+    "emoji": "💡",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
+    ],
+    "shopData": {
+      "coinCost": 240,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_nh3_gas",
+    "name": "NH₃ (Ammonia gas)",
+    "chemicalFormula": "NH₃",
+    "emoji": "💨",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
+    ],
+    "shopData": {
+      "coinCost": 270,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [
+      "col_hydrogen_bond"
+    ],
+    "deprecated": false
+  },
+  {
+    "id": "item_o2",
+    "name": "O₂ (Oxygen)",
+    "chemicalFormula": "O₂",
+    "emoji": "🌬️",
+    "imageUrl": "https://lh3.googleusercontent.com/d/11WgCzUygcX67rIfTOqbq5fZpShCAFO5Y",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
+    ],
+    "shopData": {
+      "coinCost": 95,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_h2",
+    "name": "H₂ (Hydrogen)",
+    "chemicalFormula": "H₂",
+    "emoji": "🎈",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_gas_tank"
+    ],
+    "shopData": {
+      "coinCost": 130,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_methyl_orange",
+    "name": "Methyl Orange",
+    "chemicalFormula": "C₁₄H₁₄N₃NaO₃S",
+    "emoji": "🍊",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 85,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_phenolphthalein",
+    "name": "Phenolphthalein",
+    "chemicalFormula": "C₂₀H₁₄O₄",
+    "emoji": "🌸",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 85,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_al2o3",
+    "name": "Al₂O₃",
+    "chemicalFormula": "Al₂O₃",
+    "emoji": "🧱",
+    "rarity": "uncommon",
+    "rarityValue": 2,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 250,
+      "diamondCost": 0
+    },
+    "skillContribution": 2,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_cuo",
+    "name": "CuO",
+    "chemicalFormula": "CuO",
+    "emoji": "🟫",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 160,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_fe2o3_rust",
+    "name": "Fe₂O₃·xH₂O (Rust)",
+    "chemicalFormula": "Fe₂O₃·xH₂O",
+    "emoji": "🦀",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_chemical_shelf"
+    ],
+    "shopData": {
+      "coinCost": 90,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_caco3",
+    "name": "CaCO₃",
+    "chemicalFormula": "CaCO₃",
+    "emoji": "🐚",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_salt_shelf"
+    ],
+    "shopData": {
+      "coinCost": 100,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
+    "deprecated": false
+  },
+  {
+    "id": "item_nacl",
+    "name": "NaCl",
+    "chemicalFormula": "NaCl",
+    "emoji": "🧂",
+    "rarity": "common",
+    "rarityValue": 1,
+    "placeId": "lab",
+    "validSlots": [
+      "lab_salt_shelf"
+    ],
+    "shopData": {
+      "coinCost": 80,
+      "diamondCost": 0
+    },
+    "skillContribution": 1,
+    "collections": [],
     "deprecated": false
   }
 ]

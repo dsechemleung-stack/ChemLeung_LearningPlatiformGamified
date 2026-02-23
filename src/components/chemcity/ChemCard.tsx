@@ -1,11 +1,57 @@
 import React from 'react';
 import type { SlimItemDocument } from '../../lib/chemcity/types';
 
-const RARITY_STYLES: Record<string, { bg: string; border: string; badge: string }> = {
-  common: { bg: 'from-slate-700 to-slate-600', border: 'border-slate-500', badge: 'bg-slate-500 text-white' },
-  rare: { bg: 'from-blue-700 to-indigo-600', border: 'border-blue-400', badge: 'bg-blue-500 text-white' },
-  epic: { bg: 'from-purple-700 to-pink-600', border: 'border-purple-400', badge: 'bg-purple-500 text-white' },
-  legendary: { bg: 'from-amber-600 to-yellow-400', border: 'border-yellow-300', badge: 'bg-yellow-400 text-slate-900' },
+// ─── Rarity Config ────────────────────────────────────────────
+const RARITY_CONFIG: Record<string, {
+  borderColor: string;
+  glowColor: string;
+  bgGradient: string;
+  artBg: string;
+  badgeColor: string;
+  badgeText: string;
+  stars: string;
+  shimmer: boolean;
+}> = {
+  common: {
+    borderColor: 'rgba(148,163,184,0.5)',
+    glowColor: 'rgba(148,163,184,0.2)',
+    bgGradient: 'linear-gradient(165deg, #1e293b 0%, #0f172a 100%)',
+    artBg: 'rgba(255,255,255,0.04)',
+    badgeColor: 'rgba(148,163,184,0.25)',
+    badgeText: '#94a3b8',
+    stars: '✦',
+    shimmer: false,
+  },
+  rare: {
+    borderColor: 'rgba(96,165,250,0.7)',
+    glowColor: 'rgba(96,165,250,0.25)',
+    bgGradient: 'linear-gradient(165deg, #1e3a5f 0%, #0f172a 100%)',
+    artBg: 'rgba(96,165,250,0.06)',
+    badgeColor: 'rgba(96,165,250,0.2)',
+    badgeText: '#60a5fa',
+    stars: '✦✦',
+    shimmer: false,
+  },
+  epic: {
+    borderColor: 'rgba(168,85,247,0.7)',
+    glowColor: 'rgba(168,85,247,0.3)',
+    bgGradient: 'linear-gradient(165deg, #2d1b4e 0%, #0f0a1e 100%)',
+    artBg: 'rgba(168,85,247,0.07)',
+    badgeColor: 'rgba(168,85,247,0.2)',
+    badgeText: '#a855f7',
+    stars: '✦✦✦',
+    shimmer: false,
+  },
+  legendary: {
+    borderColor: 'rgba(251,191,36,0.85)',
+    glowColor: 'rgba(251,191,36,0.4)',
+    bgGradient: 'linear-gradient(165deg, #3d2800 0%, #1a0f00 100%)',
+    artBg: 'rgba(251,191,36,0.08)',
+    badgeColor: 'rgba(251,191,36,0.2)',
+    badgeText: '#fbbf24',
+    stars: '✦✦✦✦',
+    shimmer: true,
+  },
 };
 
 interface ChemCardProps {
@@ -17,6 +63,18 @@ interface ChemCardProps {
   showDetailHint?: boolean;
 }
 
+function needsAnonymousCrossOrigin(url?: string | null): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  return u.includes('drive.google.com') || u.includes('googleusercontent.com');
+}
+
+const SIZE_MAP = {
+  sm: { w: 88,  h: 124, art: 64,  namePx: 9,  formulaPx: 8,  badgePx: 7,  pad: 5  },
+  md: { w: 110, h: 150, art: 78,  namePx: 11, formulaPx: 9,  badgePx: 8,  pad: 6  },
+  lg: { w: 140, h: 190, art: 96,  namePx: 12, formulaPx: 10, badgePx: 9,  pad: 8  },
+};
+
 export const ChemCard: React.FC<ChemCardProps> = ({
   item,
   isEquipped = false,
@@ -24,67 +82,142 @@ export const ChemCard: React.FC<ChemCardProps> = ({
   size = 'md',
   onClick,
 }) => {
-  const style = RARITY_STYLES[item.rarity] ?? RARITY_STYLES.common;
-  const isLegendary = item.rarity === 'legendary';
-
-  const sizeClasses = {
-    sm: 'w-20 h-28 text-xs',
-    md: 'w-28 h-40 text-sm',
-    lg: 'w-36 h-52 text-base',
-  }[size];
-
-  const emojiSize = { sm: 'text-2xl', md: 'text-3xl', lg: 'text-4xl' }[size];
-  const formulaSize = { sm: 'text-xs', md: 'text-xs', lg: 'text-sm' }[size];
-  const imageSize = { sm: 'w-10 h-10', md: 'w-14 h-14', lg: 'w-16 h-16' }[size];
+  const cfg = RARITY_CONFIG[item.rarity] ?? RARITY_CONFIG.common;
+  const dim = SIZE_MAP[size];
 
   return (
     <button
       onClick={onClick}
-      className={`relative flex flex-col items-center justify-between ${sizeClasses} bg-gradient-to-b ${style.bg} border-2 ${style.border} rounded-xl p-2 cursor-pointer transition-transform duration-150 active:scale-95 ${
-        isLegendary ? 'shimmer' : ''
-      } ${
-        isEquipped ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-slate-900' : ''
-      } ${!isOwned ? 'opacity-50 grayscale' : ''} ${size === 'lg' ? 'shadow-lg' : 'shadow-md'}`}
+      style={{
+        width: dim.w,
+        height: dim.h,
+        flexShrink: 0,
+        position: 'relative',
+        borderRadius: 10,
+        border: `2px solid ${isEquipped ? '#4ade80' : cfg.borderColor}`,
+        background: cfg.bgGradient,
+        boxShadow: isEquipped
+          ? `0 0 0 2px rgba(74,222,128,0.4), 0 4px 20px rgba(0,0,0,0.5)`
+          : `0 0 16px ${cfg.glowColor}, 0 4px 12px rgba(0,0,0,0.5)`,
+        cursor: onClick ? 'pointer' : 'default',
+        fontFamily: "'Quicksand', sans-serif",
+        overflow: 'hidden',
+        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+        filter: !isOwned ? 'grayscale(0.7) opacity(0.6)' : 'none',
+        padding: 0,
+        outline: 'none',
+      }}
+      className={cfg.shimmer ? 'legendary-card' : ''}
       aria-label={`${item.name} card`}
+      onMouseEnter={e => {
+        if (onClick) (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px) scale(1.02)';
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.transform = '';
+      }}
     >
-      {isLegendary && (
-        <span
-          className="pointer-events-none absolute inset-0 rounded-xl"
-          style={{
-            background:
-              'linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 50%, rgba(255,215,0,0.15) 100%)',
-          }}
-        />
+      {/* Shimmer overlay for legendary */}
+      {cfg.shimmer && (
+        <div style={{
+          position: 'absolute', inset: 0, borderRadius: 8, zIndex: 1, pointerEvents: 'none',
+          background: 'linear-gradient(105deg, transparent 30%, rgba(255,215,0,0.12) 50%, transparent 70%)',
+          animation: 'shimmerSlide 3s ease-in-out infinite',
+        }} />
       )}
 
-      <span className={`absolute top-1 right-1 text-xs font-bold rounded px-1 py-0.5 ${style.badge} ${size === 'sm' ? 'hidden' : ''}`}>
-        {item.rarityValue === 4 ? '★★★' : item.rarityValue === 3 ? '★★' : item.rarityValue === 2 ? '★' : '·'}
-      </span>
-
+      {/* Equipped badge */}
       {isEquipped && (
-        <span className="absolute top-1 left-1 bg-green-400 text-slate-900 text-xs font-bold rounded px-1">
-          ✓
-        </span>
+        <div style={{
+          position: 'absolute', top: 4, left: 4, zIndex: 10,
+          background: '#4ade80', borderRadius: 4, padding: '1px 5px',
+          fontSize: 8, fontWeight: 800, color: '#052e16',
+          fontFamily: "'Quicksand', sans-serif",
+        }}>✓ EQ</div>
       )}
 
-      {item.imageUrl ? (
-        <img
-          src={item.imageUrl}
-          alt={item.name}
-          className={`${imageSize} mt-2 object-contain rounded-lg shadow-sm`}
-          loading="lazy"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
-        />
-      ) : (
-        <span className={`${emojiSize} mt-2`}>{item.emoji}</span>
-      )}
+      {/* Rarity stars - top right */}
+      <div style={{
+        position: 'absolute', top: 4, right: 4, zIndex: 10,
+        color: cfg.badgeText, fontSize: dim.badgePx, fontWeight: 800, letterSpacing: 1,
+      }}>{cfg.stars}</div>
 
-      <div className="text-center mt-auto w-full">
-        <p className="text-white font-semibold leading-tight truncate px-1">{item.name}</p>
-        <p className={`${formulaSize} text-white/70 font-mono`}>{item.chemicalFormula}</p>
+      {/* Art section */}
+      <div style={{
+        width: dim.art, height: dim.art, margin: `${dim.pad}px auto 0`,
+        background: cfg.artBg,
+        borderRadius: 7,
+        border: `1px solid ${cfg.borderColor}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        overflow: 'hidden',
+      }}>
+        {item.imageUrl ? (
+          <img
+            src={item.imageUrl}
+            alt={item.name}
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            {...(needsAnonymousCrossOrigin(item.imageUrl)
+              ? { crossOrigin: 'anonymous' as const, referrerPolicy: 'no-referrer' as const }
+              : {})}
+            loading="lazy"
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        ) : (
+          <span style={{ fontSize: dim.art * 0.48, lineHeight: 1 }}>{item.emoji}</span>
+        )}
       </div>
+
+      {/* Name + formula */}
+      <div style={{
+        padding: `${dim.pad - 1}px ${dim.pad}px 0`,
+        textAlign: 'center',
+      }}>
+        <div style={{
+          color: '#f1f5f9',
+          fontSize: dim.namePx,
+          fontWeight: 800,
+          lineHeight: 1.2,
+          fontFamily: "'Quicksand', sans-serif",
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>{item.name}</div>
+        <div style={{
+          color: 'rgba(255,255,255,0.5)',
+          fontSize: dim.formulaPx,
+          fontFamily: 'monospace',
+          marginTop: 1,
+        }}>{item.chemicalFormula}</div>
+      </div>
+
+      {/* Rarity badge footer */}
+      <div style={{
+        position: 'absolute', bottom: dim.pad, left: dim.pad, right: dim.pad,
+        background: cfg.badgeColor,
+        borderRadius: 4,
+        padding: '2px 0',
+        textAlign: 'center',
+        fontSize: dim.badgePx,
+        fontWeight: 800,
+        color: cfg.badgeText,
+        fontFamily: "'Quicksand', sans-serif",
+        textTransform: 'uppercase',
+        letterSpacing: '0.05em',
+      }}>
+        {item.rarity}
+      </div>
+
+      <style>{`
+        @keyframes shimmerSlide {
+          0% { transform: translateX(-100%); }
+          50% { transform: translateX(100%); }
+          100% { transform: translateX(100%); }
+        }
+        .legendary-card { animation: legendaryPulse 2s ease-in-out infinite; }
+        @keyframes legendaryPulse {
+          0%, 100% { box-shadow: 0 0 20px rgba(251,191,36,0.4), 0 4px 12px rgba(0,0,0,0.5); }
+          50% { box-shadow: 0 0 32px rgba(251,191,36,0.65), 0 4px 16px rgba(0,0,0,0.6); }
+        }
+      `}</style>
     </button>
   );
 };

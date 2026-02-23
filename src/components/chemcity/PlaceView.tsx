@@ -5,6 +5,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { ChemCard } from './ChemCard';
 
+function needsAnonymousCrossOrigin(url?: string | null): boolean {
+  if (!url) return false;
+  const u = url.toLowerCase();
+  return u.includes('drive.google.com') || u.includes('googleusercontent.com');
+}
+
 const FIXED_SLOT_LAYOUTS: Record<
   string,
   {
@@ -15,178 +21,173 @@ const FIXED_SLOT_LAYOUTS: Record<
 > = {
   school: {
     slotPositions: {
-      school_desk_1: { leftPct: 44.8, topPct: 82.9 },
-      school_desk_2: { leftPct: 39.7, topPct: 48.3 },
-      school_desk_3: { leftPct: 24.1, topPct: 34.8 },
-      school_desk_4: { leftPct: 92.4, topPct: 29.2 },
-      school_desk_5: { leftPct: 39.5, topPct: 33.1 },
-      school_locker_1: { leftPct: 66.3, topPct: 43.2 },
-      school_locker_2: { leftPct: 88.5, topPct: 68.3 },
+      school_student_desk_1: { leftPct: 44.8, topPct: 82.9 },
+      school_teacher_desk: { leftPct: 39.7, topPct: 48.3 },
+      school_blackboard: { leftPct: 24.1, topPct: 34.8 },
+      school_science_corner: { leftPct: 92.4, topPct: 29.2 },
+      school_poster: { leftPct: 39.5, topPct: 33.1 },
+      school_window_side_table: { leftPct: 66.3, topPct: 43.2 },
+      school_student_desk_2: { leftPct: 88.5, topPct: 68.3 },
     },
     slotLabels: {
-      school_desk_1: 'Student Desk 1',
-      school_desk_2: 'Teacher Desk',
-      school_desk_3: 'Blackboard',
-      school_desk_4: 'Science Corner',
-      school_desk_5: 'Poster',
-      school_locker_1: 'Window-side Table',
-      school_locker_2: 'Student Desk 2',
+      school_student_desk_1: 'Student Desk 1',
+      school_teacher_desk: 'Teacher Desk',
+      school_blackboard: 'Blackboard',
+      school_science_corner: 'Science Corner',
+      school_poster: 'Poster',
+      school_window_side_table: 'Window-side Table',
+      school_student_desk_2: 'Student Desk 2',
     },
     slotSizesPx: {
-      school_desk_1: 64,
+      school_student_desk_1: 64,
     },
   },
   gas_station: {
     slotPositions: {
-      gas_pump_1: { leftPct: 24.1, topPct: 61.9 },
-      gas_pump_2: { leftPct: 87.9, topPct: 79.1 },
-      gas_pump_3: { leftPct: 63.7, topPct: 32.1 },
-      gas_pump_4: { leftPct: 61.5, topPct: 57.8 },
-      gas_shelf_1: { leftPct: 51.8, topPct: 61 },
-      gas_shelf_2: { leftPct: 38.5, topPct: 48.4 },
-      gas_shelf_3: { leftPct: 78.4, topPct: 37.2 },
-      gas_shelf_4: { leftPct: 85.1, topPct: 17.1 },
+      gas_station_car_1: { leftPct: 24.1, topPct: 61.9 },
+      gas_station_construction_site: { leftPct: 87.9, topPct: 79.1 },
+      gas_station_factory: { leftPct: 63.7, topPct: 32.1 },
+      gas_station_petrol_pump: { leftPct: 61.5, topPct: 57.8 },
+      gas_station_car_2: { leftPct: 51.8, topPct: 61 },
+      gas_station_motel: { leftPct: 38.5, topPct: 48.4 },
+      gas_station_street_light: { leftPct: 78.4, topPct: 37.2 },
+      gas_station_firework: { leftPct: 85.1, topPct: 17.1 },
     },
     slotLabels: {
-      gas_pump_1: 'Car 1',
-      gas_pump_2: 'Construction Site',
-      gas_pump_3: 'Factory',
-      gas_pump_4: 'Petrol Pump',
-      gas_shelf_1: 'Car 2',
-      gas_shelf_2: 'Motel',
-      gas_shelf_3: 'Street Light',
-      gas_shelf_4: 'Firework',
+      gas_station_car_1: 'Car 1',
+      gas_station_construction_site: 'Construction Site',
+      gas_station_factory: 'Factory',
+      gas_station_petrol_pump: 'Petrol Pump',
+      gas_station_car_2: 'Car 2',
+      gas_station_motel: 'Motel',
+      gas_station_street_light: 'Street Light',
+      gas_station_firework: 'Firework',
     },
   },
   lab: {
     slotPositions: {
-      lab_bench_1: { leftPct: 50.7, topPct: 51.3 },
-      lab_bench_2: { leftPct: 28.7, topPct: 36 },
-      lab_bench_3: { leftPct: 46.4, topPct: 32.2 },
-      lab_bench_4: { leftPct: 75.3, topPct: 78.9 },
-      lab_bench_5: { leftPct: 81.4, topPct: 10.9 },
-      lab_bench_6: { leftPct: 92.2, topPct: 21.3 },
-      lab_premium_1: { leftPct: 60.4, topPct: 31.5 },
-      lab_premium_2: { leftPct: 50.1, topPct: 84.1 },
-      lab_premium_3: { leftPct: 80.5, topPct: 36.7 },
-      lab_premium_4: { leftPct: 9.5, topPct: 46.9 },
+      lab_bench: { leftPct: 50.7, topPct: 51.3 },
+      lab_fume_hood: { leftPct: 28.7, topPct: 36 },
+      lab_acid_alkali_cabinet: { leftPct: 46.4, topPct: 32.2 },
+      lab_apparatus_1: { leftPct: 75.3, topPct: 78.9 },
+      lab_metal_shelf: { leftPct: 81.4, topPct: 10.9 },
+      lab_salt_shelf: { leftPct: 92.2, topPct: 21.3 },
+      lab_hazardous_chemical_shelf: { leftPct: 60.4, topPct: 31.5 },
+      lab_apparatus_2: { leftPct: 50.1, topPct: 84.1 },
+      lab_chemical_shelf: { leftPct: 80.5, topPct: 36.7 },
+      lab_gas_tank: { leftPct: 9.5, topPct: 46.9 },
     },
     slotLabels: {
-      lab_bench_1: 'Bench',
-      lab_bench_2: 'Fume Hood',
-      lab_bench_3: 'Acid & Alkali Cabinet',
-      lab_bench_4: 'Apparatus 1',
-      lab_bench_5: 'Metal Shelf',
-      lab_bench_6: 'Salt Shelf',
-      lab_premium_1: 'Hazardous Chemical Shelf',
-      lab_premium_2: 'Apparatus 2',
-      lab_premium_3: 'Chemical Shelf',
-      lab_premium_4: 'Gas Tank',
-      lab_premium_5: 'Apparatus 3',
-      lab_premium_6: 'Apparatus 4',
+      lab_bench: 'Bench',
+      lab_fume_hood: 'Fume Hood',
+      lab_acid_alkali_cabinet: 'Acid & Alkali Cabinet',
+      lab_apparatus_1: 'Apparatus 1',
+      lab_metal_shelf: 'Metal Shelf',
+      lab_salt_shelf: 'Salt Shelf',
+      lab_hazardous_chemical_shelf: 'Hazardous Chemical Shelf',
+      lab_apparatus_2: 'Apparatus 2',
+      lab_chemical_shelf: 'Chemical Shelf',
+      lab_gas_tank: 'Gas Tank',
     },
   },
   kitchen: {
     slotPositions: {
-      kitchen_counter_1: { leftPct: 60.5, topPct: 72.4 },
-      kitchen_counter_2: { leftPct: 12.6, topPct: 40.2 },
-      kitchen_counter_3: { leftPct: 67, topPct: 44.4 },
-      kitchen_counter_4: { leftPct: 28.3, topPct: 88.8 },
-      kitchen_shelf_1: { leftPct: 42.3, topPct: 41.2 },
-      kitchen_shelf_2: { leftPct: 12.6, topPct: 17.4 },
-      kitchen_shelf_3: { leftPct: 88.1, topPct: 87.8 },
-      kitchen_shelf_4: { leftPct: 89.6, topPct: 41.2 },
+      kitchen_cutlery_drawer: { leftPct: 60.5, topPct: 72.4 },
+      kitchen_pantry_1: { leftPct: 12.6, topPct: 40.2 },
+      kitchen_stove_oven: { leftPct: 67, topPct: 44.4 },
+      kitchen_dinette: { leftPct: 28.3, topPct: 88.8 },
+      kitchen_fridge: { leftPct: 42.3, topPct: 41.2 },
+      kitchen_pantry_2: { leftPct: 12.6, topPct: 17.4 },
+      kitchen_base_cabinet: { leftPct: 88.1, topPct: 87.8 },
+      kitchen_countertop: { leftPct: 89.6, topPct: 41.2 },
     },
     slotLabels: {
-      kitchen_counter_1: 'Cutlery Drawer',
-      kitchen_counter_2: 'Pantry 1',
-      kitchen_counter_3: 'Stove & Oven',
-      kitchen_counter_4: 'Dinette',
-      kitchen_shelf_1: 'Fridge',
-      kitchen_shelf_2: 'Pantry 2',
-      kitchen_shelf_3: 'Base Cabinet',
-      kitchen_shelf_4: 'Countertop',
+      kitchen_cutlery_drawer: 'Cutlery Drawer',
+      kitchen_pantry_1: 'Pantry 1',
+      kitchen_stove_oven: 'Stove & Oven',
+      kitchen_dinette: 'Dinette',
+      kitchen_fridge: 'Fridge',
+      kitchen_pantry_2: 'Pantry 2',
+      kitchen_base_cabinet: 'Base Cabinet',
+      kitchen_countertop: 'Countertop',
     },
   },
   toilet: {
     slotPositions: {
-      toilet_tank_1: { leftPct: 24.1, topPct: 47.6 },
-      toilet_tank_2: { leftPct: 40.8, topPct: 83.8 },
-      toilet_tank_3: { leftPct: 80.3, topPct: 51.1 },
-      toilet_tank_4: { leftPct: 21.3, topPct: 15.4 },
-      toilet_cabinet_1: { leftPct: 58.1, topPct: 63.3 },
-      toilet_cabinet_2: { leftPct: 37.4, topPct: 48.4 },
-      toilet_cabinet_3: { leftPct: 45.5, topPct: 14.6 },
+      toilet_faucet: { leftPct: 24.1, topPct: 47.6 },
+      toilet_vanity_cabinet: { leftPct: 40.8, topPct: 83.8 },
+      toilet_bathtub: { leftPct: 80.3, topPct: 51.1 },
+      toilet_mirror_cabinet_1: { leftPct: 21.3, topPct: 15.4 },
+      toilet_toilet: { leftPct: 58.1, topPct: 63.3 },
+      toilet_vanity_top: { leftPct: 37.4, topPct: 48.4 },
+      toilet_mirror_cabinet_2: { leftPct: 45.5, topPct: 14.6 },
     },
     slotLabels: {
-      toilet_tank_1: 'Faucet',
-      toilet_tank_2: 'Vanity Cabinet',
-      toilet_tank_3: 'Bathtub',
-      toilet_tank_4: 'Mirror Cabinet 1',
-      toilet_cabinet_1: 'Toilet',
-      toilet_cabinet_2: 'Vanity Top',
-      toilet_cabinet_3: 'Mirror Cabinet 2',
-      toilet_cabinet_4: 'Mirror Cabinet 3',
+      toilet_faucet: 'Faucet',
+      toilet_vanity_cabinet: 'Vanity Cabinet',
+      toilet_bathtub: 'Bathtub',
+      toilet_mirror_cabinet_1: 'Mirror Cabinet 1',
+      toilet_toilet: 'Toilet',
+      toilet_vanity_top: 'Vanity Top',
+      toilet_mirror_cabinet_2: 'Mirror Cabinet 2',
     },
   },
   garden: {
     slotPositions: {
-      garden_bed_1: { leftPct: 20.6, topPct: 47.6 },
-      garden_bed_2: { leftPct: 65.2, topPct: 85.8 },
-      garden_bed_3: { leftPct: 56.8, topPct: 40.7 },
-      garden_bed_4: { leftPct: 76.7, topPct: 45.6 },
-      garden_plot_1: { leftPct: 22.3, topPct: 79.1 },
-      garden_plot_2: { leftPct: 48.6, topPct: 68.2 },
-      garden_plot_3: { leftPct: 20.7, topPct: 18.6 },
+      garden_shed_1: { leftPct: 20.6, topPct: 47.6 },
+      garden_lawn: { leftPct: 65.2, topPct: 85.8 },
+      garden_greenhouse: { leftPct: 56.8, topPct: 40.7 },
+      garden_flower_bed: { leftPct: 76.7, topPct: 45.6 },
+      garden_mole_hill: { leftPct: 22.3, topPct: 79.1 },
+      garden_broadcast_spreader: { leftPct: 48.6, topPct: 68.2 },
+      garden_shed_2: { leftPct: 20.7, topPct: 18.6 },
     },
     slotLabels: {
-      garden_bed_1: 'Shed 1',
-      garden_bed_2: 'Lawn',
-      garden_bed_3: 'Greenhouse',
-      garden_bed_4: 'Flower Bed',
-      garden_plot_1: 'Mole Hill',
-      garden_plot_2: 'Broadcast Spreader',
-      garden_plot_3: 'Shed 2',
-      garden_plot_4: 'Garden Plot',
+      garden_shed_1: 'Shed 1',
+      garden_lawn: 'Lawn',
+      garden_greenhouse: 'Greenhouse',
+      garden_flower_bed: 'Flower Bed',
+      garden_mole_hill: 'Mole Hill',
+      garden_broadcast_spreader: 'Broadcast Spreader',
+      garden_shed_2: 'Shed 2',
     },
   },
   lifestyle_boutique: {
     slotPositions: {
-      boutique_shelf_1: { leftPct: 40.1, topPct: 82.6 },
-      boutique_shelf_2: { leftPct: 29.1, topPct: 43.7 },
-      boutique_shelf_3: { leftPct: 77.6, topPct: 54.8 },
-      boutique_shelf_4: { leftPct: 85.7, topPct: 82.4 },
-      boutique_display_1: { leftPct: 86.8, topPct: 27.8 },
-      boutique_display_2: { leftPct: 52.8, topPct: 82.6 },
+      lifestyle_boutique_poseur_table_1: { leftPct: 40.1, topPct: 82.6 },
+      lifestyle_boutique_service_desk: { leftPct: 29.1, topPct: 43.7 },
+      lifestyle_boutique_jewellery_display: { leftPct: 77.6, topPct: 54.8 },
+      lifestyle_boutique_power_essentials: { leftPct: 85.7, topPct: 82.4 },
+      lifestyle_boutique_apparel_gallery: { leftPct: 86.8, topPct: 27.8 },
+      lifestyle_boutique_poseur_table_2: { leftPct: 52.8, topPct: 82.6 },
     },
     slotLabels: {
-      boutique_shelf_1: 'Poseur Table 1',
-      boutique_shelf_2: 'Service Desk',
-      boutique_shelf_3: 'Jewellery Display',
-      boutique_shelf_4: 'Power Essentials',
-      boutique_display_1: 'Apparel Gallery',
-      boutique_display_2: 'Poseur Table 2',
+      lifestyle_boutique_poseur_table_1: 'Poseur Table 1',
+      lifestyle_boutique_service_desk: 'Service Desk',
+      lifestyle_boutique_jewellery_display: 'Jewellery Display',
+      lifestyle_boutique_power_essentials: 'Power Essentials',
+      lifestyle_boutique_apparel_gallery: 'Apparel Gallery',
+      lifestyle_boutique_poseur_table_2: 'Poseur Table 2',
     },
   },
   beach: {
     slotPositions: {
-      beach_sand_1: { leftPct: 60.1, topPct: 14.6 },
-      beach_sand_2: { leftPct: 81.7, topPct: 37.2 },
-      beach_sand_3: { leftPct: 13.2, topPct: 40.7 },
-      beach_sand_4: { leftPct: 33.7, topPct: 76.6 },
-      beach_pier_1: { leftPct: 72.3, topPct: 68.2 },
-      beach_pier_2: { leftPct: 36.1, topPct: 44.6 },
-      beach_pier_3: { leftPct: 27.7, topPct: 23.3 },
+      beach_sky: { leftPct: 60.1, topPct: 14.6 },
+      beach_sea: { leftPct: 81.7, topPct: 37.2 },
+      beach_rock_1: { leftPct: 13.2, topPct: 40.7 },
+      beach_dry_sand: { leftPct: 33.7, topPct: 76.6 },
+      beach_strandline: { leftPct: 72.3, topPct: 68.2 },
+      beach_rock_2: { leftPct: 36.1, topPct: 44.6 },
+      beach_cliffside: { leftPct: 27.7, topPct: 23.3 },
     },
     slotLabels: {
-      beach_sand_1: 'Sky',
-      beach_sand_2: 'Sea',
-      beach_sand_3: 'Rock 1',
-      beach_sand_4: 'Dry Sand',
-      beach_pier_1: 'Strandline',
-      beach_pier_2: 'Rock 2',
-      beach_pier_3: 'Cliffside',
-      beach_pier_4: 'Pier',
+      beach_sky: 'Sky',
+      beach_sea: 'Sea',
+      beach_rock_1: 'Rock 1',
+      beach_dry_sand: 'Dry Sand',
+      beach_strandline: 'Strandline',
+      beach_rock_2: 'Rock 2',
+      beach_cliffside: 'Cliffside',
     },
   },
 };
@@ -261,6 +262,9 @@ const StripSlot: React.FC<StripSlotProps> = ({
               src={slimItem.imageUrl}
               alt={slimItem.name}
               className="w-full h-full object-cover"
+              {...(needsAnonymousCrossOrigin(slimItem.imageUrl)
+                ? { crossOrigin: 'anonymous' as const, referrerPolicy: 'no-referrer' as const }
+                : {})}
               loading="lazy"
               onError={(ev) => {
                 (ev.target as HTMLImageElement).style.display = 'none';
@@ -338,6 +342,10 @@ export const PlaceView: React.FC = () => {
   const placeImageRef = useRef<HTMLImageElement | null>(null);
   const [placeImageNaturalWidth, setPlaceImageNaturalWidth] = useState<number>(0);
   const [placeImageRenderedWidth, setPlaceImageRenderedWidth] = useState<number>(0);
+  const placeStageRef = useRef<HTMLDivElement | null>(null);
+  const [placeImageLayout, setPlaceImageLayout] = useState<{ offsetX: number; offsetY: number; w: number; h: number }>(
+    { offsetX: 0, offsetY: 0, w: 0, h: 0 },
+  );
 
   const place = useMemo(
     () => places.find((p) => p.id === selectedPlaceId) ?? null,
@@ -362,14 +370,22 @@ export const PlaceView: React.FC = () => {
     }
   })();
 
-  // Track rendered image width for slot sizing
+  // Track rendered image rect for slot sizing + positioning
   useEffect(() => {
     const img = placeImageRef.current;
-    if (!img) return;
+    const stage = placeStageRef.current;
+    if (!img || !stage) return;
 
     const updateRendered = () => {
-      const rect = img.getBoundingClientRect();
-      setPlaceImageRenderedWidth(rect.width);
+      const imgRect = img.getBoundingClientRect();
+      const stageRect = stage.getBoundingClientRect();
+      setPlaceImageRenderedWidth(imgRect.width);
+      setPlaceImageLayout({
+        offsetX: imgRect.left - stageRect.left,
+        offsetY: imgRect.top - stageRect.top,
+        w: imgRect.width,
+        h: imgRect.height,
+      });
     };
 
     updateRendered();
@@ -377,6 +393,7 @@ export const PlaceView: React.FC = () => {
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => updateRendered());
+      ro.observe(stage);
       ro.observe(img);
     } else {
       window.addEventListener('resize', updateRendered);
@@ -477,7 +494,7 @@ export const PlaceView: React.FC = () => {
     >
       {/* ── Image area (flex-1) ── */}
       {placeImageSrc ? (
-        <div className="flex-1 flex justify-center items-start overflow-hidden px-3 pt-2 pb-1 min-h-0">
+        <div className="flex-1 flex justify-center items-stretch overflow-hidden px-3 pt-2 pb-1 min-h-0">
           {/*
             Inner wrapper sizes to the image naturally.
             - h-full: fills flex-1 height
@@ -486,8 +503,8 @@ export const PlaceView: React.FC = () => {
               which exactly matches the rendered image dimensions.
           */}
           <div
-            className="relative h-full"
-            style={{ width: 'fit-content', maxWidth: '100%' }}
+            ref={placeStageRef}
+            className="relative w-full h-full flex items-center justify-center"
             onClick={(e) => {
               if (!isDevEditorEnabled || !editSlotsMode || !selectedSlotIdForEdit) return;
               const target = e.currentTarget;
@@ -505,12 +522,11 @@ export const PlaceView: React.FC = () => {
               src={placeImageSrc}
               alt={place.displayName}
               ref={placeImageRef}
-              className="h-full w-auto max-w-full rounded-2xl border border-slate-700 bg-slate-950 block"
+              className="max-w-full max-h-full w-auto h-auto rounded-2xl border border-slate-700 bg-slate-950 block"
               loading="lazy"
               onLoad={(e) => {
                 const el = e.currentTarget;
                 if (el.naturalWidth) setPlaceImageNaturalWidth(el.naturalWidth);
-                // Also update rendered width immediately after load
                 const rect = el.getBoundingClientRect();
                 setPlaceImageRenderedWidth(rect.width);
               }}
@@ -563,8 +579,14 @@ export const PlaceView: React.FC = () => {
                     }
                   `}
                   style={{
-                    left: `${pos.leftPct}%`,
-                    top: `${pos.topPct}%`,
+                    left:
+                      placeImageLayout.w > 0
+                        ? placeImageLayout.offsetX + (pos.leftPct / 100) * placeImageLayout.w
+                        : `${pos.leftPct}%`,
+                    top:
+                      placeImageLayout.h > 0
+                        ? placeImageLayout.offsetY + (pos.topPct / 100) * placeImageLayout.h
+                        : `${pos.topPct}%`,
                     width: sizePx,
                     height: sizePx,
                   }}
@@ -578,6 +600,9 @@ export const PlaceView: React.FC = () => {
                           src={slimItem.imageUrl}
                           alt={slimItem.name}
                           className="w-full h-full object-cover"
+                          {...(needsAnonymousCrossOrigin(slimItem.imageUrl)
+                            ? { crossOrigin: 'anonymous' as const, referrerPolicy: 'no-referrer' as const }
+                            : {})}
                           loading="lazy"
                           onError={(ev) => {
                             (ev.target as HTMLImageElement).style.display = 'none';

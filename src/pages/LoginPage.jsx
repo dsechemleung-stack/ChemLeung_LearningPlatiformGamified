@@ -32,7 +32,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center p-4"
-      style={{ background: '#081413' }}>
+      style={{ background: '#0a1a18' }}>
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Pacifico&family=Quicksand:wght@500;600;700;800&display=swap');
@@ -112,11 +112,11 @@ export default function LoginPage() {
       `}</style>
 
       {/* ── Background Video ── */}
-      <div className="absolute inset-0">
-        <video className="w-full h-full object-cover" src="/ChemistreeIcon.mp4"
+      <div className="absolute inset-0 flex items-center justify-center" style={{ background: '#0a1a18' }}>
+        <video className="max-w-full max-h-full w-auto h-auto object-contain" src="/ChemistreeIcon.mp4"
           autoPlay muted loop playsInline preload="auto" style={{ opacity: 0.45 }} />
-        <div className="absolute inset-0" style={{
-          background: 'radial-gradient(ellipse 80% 80% at 50% 50%, rgba(8,20,19,0.3) 0%, rgba(8,20,19,0.75) 100%)',
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: 'radial-gradient(ellipse 80% 80% at 50% 50%, rgba(10,26,24,0.2) 0%, rgba(10,26,24,0.9) 100%)',
         }} />
       </div>
 

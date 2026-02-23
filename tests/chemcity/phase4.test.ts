@@ -21,7 +21,7 @@ function makeItem(id: string, rarity: SlimItemDocument['rarity'], coinCost: numb
     rarity,
     rarityValue: { common: 1, rare: 2, epic: 3, legendary: 4 }[rarity] as any,
     placeId: 'lab',
-    validSlots: ['lab_bench_1'],
+    validSlots: ['lab_bench'],
     shopData: { coinCost },
     skillContribution: 0,
     collections: [],

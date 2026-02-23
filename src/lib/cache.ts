@@ -28,6 +28,24 @@ import type {
   TopicDocument,
 } from './chemcity/types';
 
+function normalizeImageUrl(raw: unknown): string | undefined {
+  const s0 = String(raw ?? '').trim();
+  const s = s0.replace(/^['\"]|['\"]$/g, '').trim();
+  if (!s) return undefined;
+  const upper = s.toUpperCase();
+  if (upper === 'N/A' || upper === 'NA' || upper === 'NULL') return undefined;
+
+  const unwrap = (v: string): string => {
+    const m = v.match(/\(\s*image\s*:\s*([^\)\s]+)\s*\)/i);
+    if (m?.[1]) return m[1].trim();
+    const m2 = v.match(/^image\s*:\s*(\S+)$/i);
+    if (m2?.[1]) return m2[1].trim();
+    return v;
+  };
+
+  return unwrap(s);
+}
+
 // ─── Constants ───────────────────────────────────────────────
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -123,7 +141,7 @@ export async function fetchSlimItems(
   );
 
   const SLIM_FIELDS: (keyof SlimItemDocument)[] = [
-    'id', 'name', 'chemicalFormula', 'emoji', 'rarity', 'rarityValue',
+    'id', 'baseId', 'name', 'chemicalFormula', 'emoji', 'imageUrl', 'rarity', 'rarityValue',
     'placeId', 'validSlots', 'shopData', 'skillContribution',
     'collections', 'deprecated',
   ];
@@ -138,6 +156,11 @@ export async function fetchSlimItems(
       }
     }
     slim.id = d.id;
+    if ('imageUrl' in slim) {
+      const next = normalizeImageUrl((slim as any).imageUrl);
+      if (next) (slim as any).imageUrl = next;
+      else delete (slim as any).imageUrl;
+    }
     return slim as SlimItemDocument;
   });
 
@@ -167,7 +190,10 @@ export async function fetchFullItem(
 ): Promise<FullItemDocument | null> {
   const snap = await getDoc(doc(db, 'items', itemId));
   if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() } as FullItemDocument;
+  const data = { id: snap.id, ...snap.data() } as FullItemDocument;
+  const next = normalizeImageUrl((data as any).imageUrl);
+  if (next) (data as any).imageUrl = next;
+  return data;
 }
 
 // ─── Places ──────────────────────────────────────────────────

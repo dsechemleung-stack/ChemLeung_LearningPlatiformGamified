@@ -448,6 +448,42 @@ exports.chemcityUnlockStoreSlot = onCall(
   }
 );
 
+exports.chemcityDevGrantCoins = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const amount = request.data?.amount;
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount === 0) {
+      throw new HttpsError('invalid-argument', 'amount must be a non-zero number.');
+    }
+
+    const delta = Math.floor(amount);
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const userRef = db.collection('users').doc(uid);
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+      tx.update(userRef, {
+        'chemcity.currencies.coins': admin.firestore.FieldValue.increment(delta),
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { ok: true, amount: delta };
+  }
+);
+
 exports.chemcityClaimCollectionReward = onCall(
   {
     region: 'asia-east1',
@@ -1050,6 +1086,7 @@ exports.chemcityEquipCard = onCall(
     if (item.deprecated === true) {
       throw new HttpsError('failed-precondition', 'Item is deprecated.');
     }
+    const baseId = typeof item.baseId === 'string' && item.baseId.trim() ? item.baseId.trim() : '';
     const itemPlaceId = String(item.placeId || '');
     const validSlots = Array.isArray(item.validSlots) ? item.validSlots.map(String) : [];
     if (!validSlots.includes(slotId)) {
@@ -1095,7 +1132,27 @@ exports.chemcityEquipCard = onCall(
       }
 
       const prevEquipped = chemcity.equipped && typeof chemcity.equipped === 'object' ? chemcity.equipped : {};
-      const nextEquipped = { ...prevEquipped, [slotId]: itemId };
+      const nextEquipped = { ...prevEquipped };
+
+      if (baseId) {
+        const entries = Object.entries(prevEquipped);
+        for (const [equippedSlotId, equippedItemId] of entries) {
+          if (equippedSlotId === slotId) continue;
+          if (typeof equippedItemId !== 'string' || !equippedItemId) continue;
+
+          const equippedRef = db.collection('items').doc(equippedItemId);
+          const equippedSnap = await tx.get(equippedRef);
+          if (!equippedSnap.exists) continue;
+          const equipped = equippedSnap.data() || {};
+          const equippedBaseId =
+            typeof equipped.baseId === 'string' && equipped.baseId.trim() ? equipped.baseId.trim() : '';
+          if (equippedBaseId && equippedBaseId === baseId) {
+            delete nextEquipped[equippedSlotId];
+          }
+        }
+      }
+
+      nextEquipped[slotId] = itemId;
 
       const nextBonuses = await computeChemCityActiveBonuses(db, nextEquipped);
 
@@ -1168,6 +1225,151 @@ exports.chemcityInitUser = onCall(
     const db = admin.firestore();
     await ensureChemCityInitialized(db, uid);
     return { ok: true };
+  }
+);
+
+exports.chemcityMigrateSlotIds = onCall(
+  {
+    region: 'asia-east1',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'User must be signed in.');
+    }
+
+    const db = admin.firestore();
+    await ensureChemCityInitialized(db, uid);
+
+    const SLOT_ID_SCHEMA_VERSION = 2;
+
+    const SLOT_ID_MAP = {
+      // Lab
+      lab_bench_1: 'lab_bench',
+      lab_bench_2: 'lab_fume_hood',
+      lab_bench_3: 'lab_acid_alkali_cabinet',
+      lab_bench_4: 'lab_apparatus_1',
+      lab_bench_5: 'lab_metal_shelf',
+      lab_bench_6: 'lab_salt_shelf',
+      lab_premium_1: 'lab_hazardous_chemical_shelf',
+      lab_premium_2: 'lab_apparatus_2',
+      lab_premium_3: 'lab_chemical_shelf',
+      lab_premium_4: 'lab_gas_tank',
+      // Kitchen
+      kitchen_counter_1: 'kitchen_cutlery_drawer',
+      kitchen_counter_2: 'kitchen_pantry_1',
+      kitchen_counter_3: 'kitchen_stove_oven',
+      kitchen_counter_4: 'kitchen_dinette',
+      kitchen_shelf_1: 'kitchen_fridge',
+      kitchen_shelf_2: 'kitchen_pantry_2',
+      kitchen_shelf_3: 'kitchen_base_cabinet',
+      kitchen_shelf_4: 'kitchen_countertop',
+      // Toilet
+      toilet_tank_1: 'toilet_faucet',
+      toilet_tank_2: 'toilet_vanity_cabinet',
+      toilet_tank_3: 'toilet_bathtub',
+      toilet_tank_4: 'toilet_mirror_cabinet_1',
+      toilet_cabinet_1: 'toilet_toilet',
+      toilet_cabinet_2: 'toilet_vanity_top',
+      toilet_cabinet_3: 'toilet_mirror_cabinet_2',
+      // Garden
+      garden_bed_1: 'garden_shed_1',
+      garden_bed_2: 'garden_lawn',
+      garden_bed_3: 'garden_greenhouse',
+      garden_bed_4: 'garden_flower_bed',
+      garden_plot_1: 'garden_mole_hill',
+      garden_plot_2: 'garden_broadcast_spreader',
+      garden_plot_3: 'garden_shed_2',
+      // Gas Station
+      gas_pump_1: 'gas_station_car_1',
+      gas_pump_2: 'gas_station_construction_site',
+      gas_pump_3: 'gas_station_factory',
+      gas_pump_4: 'gas_station_petrol_pump',
+      gas_shelf_1: 'gas_station_car_2',
+      gas_shelf_2: 'gas_station_motel',
+      gas_shelf_3: 'gas_station_street_light',
+      gas_shelf_4: 'gas_station_firework',
+      // Boutique
+      boutique_shelf_1: 'lifestyle_boutique_poseur_table_1',
+      boutique_shelf_2: 'lifestyle_boutique_service_desk',
+      boutique_shelf_3: 'lifestyle_boutique_jewellery_display',
+      boutique_shelf_4: 'lifestyle_boutique_power_essentials',
+      boutique_display_1: 'lifestyle_boutique_apparel_gallery',
+      boutique_display_2: 'lifestyle_boutique_poseur_table_2',
+      // Beach
+      beach_sand_1: 'beach_sky',
+      beach_sand_2: 'beach_sea',
+      beach_sand_3: 'beach_rock_1',
+      beach_sand_4: 'beach_dry_sand',
+      beach_pier_1: 'beach_strandline',
+      beach_pier_2: 'beach_rock_2',
+      beach_pier_3: 'beach_cliffside',
+      // School
+      school_desk_1: 'school_student_desk_1',
+      school_desk_2: 'school_teacher_desk',
+      school_desk_3: 'school_blackboard',
+      school_desk_4: 'school_science_corner',
+      school_desk_5: 'school_poster',
+      school_locker_1: 'school_window_side_table',
+      school_locker_2: 'school_student_desk_2',
+    };
+
+    const userRef = db.collection('users').doc(uid);
+
+    return db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists) {
+        throw new HttpsError('not-found', 'User not found.');
+      }
+
+      const userData = snap.data() || {};
+      const chemcity = userData.chemcity || {};
+
+      const currentVersion = Number(chemcity.slotIdSchemaVersion || 0);
+      if (currentVersion >= SLOT_ID_SCHEMA_VERSION) {
+        return { ok: true, alreadyMigrated: true, version: currentVersion };
+      }
+
+      const prevEquipped = chemcity.equipped && typeof chemcity.equipped === 'object' ? chemcity.equipped : {};
+      const prevUnlockedSlots = Array.isArray(chemcity.unlockedSlots) ? chemcity.unlockedSlots.map(String) : [];
+
+      const nextEquipped = {};
+      let equippedKeysMigrated = 0;
+      for (const [oldSlotId, itemId] of Object.entries(prevEquipped)) {
+        const newSlotId = SLOT_ID_MAP[oldSlotId] || oldSlotId;
+        if (newSlotId !== oldSlotId) equippedKeysMigrated++;
+        nextEquipped[newSlotId] = itemId;
+      }
+
+      const nextUnlockedSlots = [];
+      let unlockedSlotsMigrated = 0;
+      const seen = new Set();
+      for (const oldSlotId of prevUnlockedSlots) {
+        const newSlotId = SLOT_ID_MAP[oldSlotId] || oldSlotId;
+        if (newSlotId !== oldSlotId) unlockedSlotsMigrated++;
+        if (seen.has(newSlotId)) continue;
+        seen.add(newSlotId);
+        nextUnlockedSlots.push(newSlotId);
+      }
+
+      const nextBonuses = await computeChemCityActiveBonuses(db, nextEquipped);
+
+      tx.update(userRef, {
+        'chemcity.equipped': nextEquipped,
+        'chemcity.unlockedSlots': nextUnlockedSlots,
+        'chemcity.activeBonuses': nextBonuses,
+        'chemcity.slotIdSchemaVersion': SLOT_ID_SCHEMA_VERSION,
+        'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return {
+        ok: true,
+        alreadyMigrated: false,
+        version: SLOT_ID_SCHEMA_VERSION,
+        equippedKeysMigrated,
+        unlockedSlotsMigrated,
+      };
+    });
   }
 );
 

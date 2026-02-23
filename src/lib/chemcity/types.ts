@@ -12,11 +12,12 @@
  */
 export interface SlimItemDocument {
   id: string;                  // e.g. "item_nacl"
+  baseId?: string;              // optional grouping key for item variants, e.g. "chem_h2o"
   name: string;                // e.g. "Salt"
   chemicalFormula: string;     // e.g. "NaCl" (Unicode subscripts)
   emoji: string;               // e.g. "🧂"
   imageUrl?: string;
-  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
   rarityValue: 1 | 2 | 3 | 4;
   placeId: PlaceId;            // which city location this belongs to
   validSlots: string[];        // slot IDs within that place

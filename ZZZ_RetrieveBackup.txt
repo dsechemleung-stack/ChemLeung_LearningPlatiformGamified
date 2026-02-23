@@ -58,3 +58,6 @@ ______
 backup 17: ChemCity Phase5(Final)
 ______
 backup 18: icon,video, landing page, vision(halfway)
+_______
+backup 19: pic: change lh3 to Firebase storage + picture employed + fix + button and image + mobile UI for landing/login/register/vision
+_______

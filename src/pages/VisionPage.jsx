@@ -117,6 +117,9 @@ export default function VisionPage() {
   const iconRef   = useRef(null);
   const textRef   = useRef(null);
 
+  // Mobile panel toggle state
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+
   // Active triggers — array of hotspot objects (multi-trigger)
   const [activeItems, setActiveItems]   = useState([]);
   const [activeCategories, setActiveCats] = useState([]);
@@ -258,7 +261,7 @@ export default function VisionPage() {
   const INFO_W = 320;
 
   return (
-    <div style={{ fontFamily:"'Quicksand',sans-serif", background:'#0a1a18', height:'100vh', overflow:'hidden', display:'flex' }}>
+    <div className="relative h-screen w-full overflow-hidden flex flex-col md:flex-row" style={{ fontFamily:"'Quicksand',sans-serif", background:'#0a1a18' }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800&family=Share+Tech+Mono&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
@@ -277,10 +280,26 @@ export default function VisionPage() {
         .dev-input:focus{border-color:#76A8A5} .dev-input::placeholder{color:rgba(255,255,255,.28)}
         .mono{ font-family:'Share Tech Mono', monospace; }
         .info-box{ animation: fadeIn 0.2s ease; }
+        
+        /* Mobile panel animation */
+        .mobile-panel {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 50;
+          transform: translateY(100%);
+          transition: transform 0.3s ease;
+          max-height: 60vh;
+        }
+        .mobile-panel.open {
+          transform: translateY(0);
+        }
       `}</style>
 
-      {/* ════ LEFT PANEL ═══════════════════════════════════════════════════ */}
-      <div style={{ width:devMode?282:262, minWidth:devMode?282:262, transition:'width .3s', background:'rgba(4,12,11,0.97)', backdropFilter:'blur(20px)', borderRight:'1px solid rgba(118,168,165,0.13)', display:'flex', flexDirection:'column', zIndex:20, flexShrink:0 }}>
+      {/* ════ DESKTOP LEFT PANEL / MOBILE BOTTOM SHEET ═══════════════════════════════════════════════════ */}
+      {/* Desktop: Left sidebar */}
+      <div className="hidden md:flex flex-col z-20 flex-shrink-0" style={{ width:devMode?282:262, minWidth:devMode?282:262, transition:'width .3s', background:'rgba(4,12,11,0.97)', backdropFilter:'blur(20px)', borderRight:'1px solid rgba(118,168,165,0.13)' }}>
 
         {/* Header */}
         <div style={{ padding:'22px 20px 16px', borderBottom:'1px solid rgba(118,168,165,0.1)' }}>
@@ -295,7 +314,7 @@ export default function VisionPage() {
 
         {/* Category list */}
         {!devMode && (
-          <div style={{ flex:1, overflowY:'auto', padding:'16px 14px' }}>
+          <div className="flex-1 overflow-y-auto" style={{ padding:'16px 14px' }}>
             {CATEGORIES.map((cat, idx) => {
               const isActive = activeCategories.includes(cat.id);
               return (
@@ -361,6 +380,67 @@ export default function VisionPage() {
             <div style={{ display:'flex',alignItems:'center',gap:9 }}>
               <div style={{ width:7,height:7,borderRadius:'50%',background:hasActive?firstCat?.color||'#76A8A5':'rgba(255,255,255,0.18)',transition:'all .3s',boxShadow:hasActive?`0 0 9px ${firstCat?.color||'#76A8A5'}`:'none' }}/>
               <span className="mono" style={{ fontSize:12,color:hasActive?'rgba(255,255,255,0.65)':'rgba(255,255,255,0.2)',letterSpacing:'.07em',transition:'all .3s' }}>
+                {hasActive ? `${activeItems.length} CLUE${activeItems.length>1?'S':''} ACTIVE` : 'NO ACTIVE CLUE'}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Mobile: Bottom Sheet Panel */}
+      <div className={`md:hidden mobile-panel ${mobilePanelOpen ? 'open' : ''}`} style={{ background:'rgba(4,12,11,0.98)', backdropFilter:'blur(20px)', borderTop:'1px solid rgba(118,168,165,0.13)', borderRadius:'20px 20px 0 0' }}>
+        {/* Handle bar */}
+        <div className="flex justify-center pt-3 pb-2" onClick={() => setMobilePanelOpen(!mobilePanelOpen)}>
+          <div style={{ width:40, height:5, background:'rgba(118,168,165,0.3)', borderRadius:3 }} />
+        </div>
+        
+        {/* Header */}
+        <div style={{ padding:'10px 16px 12px', borderBottom:'1px solid rgba(118,168,165,0.1)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+            <div style={{ width:7,height:7,borderRadius:'50%',background:'#76A8A5',boxShadow:'0 0 9px #76A8A5',animation:'blink 2s infinite' }}/>
+            <span className="mono" style={{ color:'rgba(118,168,165,0.7)',fontSize:11,letterSpacing:'.18em',textTransform:'uppercase' }}>
+              {devMode ? 'ZONE MAPPER' : 'EVIDENCE BOARD'}
+            </span>
+          </div>
+          {!devMode && <p className="mt-2" style={{ color:'rgba(255,255,255,0.3)',fontSize:13,fontWeight:600 }}>Tap the symbol to investigate clues.</p>}
+        </div>
+
+        {/* Category list - Mobile */}
+        {!devMode && (
+          <div className="overflow-y-auto" style={{ padding:'12px 16px', maxHeight:'40vh' }}>
+            {CATEGORIES.map((cat, idx) => {
+              const isActive = activeCategories.includes(cat.id);
+              return (
+                <div key={cat.id} className={`cat-item${isActive ? ' active' : ''}`}
+                  style={{ background: isActive ? 'rgba(118,168,165,0.07)' : 'transparent', padding:'12px 14px' }}>
+                  <div style={{ display:'flex', alignItems:'flex-start', gap:11, position:'relative' }}>
+                    <div className="cat-dot" style={{ background:cat.color, color:cat.color, marginTop:3 }}/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <span style={{ fontSize:14, color: isActive ? cat.color : 'rgba(255,255,255,0.6)', fontWeight: isActive ? 800 : 600 }}>
+                        {cat.label}
+                      </span>
+                      {isActive && activeItems.filter(h => getCategoryForHotspot(h.id)?.id === cat.id).length > 0 && (
+                        <div className="mono mt-1" style={{ fontSize:10,color:'rgba(118,168,165,0.6)',letterSpacing:'.08em',textTransform:'uppercase' }}>
+                          {activeItems.filter(h => getCategoryForHotspot(h.id)?.id === cat.id).length} active
+                        </div>
+                      )}
+                    </div>
+                    <span className="mono" style={{ fontSize:10,color:'rgba(255,255,255,0.18)',fontWeight:600 }}>
+                      {String(idx+1).padStart(2,'0')}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Status footer */}
+        {!devMode && (
+          <div style={{ padding:'12px 16px',borderTop:'1px solid rgba(118,168,165,0.08)' }}>
+            <div style={{ display:'flex',alignItems:'center',gap:9 }}>
+              <div style={{ width:7,height:7,borderRadius:'50%',background:hasActive?firstCat?.color||'#76A8A5':'rgba(255,255,255,0.18)',transition:'all .3s',boxShadow:hasActive?`0 0 9px ${firstCat?.color||'#76A8A5'}`:'none' }}/>
+              <span className="mono" style={{ fontSize:11,color:hasActive?'rgba(255,255,255,0.65)':'rgba(255,255,255,0.2)',letterSpacing:'.07em' }}>
                 {hasActive ? `${activeItems.length} CLUE${activeItems.length>1?'S':''} ACTIVE` : 'NO ACTIVE CLUE'}
               </span>
             </div>
