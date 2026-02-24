@@ -467,10 +467,34 @@ export const forumService = {
       orderBy('createdAt', 'desc'),
       limit(limitCount)
     );
-    return onSnapshot(q, (snapshot) => {
-      const notifs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      callback(notifs);
-    }, () => { /* ignore snapshot errors */ });
+
+    const disableListeners = String(import.meta.env?.VITE_DISABLE_FIRESTORE_LISTENERS ?? '').trim() === '1';
+    if (disableListeners) {
+      let timer = null;
+      const poll = async () => {
+        try {
+          const snapshot = await getDocs(q);
+          const notifs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          callback(notifs);
+        } catch {
+          // ignore
+        }
+      };
+      poll();
+      timer = window.setInterval(poll, 15000);
+      return () => {
+        if (timer) window.clearInterval(timer);
+      };
+    }
+
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const notifs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        callback(notifs);
+      },
+      () => { /* ignore snapshot errors */ },
+    );
   },
 
   // === Algolia search for forum posts ===

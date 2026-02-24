@@ -10,10 +10,22 @@ import { doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { initializeUserTokens } from '../services/tokenService';
 
-const AuthContext = createContext();
+const AuthContext = createContext({
+  currentUser: null,
+  userProfile: null,
+  profileError: null,
+  signup: async () => {
+    throw new Error('AuthProvider not mounted');
+  },
+  login: async () => {
+    throw new Error('AuthProvider not mounted');
+  },
+  logout: async () => {},
+  loadUserProfile: async () => {},
+});
 
 export function useAuth() {
-  return useContext(AuthContext);
+  return useContext(AuthContext) || { currentUser: null, userProfile: null, profileError: null };
 }
 
 export function AuthProvider({ children }) {
@@ -39,6 +51,7 @@ export function AuthProvider({ children }) {
       uid: userCredential.user.uid,
       email: email,
       displayName: displayName,
+      gender: 'boy',
       createdAt: new Date().toISOString(),
       totalAttempts: 0,
       totalQuestions: 0,
@@ -76,27 +89,59 @@ export function AuthProvider({ children }) {
       profileUnsubscribeRef.current();
     }
 
+    const disableListeners = String(import.meta.env?.VITE_DISABLE_FIRESTORE_LISTENERS ?? '')
+      .trim() === '1';
+
     const docRef = doc(db, 'users', uid);
     
+    if (disableListeners) {
+      let timer = null;
+      const poll = async () => {
+        try {
+          const docSnap = await getDoc(docRef);
+          setProfileError(null);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setUserProfile(data);
+          } else {
+            setUserProfile(null);
+          }
+        } catch (error) {
+          setProfileError(error);
+        }
+      };
+      poll();
+      timer = window.setInterval(poll, 15000);
+      const unsubscribe = () => {
+        if (timer) window.clearInterval(timer);
+      };
+      profileUnsubscribeRef.current = unsubscribe;
+      return unsubscribe;
+    }
+
     // Set up real-time listener
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      setProfileError(null);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        console.log('📊 Profile updated:', {
-          tokens: data.tokens,
-          inventory: data.inventory?.length || 0
-        });
-        setUserProfile(data);
-      } else {
-        console.error('❌ User profile not found');
-        setUserProfile(null);
-      }
-    }, (error) => {
-      console.error('❌ Profile listener error:', error);
-      setProfileError(error);
-      loadUserProfile(uid);
-    });
+    const unsubscribe = onSnapshot(
+      docRef,
+      (docSnap) => {
+        setProfileError(null);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          console.log('📊 Profile updated:', {
+            tokens: data.tokens,
+            inventory: data.inventory?.length || 0,
+          });
+          setUserProfile(data);
+        } else {
+          console.error('❌ User profile not found');
+          setUserProfile(null);
+        }
+      },
+      (error) => {
+        console.error('❌ Profile listener error:', error);
+        setProfileError(error);
+        loadUserProfile(uid);
+      },
+    );
 
     profileUnsubscribeRef.current = unsubscribe;
     return unsubscribe;

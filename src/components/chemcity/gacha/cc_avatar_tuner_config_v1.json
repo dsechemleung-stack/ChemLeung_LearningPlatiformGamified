@@ -1,0 +1,361 @@
+{
+  "version": 1,
+  "noSplitAvatarNumbers": [
+    31,
+    32
+  ],
+  "globalDefaults": {
+    "faceCropByGender": {
+      "boy": {
+        "x": 0.5327,
+        "y": 0.1179,
+        "w": 0.2449,
+        "h": 0.2357
+      },
+      "girl": {
+        "x": 0.198,
+        "y": 0.1214,
+        "w": 0.2857,
+        "h": 0.2393
+      }
+    },
+    "noSplitFaceCropDefault": {
+      "x": 0.3,
+      "y": 0.04,
+      "w": 0.38,
+      "h": 0.26
+    },
+    "bodyFrameByGender": {
+      "boy": {
+        "scale": 1
+      },
+      "girl": {
+        "scale": 1
+      }
+    },
+    "tuningByContext": {
+      "profile_card": {
+        "boy": {
+          "offsetXPercent": 1,
+          "offsetYPercent": -14.1,
+          "scale": 1.16
+        },
+        "girl": {
+          "offsetXPercent": 1,
+          "offsetYPercent": -14.1,
+          "scale": 1.16
+        }
+      },
+      "gacha_result": {
+        "boy": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 0,
+          "scale": 0.88
+        },
+        "girl": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 0,
+          "scale": 0.88
+        }
+      },
+      "inventory": {
+        "boy": {
+          "offsetXPercent": 1,
+          "offsetYPercent": 45.2,
+          "scale": 3.12
+        },
+        "girl": {
+          "offsetXPercent": 1,
+          "offsetYPercent": 45.2,
+          "scale": 3.12
+        }
+      },
+      "profile_icon": {
+        "boy": {
+          "offsetXPercent": 1,
+          "offsetYPercent": 42.1,
+          "scale": 2.42
+        },
+        "girl": {
+          "offsetXPercent": 1,
+          "offsetYPercent": 42.1,
+          "scale": 2.42
+        }
+      }
+    }
+  },
+  "byAvatarId": {
+    "avatar_32_demonslayer": {
+      "faceCrop": {
+        "x": 0.33,
+        "y": 0.04,
+        "w": 0.35,
+        "h": 0.26
+      },
+      "profile_card": {
+        "boy": {
+          "offsetXPercent": 5.5,
+          "offsetYPercent": 0,
+          "scale": 1
+        },
+        "girl": {
+          "offsetXPercent": -6,
+          "offsetYPercent": 0,
+          "scale": 1
+        }
+      },
+      "gacha_result": {
+        "boy": {
+          "offsetXPercent": 5.5,
+          "offsetYPercent": 0,
+          "scale": 1
+        },
+        "girl": {
+          "offsetXPercent": -6,
+          "offsetYPercent": 0,
+          "scale": 1
+        }
+      },
+      "inventory": {
+        "boy": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 0,
+          "scale": 1
+        },
+        "girl": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 0,
+          "scale": 1
+        }
+      },
+      "profile_icon": {
+        "boy": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 0,
+          "scale": 1
+        },
+        "girl": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 0,
+          "scale": 1
+        }
+      }
+    },
+    "avatar_49_rustic": {
+      "profile_card": {
+        "boy": {
+          "offsetXPercent": -19,
+          "offsetYPercent": -2,
+          "scale": 1.2
+        },
+        "girl": {
+          "offsetXPercent": 20,
+          "offsetYPercent": -2,
+          "scale": 1.2
+        }
+      },
+      "gacha_result": {
+        "boy": {
+          "offsetXPercent": -19,
+          "offsetYPercent": -2,
+          "scale": 1.2
+        },
+        "girl": {
+          "offsetXPercent": 20,
+          "offsetYPercent": -2,
+          "scale": 1.2
+        }
+      },
+      "inventory": {
+        "boy": {
+          "offsetXPercent": 7,
+          "offsetYPercent": 0,
+          "scale": 0.8
+        },
+        "girl": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 3,
+          "scale": 0.7
+        }
+      },
+      "profile_icon": {
+        "boy": {
+          "offsetXPercent": -19,
+          "offsetYPercent": -10,
+          "scale": 1.4
+        },
+        "girl": {
+          "offsetXPercent": 20,
+          "offsetYPercent": -10,
+          "scale": 1.4
+        }
+      }
+    },
+    "avatar_43_snack": {
+      "profile_card": {
+        "boy": {
+          "scale": 1.5
+        },
+        "girl": {
+          "offsetXPercent": -1.5,
+          "offsetYPercent": -12.4
+        }
+      },
+      "gacha_result": {
+        "boy": {
+          "offsetXPercent": -13.5,
+          "offsetYPercent": 9
+        }
+      },
+      "profile_icon": {
+        "girl": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 42.6,
+          "scale": 2.7
+        },
+        "boy": {
+          "offsetXPercent": 0.1,
+          "offsetYPercent": 42.6
+        }
+      },
+      "inventory": {
+        "boy": {
+          "offsetXPercent": 0,
+          "offsetYPercent": 51.8,
+          "scale": 3.02
+        },
+        "girl": {
+          "scale": 3.2,
+          "offsetXPercent": -0.5,
+          "offsetYPercent": 49.5
+        }
+      }
+    },
+    "avatar_38_dino": {
+      "profile_card": {
+        "boy": {
+          "offsetXPercent": -3,
+          "offsetYPercent": -15.5,
+          "scale": 1
+        },
+        "girl": {
+          "offsetXPercent": 0.5,
+          "offsetYPercent": -16.4,
+          "scale": 1
+        }
+      },
+      "gacha_result": {
+        "boy": {
+          "offsetXPercent": -3,
+          "offsetYPercent": -3,
+          "scale": 0.98
+        },
+        "girl": {
+          "offsetXPercent": 0,
+          "offsetYPercent": -4.2,
+          "scale": 0.98
+        }
+      },
+      "inventory": {
+        "boy": {
+          "offsetXPercent": -14.5,
+          "offsetYPercent": 40.5,
+          "scale": 3.16
+        },
+        "girl": {
+          "offsetXPercent": -0.5,
+          "offsetYPercent": 39.6,
+          "scale": 3.08
+        }
+      },
+      "profile_icon": {
+        "boy": {
+          "offsetXPercent": -15,
+          "offsetYPercent": 40.2,
+          "scale": 2.62
+        },
+        "girl": {
+          "offsetXPercent": 0.6,
+          "offsetYPercent": 38.4,
+          "scale": 2.62
+        }
+      }
+    },
+    "avatar_56_oil": {
+      "profile_card": {
+        "girl": {
+          "offsetXPercent": 2,
+          "offsetYPercent": -16.8,
+          "scale": 1.2
+        },
+        "boy": {
+          "offsetXPercent": 0.5,
+          "offsetYPercent": -16.5
+        }
+      },
+      "inventory": {
+        "boy": {
+          "scale": 2.36,
+          "offsetXPercent": 3,
+          "offsetYPercent": 35.5
+        },
+        "girl": {
+          "scale": 3.12,
+          "offsetXPercent": 5.5,
+          "offsetYPercent": 45.2
+        }
+      },
+      "profile_icon": {
+        "boy": {
+          "offsetXPercent": 3.6,
+          "offsetYPercent": 39,
+          "scale": 2.32
+        },
+        "girl": {
+          "offsetXPercent": 4.6,
+          "offsetYPercent": 42.1,
+          "scale": 2.42
+        }
+      },
+      "gacha_result": {
+        "boy": {
+          "offsetXPercent": 1.5,
+          "offsetYPercent": -2.5
+        },
+        "girl": {
+          "offsetXPercent": 0.5,
+          "offsetYPercent": -1.5,
+          "scale": 0.88
+        }
+      }
+    },
+    "avatar_77_balloons": {
+      "profile_card": {
+        "boy": {
+          "offsetXPercent": -15.5,
+          "offsetYPercent": -2.2
+        }
+      },
+      "gacha_result": {
+        "boy": {
+          "offsetXPercent": -12.3,
+          "offsetYPercent": 6
+        }
+      },
+      "inventory": {
+        "boy": {
+          "offsetXPercent": -42,
+          "offsetYPercent": 34.7,
+          "scale": 3.44
+        }
+      },
+      "profile_icon": {
+        "boy": {
+          "offsetXPercent": -41.4,
+          "offsetYPercent": 33.6,
+          "scale": 2.94
+        }
+      }
+    }
+  }
+}

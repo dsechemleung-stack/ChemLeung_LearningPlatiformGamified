@@ -11,7 +11,7 @@ import {
   Lock, Tag, Pin, ChevronLeft, AlertCircle
 } from 'lucide-react';
 import QuestionForum from '../components/QuestionForum';
-import Avatar from '../components/Avatar';
+import ChemCityUserProfileIcon from '../components/ChemCityUserProfileIcon';
 
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
 
@@ -127,7 +127,7 @@ function NotificationPanel({ userId, onClose }) {
                 className={`p-4 border-b cursor-pointer hover:bg-slate-50 transition-all ${!n.read ? 'bg-blue-50' : ''}`}>
                 <div className="flex items-start gap-3">
                   <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-lab-blue' : 'bg-transparent'}`} />
-                  <Avatar userId={n.senderId} displayName={n.senderDisplayName || t('common.someone')} size="xs" />
+                  <ChemCityUserProfileIcon userId={n.senderId} displayName={n.senderDisplayName || t('common.someone')} size={28} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-slate-800 font-medium leading-snug">
                       <span className="font-bold">{n.senderDisplayName || t('common.someone')}</span> {typeLabel(n)}
@@ -388,7 +388,7 @@ function PostDetail({ postId, currentUser, onBack }) {
           </div>
           <div className="flex items-center justify-between pt-4 border-t border-slate-200">
             <div className="flex items-center gap-3 text-sm text-slate-500">
-              <Avatar userId={post.userId} displayName={post.userDisplayName} size="xs" />
+              <ChemCityUserProfileIcon userId={post.userId} displayName={post.userDisplayName} size={28} />
               <span className="font-semibold">{post.userDisplayName}</span>
               <span>·</span>
               <span>{formatDate(post.createdAt)}</span>
@@ -411,7 +411,7 @@ function PostDetail({ postId, currentUser, onBack }) {
             <div key={reply.id} className="bg-white rounded-xl border-2 border-slate-200 p-4">
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex items-center gap-2">
-                  <Avatar userId={reply.userId} displayName={reply.userDisplayName} size="xs" />
+                  <ChemCityUserProfileIcon userId={reply.userId} displayName={reply.userDisplayName} size={28} />
                   <div>
                     <span className="font-bold text-slate-800 text-sm">{reply.userDisplayName}</span>
                     <span className="text-xs text-slate-400 ml-2">{formatDate(reply.createdAt)}</span>
@@ -458,7 +458,7 @@ function PostDetail({ postId, currentUser, onBack }) {
       {currentUser ? (
         <div className="bg-white rounded-xl border-2 border-slate-200 p-4">
           <div className="flex gap-3">
-            <Avatar userId={currentUser.uid} displayName={currentUser.displayName} size="sm" />
+            <ChemCityUserProfileIcon userId={currentUser.uid} displayName={currentUser.displayName} size={32} />
             <div className="flex-1">
               <textarea value={newReply} onChange={e => setNewReply(e.target.value)} rows="3"
                 placeholder={t('forum.writeReply')}

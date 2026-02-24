@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Coins, Gem, ChevronLeft, Sparkles, BookOpen, ShoppingBag, Archive, Fuel, X, Zap } from 'lucide-react';
+import { Coins, Gem, ChevronLeft, Sparkles, BookOpen, ShoppingBag, Archive, Fuel, X, Zap, Ticket } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
 
 export const CurrencyBar: React.FC = () => {
@@ -12,11 +12,14 @@ export const CurrencyBar: React.FC = () => {
   const navigateToStore    = useChemCityStore(s => s.navigateToStore);
   const navigateToCollections = useChemCityStore(s => s.navigateToCollections);
   const navigateToGasStationDistributor = useChemCityStore(s => s.navigateToGasStationDistributor);
+  const navigateToGacha    = useChemCityStore(s => (s as any).navigateToGacha);
+  const navigateToCosmetics = useChemCityStore(s => (s as any).navigateToCosmetics);
 
   const [skillsOpen, setSkillsOpen] = useState(false);
 
   const coins    = user?.currencies.coins ?? 0;
   const diamonds = user?.currencies.diamonds ?? 0;
+  const tickets  = (user?.currencies as any)?.tickets ?? 0;
 
   const showGasDistributorButton = view === 'place' && selectedPlaceId === 'gas_station' && (user?.extraSlotsBudget ?? 0) > 0;
 
@@ -117,6 +120,21 @@ export const CurrencyBar: React.FC = () => {
             </span>
           </div>
 
+          {/* Tickets pill */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'rgba(8,20,19,0.9)',
+            border: '1.5px solid rgba(167,139,250,0.25)',
+            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+            borderRadius: 20, padding: '5px 10px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          }}>
+            <Ticket size={12} color="#a78bfa" />
+            <span style={{ color: '#fff', fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+              {Number(tickets || 0).toLocaleString()}
+            </span>
+          </div>
+
           <NavBtn onClick={() => setSkillsOpen(true)} active={false} label="Skill Boosts">
             <Sparkles size={15} />
           </NavBtn>
@@ -125,6 +143,12 @@ export const CurrencyBar: React.FC = () => {
           </NavBtn>
           <NavBtn onClick={navigateToStore} active={view === 'store'} label="ChemStore">
             <ShoppingBag size={15} />
+          </NavBtn>
+          <NavBtn onClick={() => navigateToGacha?.()} active={view === 'gacha'} label="Gacha Machine" accent>
+            <Ticket size={15} />
+          </NavBtn>
+          <NavBtn onClick={() => navigateToCosmetics?.()} active={view === 'cosmetics'} label="Cosmetics" accent>
+            <Sparkles size={15} />
           </NavBtn>
           <NavBtn onClick={navigateToInventory} active={view === 'inventory'} label="Card Inventory">
             <Archive size={15} />

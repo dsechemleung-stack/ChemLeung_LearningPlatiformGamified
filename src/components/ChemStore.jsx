@@ -6,23 +6,28 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { purchaseItem, equipItem } from '../services/tokenService';
-import { STORE_ITEMS, RARITY_COLORS, RARITY_BORDER, RARITY_LABELS } from '../utils/storeItems';
-import { ArrowLeft, ShoppingBag, Sparkles, Check, Lock, Gem } from 'lucide-react';
-import TokenRulesModal from './TokenRulesModal';
+import { ArrowLeft, ShoppingBag } from 'lucide-react';
+import { getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
+import { callChemCityBuyTickets, callChemCityPurchaseCosmetic } from '../lib/chemcity/cloudFunctions';
 
 export default function ChemStore() {
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
   const { t } = useLanguage();
-  const [selectedCategory, setSelectedCategory] = useState('profilePics');
+  const [selectedCategory, setSelectedCategory] = useState('tickets');
   const [purchasing, setPurchasing] = useState(null);
   const [notification, setNotification] = useState(null);
-  const [showRules, setShowRules] = useState(false);
 
-  const tokens = userProfile?.tokens || 0;
-  const inventory = userProfile?.inventory || [];
-  const equipped = userProfile?.equipped || {};
+  const [cosmeticsMap, setCosmeticsMap] = useState(null);
+
+  const chemcity = userProfile?.chemcity || {};
+  const currencies = chemcity?.currencies || {};
+  const coins = Number(currencies.coins || 0);
+  const tickets = Number(currencies.tickets || 0);
+  const ownedCosmetics = Array.isArray(chemcity?.ownedCosmetics) ? chemcity.ownedCosmetics.map(String) : [];
+  const ownedCosmeticsSet = new Set(ownedCosmetics);
+
+  const gender = userProfile?.gender || 'boy';
 
   // Show notification
   const showNotification = (message, type = 'success') => {
@@ -30,55 +35,60 @@ export default function ChemStore() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // Handle purchase
-  const handlePurchase = async (item) => {
+  useEffect(() => {
+    let mounted = true;
+    getCosmeticsMap()
+      .then((m) => {
+        if (!mounted) return;
+        setCosmeticsMap(m);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCosmeticsMap(new Map());
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const categories = [
+    { key: 'tickets', label: 'Tickets', icon: '🎟️' },
+    { key: 'avatars', label: 'Avatars', icon: '🧑' },
+    { key: 'backgrounds', label: 'Backgrounds', icon: '🖼️' },
+  ];
+
+  const allCosmetics = cosmeticsMap ? Array.from(cosmeticsMap.values()) : [];
+  const shopCosmetics = allCosmetics.filter((c) => c?.availability?.channels?.shop === true && c?.deprecated !== true);
+  const currentCosmetics =
+    selectedCategory === 'avatars'
+      ? shopCosmetics.filter((c) => c.type === 'avatar')
+      : selectedCategory === 'backgrounds'
+        ? shopCosmetics.filter((c) => c.type === 'background')
+        : [];
+
+  const handleBuyTickets = async (count) => {
     if (purchasing) return;
-    
-    if (tokens < item.price) {
-      showNotification(t('store.notEnoughTokens'), 'error');
-      return;
-    }
-
-    setPurchasing(item.id);
-
+    setPurchasing(`tickets_${count}`);
     try {
-      const result = await purchaseItem(currentUser.uid, item.id, item.price);
-      
-      if (result.success) {
-        showNotification(t('store.purchased').replace('{name}', item.name), 'success');
-      } else {
-        showNotification(result.error || t('store.purchaseFailed'), 'error');
-      }
-    } catch (error) {
-      showNotification(t('store.pleaseTryAgain'), 'error');
+      await callChemCityBuyTickets({ count });
+      showNotification(`Bought ${count} tickets`, 'success');
+    } catch (e) {
+      showNotification(e?.message || 'Failed to buy tickets', 'error');
     }
-
     setPurchasing(null);
   };
 
-  // Handle equip
-  const handleEquip = async (item) => {
+  const handleBuyCosmetic = async (cosmetic, currency) => {
+    if (purchasing) return;
+    setPurchasing(cosmetic.id);
     try {
-      const slot = item.category;
-      const result = await equipItem(currentUser.uid, item.id, slot);
-      
-      if (result.success) {
-        showNotification(t('store.equipped').replace('{name}', item.name), 'success');
-      } else {
-        showNotification(result.error || t('store.failedToEquip'), 'error');
-      }
-    } catch (error) {
-      showNotification(t('store.failedToEquipItem'), 'error');
+      await callChemCityPurchaseCosmetic({ cosmeticId: cosmetic.id, currency });
+      showNotification(`Purchased ${cosmetic.name}`, 'success');
+    } catch (e) {
+      showNotification(e?.message || 'Purchase failed', 'error');
     }
+    setPurchasing(null);
   };
-
-  const categories = [
-    { key: 'profilePics', label: t('store.profilePics'), icon: '🎭' },
-    { key: 'badges', label: t('store.badges'), icon: '🏅' },
-    { key: 'themes', label: t('store.themes'), icon: '🎨' }
-  ];
-
-  const currentItems = STORE_ITEMS[selectedCategory] || [];
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -124,10 +134,12 @@ export default function ChemStore() {
                 <div className="text-xs font-bold tracking-widest text-slate-500 uppercase">
                   {t('store.yourBalance')}
                 </div>
-                <div className="mt-1 flex items-center justify-end gap-2">
-                  <Gem size={20} className="text-amber-600" fill="currentColor" />
-                  <span className="text-3xl font-black text-slate-900 tabular-nums">
-                    {tokens}
+                <div className="mt-2 flex items-center justify-end gap-2">
+                  <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-black tabular-nums">
+                    {coins} coins
+                  </span>
+                  <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-black tabular-nums">
+                    {tickets} tickets
                   </span>
                 </div>
                 <div className="mt-3 receipt-rule" />
@@ -138,18 +150,7 @@ export default function ChemStore() {
             </div>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setShowRules(true)}
-          className="w-12 h-12 bg-white rounded-xl border-2 border-slate-200 hover:border-lab-blue transition-all flex items-center justify-center font-black text-lab-blue hover:scale-110 active:scale-105"
-          title={t('store.howToEarnTokens')}
-        >
-          ?
-        </button>
       </div>
-
-      <TokenRulesModal open={showRules} onClose={() => setShowRules(false)} />
 
       {/* Category Tabs */}
       <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
@@ -172,110 +173,103 @@ export default function ChemStore() {
 
         {/* Items Grid */}
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {currentItems.map(item => {
-              const owned = inventory.includes(item.id);
-              const isEquipped = equipped[item.category] === item.id;
-              const canAfford = tokens >= item.price;
-              const isFree = item.price === 0;
-
-              return (
-                <div
-                  key={item.id}
-                  className={`relative bg-white rounded-2xl border-4 ${RARITY_BORDER[item.rarity]} overflow-hidden transition-all hover:scale-105 hover:shadow-2xl group`}
-                >
-                  {/* Rarity Badge */}
-                  <div className={`absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-black text-white bg-gradient-to-r ${RARITY_COLORS[item.rarity]} shadow-lg z-10 flex items-center gap-1`}>
-                    <Sparkles size={12} />
-                    {RARITY_LABELS[item.rarity]}
+          {selectedCategory === 'tickets' ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[1, 10, 50].map((count) => {
+                const cost = 250 * count;
+                const canAfford = coins >= cost;
+                return (
+                  <div
+                    key={count}
+                    className="bg-white rounded-2xl border-2 border-slate-200 p-6 shadow-sm"
+                  >
+                    <div className="text-2xl font-black text-slate-900">{count} Tickets</div>
+                    <div className="mt-1 text-slate-600 font-semibold">Cost: {cost} coins</div>
+                    <button
+                      onClick={() => handleBuyTickets(count)}
+                      disabled={!canAfford || purchasing === `tickets_${count}`}
+                      className={`mt-4 w-full px-4 py-3 rounded-xl font-black transition-all ${
+                        canAfford
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:opacity-90'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {purchasing === `tickets_${count}` ? 'Buying...' : canAfford ? 'Buy' : 'Not enough coins'}
+                    </button>
                   </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {currentCosmetics.map((cosmetic) => {
+                const owned = ownedCosmeticsSet.has(cosmetic.id);
+                const coinCost = Number(cosmetic?.shopData?.coinCost || 0);
+                const canBuyWithCoins = Number.isFinite(coinCost) && coinCost > 0;
+                const canAfford = canBuyWithCoins ? coins >= coinCost : false;
 
-                  {/* Item Icon */}
-                  <div className="p-8 bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center">
-                    {item.category === 'theme' ? (
-                      <div className="w-32 h-32 rounded-2xl shadow-2xl" style={{ background: item.preview }}></div>
-                    ) : (
-                      <div className="text-8xl group-hover:scale-110 transition-transform">
-                        {item.icon}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Item Info */}
-                  <div className="p-6">
-                    <h3 className="text-xl font-black text-slate-800 mb-1">
-                      {item.name}
-                    </h3>
-                    <p className="text-sm text-slate-600 mb-4">
-                      {item.description}
-                    </p>
-
-                    {/* Price & Actions */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Gem size={20} className="text-amber-500" fill="currentColor" />
-                        <span className="text-2xl font-black text-slate-800">
-                          {item.price === 0 ? 'FREE' : item.price}
-                        </span>
-                      </div>
-
-                      {/* Action Buttons */}
-                      {owned ? (
-                        isEquipped ? (
-                          <button
-                            disabled
-                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-bold cursor-default"
-                          >
-                            <Check size={16} />
-                            {t('store.equipped')}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleEquip(item)}
-                            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg font-bold hover:opacity-90 transition-all"
-                          >
-                            <Sparkles size={16} />
-                            {t('store.equip')}
-                          </button>
-                        )
+                return (
+                  <div
+                    key={cosmetic.id}
+                    className="relative bg-white rounded-2xl border-2 border-slate-200 overflow-hidden transition-all hover:shadow-lg"
+                  >
+                    <div className="p-4 bg-slate-50 flex items-center justify-center">
+                      {cosmetic.type === 'background' ? (
+                        <img
+                          src={cosmetic.imageUrl}
+                          alt=""
+                          className="w-full h-40 object-cover rounded-xl"
+                          draggable={false}
+                        />
                       ) : (
-                        <button
-                          onClick={() => handlePurchase(item)}
-                          disabled={!canAfford || purchasing === item.id}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all ${
-                            canAfford
-                              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:opacity-90'
-                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                          }`}
-                        >
-                          {purchasing === item.id ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                              {t('store.buying')}
-                            </>
-                          ) : !canAfford && !isFree ? (
-                            <>
-                              <Lock size={16} />
-                              {t('store.locked')}
-                            </>
-                          ) : (
-                            <>
-                              <ShoppingBag size={16} />
-                              {isFree ? t('store.claim') : t('store.buy')}
-                            </>
-                          )}
-                        </button>
+                        <div className="relative w-full h-40 rounded-xl overflow-hidden bg-gradient-to-b from-indigo-900 to-gray-900">
+                          <img
+                            src={cosmetic.imageUrl}
+                            alt=""
+                            draggable={false}
+                            className="absolute bottom-0 left-0 h-full w-[200%] object-contain"
+                            style={{ transform: gender === 'girl' ? 'translateX(-50%)' : 'translateX(0%)' }}
+                          />
+                        </div>
                       )}
                     </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
 
-          {currentItems.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-slate-400 text-lg">{t('store.comingSoon')}</p>
+                    <div className="p-5">
+                      <div className="text-lg font-black text-slate-900 truncate">{cosmetic.name}</div>
+
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="text-slate-700 font-black tabular-nums">
+                          {canBuyWithCoins ? `${coinCost} coins` : 'Not for sale'}
+                        </div>
+
+                        {owned ? (
+                          <div className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-black text-sm">
+                            Owned
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleBuyCosmetic(cosmetic, 'coins')}
+                            disabled={!canBuyWithCoins || !canAfford || purchasing === cosmetic.id}
+                            className={`px-4 py-2 rounded-xl font-black transition-all ${
+                              canBuyWithCoins && canAfford
+                                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:opacity-90'
+                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                            }`}
+                          >
+                            {purchasing === cosmetic.id ? 'Buying...' : canBuyWithCoins ? 'Buy' : 'Locked'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {currentCosmetics.length === 0 && (
+                <div className="text-center py-12 col-span-full">
+                  <p className="text-slate-400 text-lg">No items for sale yet.</p>
+                </div>
+              )}
             </div>
           )}
         </div>

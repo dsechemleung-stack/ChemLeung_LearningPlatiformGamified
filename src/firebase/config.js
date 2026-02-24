@@ -1,7 +1,8 @@
 // Firebase configuration and initialization
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, setLogLevel } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 // Your web app's Firebase configuration
 // TODO: Replace with your own Firebase config from Firebase Console
@@ -20,6 +21,22 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase services
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+const forceLongPolling = String(import.meta.env.VITE_FIRESTORE_FORCE_LONG_POLLING ?? '').trim() === '1';
+const disableListeners = String(import.meta.env.VITE_DISABLE_FIRESTORE_LISTENERS ?? '').trim() === '1';
+if (disableListeners) {
+  // Keep console usable in environments where Listen/channel is blocked (e.g. Safari/network CORS).
+  setLogLevel('error');
+}
+export const db = initializeFirestore(app, {
+  ...(forceLongPolling
+    ? {
+        experimentalForceLongPolling: true,
+        useFetchStreams: false,
+      }
+    : {
+        experimentalAutoDetectLongPolling: true,
+      }),
+});
+export const storage = getStorage(app);
 
 export default app;

@@ -1,0 +1,4781 @@
+
+
+==================== FILE: scripts/seed-firestore.ts ====================
+
+// ============================================================
+// ChemCity — Firestore Seeder
+// Usage: npx ts-node scripts/seed-firestore.ts
+//
+// Uploads all items + places to Firestore, then auto-increments
+// meta/cacheVersion so all clients get fresh data next open.
+//
+// IMPORTANT:
+//   - Run AFTER excel-to-json.ts
+//   - NEVER delete existing item documents — set deprecated:true
+//   - After each run, a cacheVersion bump is printed. All clients
+//     will refetch static data on next app open.
+// ============================================================
+
+import { applicationDefault, cert, initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
+import sharp from 'sharp';
+
+// ─── Firebase Admin Init ─────────────────────────────────────
+// Expects GOOGLE_APPLICATION_CREDENTIALS env var pointing to
+// your service account JSON, OR running in a GCP environment.
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const serviceAccountPath = path.resolve(__dirname, '../service-account.json');
+
+const envCredPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const envProjectId =
+  process.env.CHEMCITY_FIREBASE_PROJECT_ID ||
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.GCLOUD_PROJECT ||
+  process.env.GOOGLE_CLOUD_PROJECT;
+
+const envStorageBucket =
+  process.env.CHEMCITY_STORAGE_BUCKET ||
+  process.env.FIREBASE_STORAGE_BUCKET ||
+  process.env.GCLOUD_STORAGE_BUCKET;
+
+type ServiceAccountJson = {
+  project_id?: string;
+  client_email?: string;
+  private_key?: string;
+};
+
+function resolveStorageBucket(projectId?: string): string | undefined {
+  const raw = (envStorageBucket || '').trim();
+  if (raw) return raw;
+  if (!projectId) return undefined;
+  return `${projectId}.appspot.com`;
+}
+
+function storageDownloadUrl(bucketName: string, objectPath: string, token: string): string {
+  const encoded = encodeURIComponent(objectPath);
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encoded}?alt=media&token=${token}`;
+}
+
+function extensionFromContentType(contentType: string | null): string {
+  const ct = (contentType || '').toLowerCase();
+  if (ct.includes('image/png')) return 'png';
+  if (ct.includes('image/webp')) return 'webp';
+  if (ct.includes('image/jpeg')) return 'jpg';
+  if (ct.includes('image/jpg')) return 'jpg';
+  if (ct.includes('image/gif')) return 'gif';
+  return 'png';
+}
+
+function isFirebaseStorageUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname.includes('firebasestorage');
+  } catch {
+    return false;
+  }
+}
+
+async function fetchImageBuffer(url: string): Promise<{ buf: Buffer; contentType: string | null }> {
+  const res = await fetch(url, {
+    redirect: 'follow',
+    headers: {
+      // Helps some hosts that behave differently on unknown UA
+      'user-agent': 'ChemCitySeeder/1.0',
+      // Avoid referrer restrictions
+      'referer': '',
+    },
+  } as any);
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} when fetching image`);
+  }
+  const contentType = res.headers.get('content-type');
+  const arr = await res.arrayBuffer();
+  return { buf: Buffer.from(arr), contentType };
+}
+
+if (fs.existsSync(serviceAccountPath)) {
+  const serviceAccount = JSON.parse(
+    fs.readFileSync(serviceAccountPath, 'utf-8'),
+  ) as ServiceAccountJson;
+  console.log(
+    `[Seeder Auth] Using service-account.json (projectId=${serviceAccount.project_id ?? 'unknown'}, email=${serviceAccount.client_email ?? 'unknown'})`,
+  );
+  const bucket = resolveStorageBucket(serviceAccount.project_id);
+  if (bucket) console.log(`[Seeder Storage] bucket=${bucket}`);
+  initializeApp({
+    credential: cert(serviceAccount as unknown as Record<string, unknown>),
+    projectId: serviceAccount.project_id,
+    ...(bucket ? { storageBucket: bucket } : {}),
+  });
+} else if (envCredPath && fs.existsSync(envCredPath)) {
+  const serviceAccount = JSON.parse(
+    fs.readFileSync(envCredPath, 'utf-8'),
+  ) as ServiceAccountJson;
+  console.log(
+    `[Seeder Auth] Using GOOGLE_APPLICATION_CREDENTIALS (projectId=${serviceAccount.project_id ?? 'unknown'}, email=${serviceAccount.client_email ?? 'unknown'})`,
+  );
+  const bucket = resolveStorageBucket(serviceAccount.project_id);
+  if (bucket) console.log(`[Seeder Storage] bucket=${bucket}`);
+  initializeApp({
+    credential: cert(serviceAccount as unknown as Record<string, unknown>),
+    projectId: serviceAccount.project_id,
+    ...(bucket ? { storageBucket: bucket } : {}),
+  });
+} else {
+  // Fall back to Application Default Credentials (CI/cloud)
+  console.log('[Seeder Auth] Using applicationDefault()');
+  if (!envProjectId) {
+    throw new Error(
+      'Seeder is using applicationDefault(), but no project id was detected. ' +
+        'Set CHEMCITY_FIREBASE_PROJECT_ID (recommended) or GCLOUD_PROJECT / GOOGLE_CLOUD_PROJECT.',
+    );
+  }
+  console.log(`[Seeder Auth] Using projectId=${envProjectId}`);
+  const bucket = resolveStorageBucket(envProjectId);
+  if (bucket) console.log(`[Seeder Storage] bucket=${bucket}`);
+  initializeApp({
+    credential: applicationDefault(),
+    projectId: envProjectId,
+    ...(bucket ? { storageBucket: bucket } : {}),
+  });
+}
+
+const db = getFirestore();
+const storage = getStorage();
+
+// ─── Config ──────────────────────────────────────────────────
+
+const DATA_DIR = path.resolve(__dirname, '../data/items');
+const PLACES_FILE = path.resolve(__dirname, '../data/places.json');
+const COLLECTIONS_FILE = path.resolve(__dirname, '../data/collections.json');
+const TOPICS_FILE = path.resolve(__dirname, '../data/topics.json');
+
+const BATCH_SIZE = 400; // Firestore batch limit is 500 ops
+
+const SHOULD_SEED_GACHA_FLAG = '--seed-gacha';
+const SHOULD_UPLOAD_COSMETICS_FLAG = '--upload-cosmetics';
+const SHOULD_UPLOAD_RAW_AVATARS_FLAG = '--upload-raw-avatars';
+
+// ─── Helpers ─────────────────────────────────────────────────
+
+async function batchWrite(
+  collectionName: string,
+  docs: Array<{ id: string; [key: string]: unknown }>,
+): Promise<void> {
+  console.log(`   Uploading ${docs.length} docs to "${collectionName}"...`);
+  let batch = db.batch();
+  let opCount = 0;
+  let totalDocs = 0;
+
+  for (const docData of docs) {
+    const { id, ...data } = docData;
+    const ref = db.collection(collectionName).doc(id);
+    batch.set(ref, data, { merge: true }); // merge:true preserves unlocked fields on user docs
+    opCount++;
+    totalDocs++;
+
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`   ✅ ${totalDocs} docs written to "${collectionName}"`);
+}
+
+function readJsonFile<T>(filePath: string, label: string): T[] {
+  if (!fs.existsSync(filePath)) {
+    console.warn(`   ⚠️  ${label} file not found at ${filePath} — skipping`);
+    return [];
+  }
+  return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T[];
+}
+
+function titleCaseFromId(id: string): string {
+  return id
+    .replace(/^col_/, '')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function cosmeticIdFromFilename(prefix: 'avatar' | 'bg', filename: string): string {
+  const normalized = filename.replace(/\.png\.png$/i, '.png');
+  const base = normalized
+    .replace(/_bg_removed\.png$/i, '')
+    .replace(/_bg_removed$/i, '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/^avator[_-]?/i, '')
+    .replace(/^avatar[_-]?/i, '')
+    .replace(/^background[_-]?/i, '')
+    .trim();
+
+  const slug = base
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+
+  return `${prefix}_${slug || randomUUID().slice(0, 8)}`;
+}
+
+function contentTypeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.gif') return 'image/gif';
+  return 'application/octet-stream';
+}
+
+async function uploadLocalFileToStorage(bucketName: string, objectPath: string, localPath: string): Promise<string> {
+  const bucket = storage.bucket();
+  const token = randomUUID();
+  const buf = fs.readFileSync(localPath);
+  const file = bucket.file(objectPath);
+
+  await file.save(buf, {
+    resumable: false,
+    metadata: {
+      contentType: contentTypeFromPath(localPath),
+      cacheControl: 'public, max-age=31536000, immutable',
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
+  });
+
+  return storageDownloadUrl(bucketName, objectPath, token);
+}
+
+async function uploadBufferToStorage(
+  bucketName: string,
+  objectPath: string,
+  buf: Buffer,
+  contentType: string,
+): Promise<string> {
+  const bucket = storage.bucket();
+  const token = randomUUID();
+  const file = bucket.file(objectPath);
+
+  await file.save(buf, {
+    resumable: false,
+    metadata: {
+      contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
+  });
+
+  return storageDownloadUrl(bucketName, objectPath, token);
+}
+
+// ─── Seed Gacha (Cosmetics + Banners + Events) ───────────────
+
+type SeedCosmetic = {
+  id: string;
+  [key: string]: unknown;
+};
+
+type SeedBanner = {
+  id: string;
+  entries: Array<{ cosmeticId: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
+
+type SeedEvent = {
+  id: string;
+  [key: string]: unknown;
+};
+
+const GACHA_SEED = {
+  cosmetics: [
+    {
+      id: 'avatar_chemist_01',
+      type: 'avatar',
+      name: 'Lab Chemist',
+      rarity: 'common',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/chemist_01.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 500 },
+      faceCrop: { x: 0.2, y: 0.05, w: 0.6, h: 0.3 },
+      tags: ['lab', 'science'],
+    },
+    {
+      id: 'avatar_alchemist_rare',
+      type: 'avatar',
+      name: 'Dark Alchemist',
+      rarity: 'rare',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/alchemist_rare.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.15, y: 0.03, w: 0.7, h: 0.35 },
+      tags: ['alchemy', 'dark'],
+    },
+    {
+      id: 'avatar_archmage_epic',
+      type: 'avatar',
+      name: 'Archmage of Elements',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/archmage_epic.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.2, y: 0.04, w: 0.6, h: 0.32 },
+      tags: ['magic', 'elements'],
+    },
+    {
+      id: 'avatar_godchemist_legendary',
+      type: 'avatar',
+      name: 'God of Chemistry',
+      rarity: 'legendary',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/godchemist_legendary.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.18, y: 0.02, w: 0.64, h: 0.3 },
+      tags: ['legendary', 'divine'],
+    },
+    {
+      id: 'bg_lab_common',
+      type: 'background',
+      name: 'Chem Lab',
+      rarity: 'common',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/lab_common.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 250, ticketCost: 1 },
+      tags: ['lab', 'indoor'],
+    },
+    {
+      id: 'bg_volcano_uncommon',
+      type: 'background',
+      name: 'Volcano Lab',
+      rarity: 'uncommon',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/volcano_uncommon.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 600, ticketCost: 2 },
+      tags: ['outdoor', 'fire'],
+    },
+    {
+      id: 'bg_crystal_rare',
+      type: 'background',
+      name: 'Crystal Cavern',
+      rarity: 'rare',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/crystal_rare.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['cave', 'magic'],
+    },
+    {
+      id: 'bg_nebula_epic',
+      type: 'background',
+      name: 'Nebula Observatory',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/nebula_epic.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['space', 'epic'],
+    },
+    {
+      id: 'bg_godforge_legendary',
+      type: 'background',
+      name: 'Godforge',
+      rarity: 'legendary',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/godforge_legendary.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['legendary', 'forge'],
+    },
+    {
+      id: 'avatar_neon_event',
+      type: 'avatar',
+      name: 'Neon Scientist',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/neon_event.png',
+      availability: {
+        channels: { gacha: true, shop: false },
+        eventKey: 'event_neon_2025',
+        startAt: '2025-12-01T00:00:00Z',
+        endAt: '2025-12-31T23:59:59Z',
+      },
+      faceCrop: { x: 0.2, y: 0.04, w: 0.6, h: 0.32 },
+      tags: ['neon', 'event', 'limited'],
+    },
+  ] as const satisfies ReadonlyArray<SeedCosmetic>,
+  banners: [
+    {
+      id: 'banner_standard',
+      name: 'Standard Pool',
+      active: true,
+      rarityRates: { common: 0.5, uncommon: 0.28, rare: 0.15, epic: 0.05, legendary: 0.02 },
+      duplicateRefundCoinsByRarity: { common: 24, uncommon: 42, rare: 80, epic: 240, legendary: 600 },
+      pityRules: { epicEvery: 20, legendaryEvery: 40 },
+      cacheVersion: 1,
+      entries: [
+        { cosmeticId: 'avatar_chemist_01', rarity: 'common', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_alchemist_rare', rarity: 'rare', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_archmage_epic', rarity: 'epic', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_godchemist_legendary', rarity: 'legendary', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'bg_lab_common', rarity: 'common', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_volcano_uncommon', rarity: 'uncommon', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_crystal_rare', rarity: 'rare', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_nebula_epic', rarity: 'epic', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_godforge_legendary', rarity: 'legendary', type: 'background', weight: 1, enabled: true },
+      ],
+    },
+  ] as const satisfies ReadonlyArray<SeedBanner>,
+  events: [
+    {
+      id: 'event_neon_2025',
+      name: 'Neon Science Fair',
+      description: 'Limited neon-themed cosmetics for the science fair season!',
+      startAt: '2025-12-01T00:00:00Z',
+      endAt: '2025-12-31T23:59:59Z',
+      isActive: true,
+      bannerIds: ['banner_neon_event'],
+    },
+  ] as const satisfies ReadonlyArray<SeedEvent>,
+};
+
+async function seedGacha(): Promise<void> {
+  console.log('\n🎟️  Seeding gacha (cosmetics, banners, entries, events)...');
+
+  // IMPORTANT:
+  // If you've already uploaded real cosmetics (with Firebase Storage URLs),
+  // do NOT overwrite them with the demo placeholders from GACHA_SEED.
+  // Instead, we build banner entries from whatever cosmetics exist in Firestore.
+  const cosmeticsSnap = await db.collection('cosmetics').get();
+  const existingCosmetics = cosmeticsSnap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as any) }))
+    .filter((c) => c?.deprecated !== true);
+
+  const hasAnyCosmetics = existingCosmetics.length > 0;
+  const hasRealUploadedCosmetics = existingCosmetics.some((c) => typeof c?.imageUrl === 'string' && isFirebaseStorageUrl(c.imageUrl));
+
+  if (!hasAnyCosmetics) {
+    await batchWrite('cosmetics', GACHA_SEED.cosmetics.map((c) => ({ ...c })) as any);
+  } else if (!hasRealUploadedCosmetics) {
+    console.log('   ℹ️  Cosmetics exist but none look like Firebase Storage URLs. Leaving cosmetics unchanged.');
+  } else {
+    console.log(`   ✅ Found ${existingCosmetics.length} existing cosmetics (with Firebase Storage URLs). Skipping demo cosmetics seed.`);
+
+    // Clean up any old demo cosmetics so they don't leak into UI or future pools.
+    const demoCosmetics = existingCosmetics.filter(
+      (c) => typeof c?.imageUrl === 'string' && String(c.imageUrl).includes('storage.example.com'),
+    );
+    if (demoCosmetics.length > 0) {
+      console.log(`   🧹 Deprecating ${demoCosmetics.length} demo cosmetics (storage.example.com)...`);
+      let demoBatch = db.batch();
+      let demoOps = 0;
+      for (const c of demoCosmetics) {
+        const ref = db.collection('cosmetics').doc(String(c.id));
+        demoBatch.set(
+          ref,
+          {
+            deprecated: true,
+            availability: { channels: { gacha: false, shop: false } },
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        );
+        demoOps++;
+        if (demoOps >= BATCH_SIZE) {
+          await demoBatch.commit();
+          demoBatch = db.batch();
+          demoOps = 0;
+        }
+      }
+      if (demoOps > 0) await demoBatch.commit();
+    }
+  }
+
+  // Banners + entries use a nested subcollection; batchWrite() only handles top-level collections.
+  console.log(`   Uploading ${GACHA_SEED.banners.length} docs to "gachaBanners" + entries...`);
+
+  let batch = db.batch();
+  let opCount = 0;
+  let totalOps = 0;
+
+  const bannerDoc = GACHA_SEED.banners[0];
+  const bannerId = bannerDoc?.id || 'banner_standard';
+  const { id: _ignoredId, entries: _ignoredEntries, ...bannerData } = bannerDoc;
+
+  batch.set(db.collection('gachaBanners').doc(bannerId), bannerData, { merge: true });
+  opCount++;
+  totalOps++;
+
+  // Build entries from existing cosmetics when available.
+  const gachaEnabledCosmetics = hasAnyCosmetics
+    ? existingCosmetics.filter((c) => c?.availability?.channels?.gacha === true)
+    : [];
+
+  // Prefer only real uploaded cosmetics (Firebase Storage URLs) to avoid demo placeholders.
+  const realGachaCosmetics = gachaEnabledCosmetics.filter(
+    (c) => typeof c?.imageUrl === 'string' && isFirebaseStorageUrl(String(c.imageUrl)),
+  );
+
+  const cosmeticsForEntries = realGachaCosmetics.length > 0
+    ? realGachaCosmetics
+    : gachaEnabledCosmetics;
+
+  const entrySource = hasAnyCosmetics
+    ? cosmeticsForEntries.map((c) => ({
+      cosmeticId: String(c.id),
+      rarity: String(c.gachaRarity || c.rarity || 'common'),
+      type: String(c.type || 'avatar'),
+      weight: Number.isFinite(Number(c.gachaWeight)) && Number(c.gachaWeight) > 0 ? Number(c.gachaWeight) : 1,
+      enabled: true,
+    }))
+    : bannerDoc.entries;
+
+  // Remove stale entry docs from previous seeds (e.g. demo entries) so they can't be drawn.
+  const desiredEntryIds = new Set(entrySource.map((e) => String((e as any).cosmeticId)));
+  const existingEntriesSnap = await db.collection('gachaBanners').doc(bannerId).collection('entries').get();
+  const staleEntries = existingEntriesSnap.docs.filter((d) => !desiredEntryIds.has(d.id));
+  if (staleEntries.length > 0) {
+    console.log(`   🧹 Deleting ${staleEntries.length} stale banner entries...`);
+    for (const docSnap of staleEntries) {
+      batch.delete(docSnap.ref);
+      opCount++;
+      totalOps++;
+      if (opCount >= BATCH_SIZE) {
+        await batch.commit();
+        batch = db.batch();
+        opCount = 0;
+      }
+    }
+  }
+
+  for (const entry of entrySource) {
+    const { cosmeticId, ...entryData } = entry;
+    batch.set(
+      db.collection('gachaBanners').doc(bannerId).collection('entries').doc(cosmeticId),
+      entryData,
+      { merge: true },
+    );
+    opCount++;
+    totalOps++;
+
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`   ✅ ${totalOps} ops written for banners + entries`);
+
+  await batchWrite('events', GACHA_SEED.events.map((e) => ({ ...e })) as any);
+}
+
+// ─── Seed Items ───────────────────────────────────────────────
+
+async function seedItems(): Promise<number> {
+  if (!fs.existsSync(DATA_DIR)) {
+    console.warn(`   ⚠️  Items data directory not found: ${DATA_DIR} — skipping items seed`);
+    return 0;
+  }
+
+  const jsonFiles = fs.readdirSync(DATA_DIR).filter((f) => f.endsWith('.json'));
+  if (jsonFiles.length === 0) {
+    console.warn(`   ⚠️  No item JSON files found in ${DATA_DIR} — skipping items seed`);
+    return 0;
+  }
+
+  const allItems: Array<{ id: string; [key: string]: unknown }> = [];
+
+  for (const file of jsonFiles) {
+    const items = JSON.parse(
+      fs.readFileSync(path.join(DATA_DIR, file), 'utf-8'),
+    ) as Array<{ id: string }>;
+    allItems.push(...items);
+  }
+
+  await batchWrite('items', allItems);
+  return allItems.length;
+}
+
+// ─── Migrate Item Images to Firebase Storage (optional) ───────
+
+async function migrateItemImagesToStorage(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  console.log(`\n🖼️  Migrating item images to Firebase Storage (bucket=${bucketName})...`);
+
+  const itemsSnap = await db.collection('items').get();
+  const items = itemsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Array<{
+    id: string;
+    imageUrl?: unknown;
+  }>;
+
+  const candidates = items
+    .map((it) => ({ id: it.id, imageUrl: typeof it.imageUrl === 'string' ? it.imageUrl.trim() : '' }))
+    .filter((it) => !!it.imageUrl && !isFirebaseStorageUrl(it.imageUrl));
+
+  console.log(`   Found ${candidates.length} items with non-Storage imageUrl.`);
+  if (candidates.length === 0) return;
+
+  let batch = db.batch();
+  let opCount = 0;
+  let migrated = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const it of candidates) {
+    const itemId = it.id;
+    const srcUrl = it.imageUrl;
+    const docRef = db.collection('items').doc(itemId);
+
+    try {
+      const { buf, contentType } = await fetchImageBuffer(srcUrl);
+      const ext = extensionFromContentType(contentType);
+      const objectPath = `chemcity/items/${itemId}.${ext}`;
+
+      const token = randomUUID();
+      const file = bucket.file(objectPath);
+
+      await file.save(buf, {
+        resumable: false,
+        metadata: {
+          contentType: contentType || undefined,
+          cacheControl: 'public, max-age=31536000, immutable',
+          metadata: {
+            firebaseStorageDownloadTokens: token,
+          },
+        },
+      });
+
+      const nextUrl = storageDownloadUrl(bucketName, objectPath, token);
+
+      batch.set(docRef, { imageUrl: nextUrl }, { merge: true });
+      opCount++;
+      migrated++;
+
+      if (opCount >= BATCH_SIZE) {
+        await batch.commit();
+        batch = db.batch();
+        opCount = 0;
+      }
+    } catch (err: any) {
+      failed++;
+      console.warn(`   ⚠️  Failed to migrate image for item=${itemId}: ${err?.message ?? String(err)}`);
+      // Keep going
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`   ✅ Image migration complete. migrated=${migrated}, skipped=${skipped}, failed=${failed}`);
+}
+
+// ─── Upload Cosmetics Assets to Firebase Storage (optional) ───
+
+async function uploadCosmeticsAssets(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  const avatarsDir =
+    process.env.CHEMCITY_AVATARS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem custome_renamed');
+  const backgroundsDir =
+    process.env.CHEMCITY_BACKGROUNDS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem background');
+
+  console.log(`\n🧑🖼️  Uploading cosmetics assets to Firebase Storage (bucket=${bucketName})...`);
+  console.log(`   Avatars dir: ${avatarsDir}`);
+  console.log(`   Backgrounds dir: ${backgroundsDir}`);
+
+  if (!fs.existsSync(avatarsDir)) {
+    throw new Error(`Avatars directory not found: ${avatarsDir}`);
+  }
+  if (!fs.existsSync(backgroundsDir)) {
+    throw new Error(`Backgrounds directory not found: ${backgroundsDir}`);
+  }
+
+  const allAvatarFilenames = fs.readdirSync(avatarsDir);
+
+  const avatarFiles = allAvatarFilenames
+    .filter((f) => /_bg_removed\.png(\.png)?$/i.test(f))
+    .map((f) => path.join(avatarsDir, f));
+
+  const avatarBgRemovedNums = new Set<string>();
+  for (const f of allAvatarFilenames) {
+    if (!/_bg_removed\.png(\.png)?$/i.test(f)) continue;
+    const m = f.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    if (m?.[1]) avatarBgRemovedNums.add(m[1]);
+  }
+
+  const rawAvatarFilesByNum = new Map<string, string>();
+  for (const raw of allAvatarFilenames) {
+    const normalized = raw.replace(/\.png\.png$/i, '.png');
+    if (!/\.(png|webp|jpg|jpeg)$/i.test(normalized)) continue;
+    if (/_bg_removed(\.[^.]+)?$/i.test(normalized)) continue;
+    if (/_mask(\.[^.]+)?$/i.test(normalized)) continue;
+
+    const m = normalized.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    if (!m?.[1]) continue;
+    const num = m[1];
+    if (!rawAvatarFilesByNum.has(num)) {
+      rawAvatarFilesByNum.set(num, path.join(avatarsDir, raw));
+    }
+  }
+
+  const avatarBaseByNumber = new Map<string, string>();
+  for (const raw of allAvatarFilenames) {
+    const normalized = raw.replace(/\.png\.png$/i, '.png');
+    if (!/\.(png|webp|jpg|jpeg)$/i.test(normalized)) continue;
+    if (/_bg_removed(\.[^.]+)?$/i.test(normalized)) continue;
+
+    const noExt = normalized.replace(/\.[^.]+$/, '');
+    const base = noExt.replace(/^avator[_-]?/i, '').trim();
+    const m = base.match(/^(\d+)(?:[_-].+)?$/);
+    if (!m) continue;
+    const num = m[1];
+    if (!avatarBaseByNumber.has(num)) {
+      avatarBaseByNumber.set(num, base.replace(/\s+/g, '_'));
+    }
+  }
+
+  const backgroundFiles = fs
+    .readdirSync(backgroundsDir)
+    .filter((f) => /\.(jpg|jpeg|png|webp)$/i.test(f))
+    .map((f) => path.join(backgroundsDir, f));
+
+  console.log(`   Found ${avatarFiles.length} avatar files (*_bg_removed.png)`);
+  console.log(`   Found ${backgroundFiles.length} background files`);
+
+  if (avatarFiles.length === 0 && backgroundFiles.length === 0) {
+    console.log('   Nothing to upload.');
+    return;
+  }
+
+  const ops: Array<{ id: string; patch: Record<string, unknown> }> = [];
+
+  function avatarRarityFromNumber(numStr?: string): { rarity: string; gachaEnabled: boolean } {
+    const n = Number(numStr);
+    if (!Number.isFinite(n) || n <= 0) return { rarity: 'common', gachaEnabled: true };
+    if (n === 1) return { rarity: 'common', gachaEnabled: false };
+
+    // Rotation of 7 starting from #2:
+    // 1-2 common, 3-4 uncommon, 5 rare, 6 epic, 7 legendary
+    const offset = (n - 2) % 7;
+    if (offset === 0 || offset === 1) return { rarity: 'common', gachaEnabled: true };
+    if (offset === 2 || offset === 3) return { rarity: 'uncommon', gachaEnabled: true };
+    if (offset === 4) return { rarity: 'rare', gachaEnabled: true };
+    if (offset === 5) return { rarity: 'epic', gachaEnabled: true };
+    return { rarity: 'legendary', gachaEnabled: true };
+  }
+
+  for (const filePath of avatarFiles) {
+    const filename = path.basename(filePath);
+    const numMatch = filename.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    const num = numMatch?.[1];
+    const mappedBase = num ? avatarBaseByNumber.get(num) : undefined;
+    const id = mappedBase
+      ? cosmeticIdFromFilename('avatar', `avatar_${mappedBase}.png`)
+      : cosmeticIdFromFilename('avatar', filename);
+
+    const { rarity, gachaEnabled } = avatarRarityFromNumber(num);
+    const objectPath = `chemcity/cosmetics/avatars/${id}.png`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+
+    let imageUrlBoy: string | undefined;
+    let imageUrlGirl: string | undefined;
+    try {
+      const base = sharp(fs.readFileSync(filePath)).ensureAlpha();
+      const meta = await base.metadata();
+      const w = Number(meta.width);
+      const h = Number(meta.height);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 2 && h > 2) {
+        const halfW = Math.floor(w / 2);
+        const boyHalf = base.clone().extract({ left: 0, top: 0, width: halfW, height: h });
+        const girlHalf = base.clone().extract({ left: w - halfW, top: 0, width: halfW, height: h });
+
+        let boyBuf: Buffer;
+        let girlBuf: Buffer;
+        try {
+          boyBuf = await boyHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+          girlBuf = await girlHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+        } catch {
+          boyBuf = await boyHalf.clone().png().toBuffer();
+          girlBuf = await girlHalf.clone().png().toBuffer();
+        }
+
+        imageUrlBoy = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_boy.png`,
+          boyBuf,
+          'image/png',
+        );
+        imageUrlGirl = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_girl.png`,
+          girlBuf,
+          'image/png',
+        );
+      }
+    } catch (err: any) {
+      console.warn(`   ⚠️  Failed to generate gendered avatar images for ${id}: ${err?.message ?? String(err)}`);
+    }
+
+    ops.push({
+      id,
+      patch: {
+        type: 'avatar',
+        name: titleCaseFromId(id),
+        rarity,
+        imageUrl,
+        ...(imageUrlBoy ? { imageUrlBoy } : {}),
+        ...(imageUrlGirl ? { imageUrlGirl } : {}),
+        availability: { channels: { gacha: gachaEnabled, shop: true } },
+        shopData: { coinCost: 500 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  // Also upload avatars that have NO bg-removed version (by number)
+  for (const [num, filePath] of rawAvatarFilesByNum.entries()) {
+    if (avatarBgRemovedNums.has(num)) continue;
+
+    const filename = path.basename(filePath);
+    const mappedBase = avatarBaseByNumber.get(num);
+    const id = mappedBase
+      ? cosmeticIdFromFilename('avatar', `avatar_${mappedBase}.png`)
+      : cosmeticIdFromFilename('avatar', filename);
+
+    const { rarity, gachaEnabled } = avatarRarityFromNumber(num);
+    const objectPath = `chemcity/cosmetics/avatars/${id}.png`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+
+    let imageUrlBoy: string | undefined;
+    let imageUrlGirl: string | undefined;
+    try {
+      const base = sharp(fs.readFileSync(filePath)).ensureAlpha();
+      const meta = await base.metadata();
+      const w = Number(meta.width);
+      const h = Number(meta.height);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 2 && h > 2) {
+        const halfW = Math.floor(w / 2);
+        const boyHalf = base.clone().extract({ left: 0, top: 0, width: halfW, height: h });
+        const girlHalf = base.clone().extract({ left: w - halfW, top: 0, width: halfW, height: h });
+
+        let boyBuf: Buffer;
+        let girlBuf: Buffer;
+        try {
+          boyBuf = await boyHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+          girlBuf = await girlHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+        } catch {
+          boyBuf = await boyHalf.clone().png().toBuffer();
+          girlBuf = await girlHalf.clone().png().toBuffer();
+        }
+
+        imageUrlBoy = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_boy.png`,
+          boyBuf,
+          'image/png',
+        );
+        imageUrlGirl = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_girl.png`,
+          girlBuf,
+          'image/png',
+        );
+      }
+    } catch (err: any) {
+      console.warn(`   ⚠️  Failed to generate gendered avatar images for ${id}: ${err?.message ?? String(err)}`);
+    }
+
+    ops.push({
+      id,
+      patch: {
+        type: 'avatar',
+        name: titleCaseFromId(id),
+        rarity,
+        imageUrl,
+        ...(imageUrlBoy ? { imageUrlBoy } : {}),
+        ...(imageUrlGirl ? { imageUrlGirl } : {}),
+        availability: { channels: { gacha: gachaEnabled, shop: true } },
+        shopData: { coinCost: 500 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  for (const filePath of backgroundFiles) {
+    const filename = path.basename(filePath);
+    const id = cosmeticIdFromFilename('bg', filename);
+    const ext = path.extname(filename).toLowerCase().replace('.', '') || 'jpg';
+    const objectPath = `chemcity/cosmetics/backgrounds/${id}.${ext}`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+    ops.push({
+      id,
+      patch: {
+        type: 'background',
+        name: titleCaseFromId(id),
+        rarity: 'common',
+        imageUrl,
+        availability: { channels: { gacha: true, shop: true } },
+        shopData: { coinCost: 250 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  console.log(`   Upserting ${ops.length} cosmetics docs to Firestore...`);
+
+  let batch = db.batch();
+  let opCount = 0;
+
+  for (const op of ops) {
+    const ref = db.collection('cosmetics').doc(op.id);
+    batch.set(ref, op.patch, { merge: true });
+    opCount++;
+
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log('   ✅ Cosmetics upload complete.');
+}
+
+async function uploadRawAvatarsAssets(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  const avatarsDir =
+    process.env.CHEMCITY_AVATARS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem custome_renamed');
+
+  console.log(`\n🧑  Uploading RAW avatars to Firebase Storage (bucket=${bucketName})...`);
+  console.log(`   Avatars dir: ${avatarsDir}`);
+
+  if (!fs.existsSync(avatarsDir)) {
+    throw new Error(`Avatars directory not found: ${avatarsDir}`);
+  }
+
+  const rawFilenames = fs.readdirSync(avatarsDir);
+  const rawFiles = rawFilenames
+    .filter((f) => /\.(png|webp|jpg|jpeg)$/i.test(f))
+    .filter((f) => !/_bg_removed\.(png|webp|jpg|jpeg)(\.png)?$/i.test(f) && !/_bg_removed\b/i.test(f))
+    .filter((f) => !/_mask\.(png|webp|jpg|jpeg)$/i.test(f) && !/_mask\b/i.test(f))
+    .map((f) => path.join(avatarsDir, f));
+
+  console.log(`   Found ${rawFiles.length} raw avatar files (excluding _bg_removed)`);
+  if (rawFiles.length === 0) {
+    console.log('   Nothing to upload.');
+    return;
+  }
+
+  let uploaded = 0;
+  for (const filePath of rawFiles) {
+    const filename = path.basename(filePath);
+    const id = cosmeticIdFromFilename('avatar', filename);
+    const objectPath = `chemcity/cosmetics/avatars_raw/${id}${path.extname(filename).toLowerCase() || '.png'}`;
+    await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+    uploaded++;
+  }
+
+  console.log(`   ✅ Raw avatars upload complete. uploaded=${uploaded}`);
+}
+
+// ─── Seed Places ──────────────────────────────────────────────
+
+async function seedPlaces(): Promise<void> {
+  const places = readJsonFile<{ id: string }>(PLACES_FILE, 'places');
+  if (places.length > 0) {
+    await batchWrite('places', places);
+  }
+}
+
+// ─── Seed Collections ─────────────────────────────────────────
+
+async function seedCollections(): Promise<void> {
+  let cols = readJsonFile<{ id: string; [key: string]: unknown }>(COLLECTIONS_FILE, 'collections');
+
+  if (cols.length === 0) {
+    // Auto-generate collections from item docs if collections.json is missing.
+    // This ensures the Collections Album UI can function without a separate file.
+    const jsonFiles = fs.existsSync(DATA_DIR)
+      ? fs.readdirSync(DATA_DIR).filter((f) => f.endsWith('.json'))
+      : [];
+
+    const collectionToItemIds: Record<string, string[]> = {};
+
+    for (const file of jsonFiles) {
+      const filePath = path.join(DATA_DIR, file);
+      const rows = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Array<{
+        id?: string;
+        collections?: unknown;
+      }>;
+
+      for (const row of rows) {
+        const itemId = typeof row?.id === 'string' ? row.id : '';
+        if (!itemId) continue;
+        const cids = Array.isArray(row.collections)
+          ? row.collections.map(String).map((s) => s.trim()).filter(Boolean)
+          : [];
+        for (const cid of cids) {
+          if (!collectionToItemIds[cid]) collectionToItemIds[cid] = [];
+          collectionToItemIds[cid].push(itemId);
+        }
+      }
+    }
+
+    cols = Object.entries(collectionToItemIds)
+      .map(([id, itemIds]) => ({
+        id,
+        displayName: titleCaseFromId(id),
+        description: `Collection: ${titleCaseFromId(id)}`,
+        itemIds: Array.from(new Set(itemIds)).sort(),
+      }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }
+
+  if (cols.length > 0) {
+    await batchWrite('collections', cols);
+  }
+}
+
+// ─── Seed Topics ──────────────────────────────────────────────
+
+async function seedTopics(): Promise<void> {
+  const topics = readJsonFile<{ id: string }>(TOPICS_FILE, 'topics');
+  if (topics.length > 0) {
+    await batchWrite('topics', topics);
+  }
+}
+
+// ─── Bump cacheVersion ────────────────────────────────────────
+
+/**
+ * Reads the current version, increments by 1, writes back.
+ * All clients compare this on every app open — if it differs
+ * from their local manifest, they re-fetch all static data.
+ *
+ * This is called AUTOMATICALLY by this script.
+ * You only need to manually bump if you edit Firestore directly.
+ */
+async function bumpCacheVersion(): Promise<number> {
+  const ref = db.collection('meta').doc('cacheVersion');
+  const snap = await ref.get();
+
+  const currentVersion: number = snap.exists ? (snap.data()!.version as number) : 0;
+  const newVersion = currentVersion + 1;
+
+  await ref.set({ version: newVersion }, { merge: true });
+  return newVersion;
+}
+
+// ─── Main ─────────────────────────────────────────────────────
+
+async function run() {
+  console.log('🌱 ChemCity Firestore Seeder\n');
+
+  const shouldMigrateImages = process.argv.includes('--migrate-images');
+  const shouldSeedGacha = process.argv.includes(SHOULD_SEED_GACHA_FLAG);
+  const shouldUploadCosmetics = process.argv.includes(SHOULD_UPLOAD_COSMETICS_FLAG);
+  const shouldUploadRawAvatars = process.argv.includes(SHOULD_UPLOAD_RAW_AVATARS_FLAG);
+
+  try {
+    // 1. Seed items
+    console.log('📦 Seeding items...');
+    const itemCount = await seedItems();
+
+    if (shouldMigrateImages) {
+      await migrateItemImagesToStorage();
+    } else {
+      console.log('\n🖼️  Image migration skipped (run with --migrate-images to upload images to Firebase Storage).');
+    }
+
+    // 2. Seed places
+    console.log('\n🗺️  Seeding places...');
+    await seedPlaces();
+
+    // 3. Seed collections
+    console.log('\n🏆 Seeding collections...');
+    await seedCollections();
+
+    // 4. Seed topics
+    console.log('\n📚 Seeding topics...');
+    await seedTopics();
+
+    // 4b. Seed gacha (optional)
+    if (shouldSeedGacha) {
+      await seedGacha();
+    } else {
+      console.log(`\n🎟️  Gacha seed skipped (run with ${SHOULD_SEED_GACHA_FLAG} to seed cosmetics + banners).`);
+    }
+
+    // 4c. Upload cosmetics assets (optional)
+    if (shouldUploadCosmetics) {
+      await uploadCosmeticsAssets();
+    } else {
+      console.log(`\n🧑🖼️  Cosmetics upload skipped (run with ${SHOULD_UPLOAD_COSMETICS_FLAG} to upload avatars/backgrounds).`);
+    }
+
+    // 4d. Upload raw (non-bg-removed) avatars to Storage (optional)
+    if (shouldUploadRawAvatars) {
+      await uploadRawAvatarsAssets();
+    } else {
+      console.log(`\n🧑  Raw avatars upload skipped (run with ${SHOULD_UPLOAD_RAW_AVATARS_FLAG} to upload original avatar images).`);
+    }
+
+    // 5. Bump cacheVersion — ALWAYS last step
+    console.log('\n🔢 Bumping cacheVersion...');
+    const newVersion = await bumpCacheVersion();
+
+    // 6. Print cache estimate
+    const estimatedKB = ((itemCount * 170) / 1024).toFixed(1);
+    const pct5MB = ((itemCount * 170) / (5 * 1024 * 1024) * 100).toFixed(2);
+
+    console.log(`
+✅ Seed complete!
+
+   cacheVersion bumped to ${newVersion}
+   → All students get fresh data next time they open the app
+
+📦 Estimated slim cache: ~${estimatedKB} KB (${pct5MB}% of 5MB localStorage budget)
+   → Safe. Copy this into your HANDOFF summary.
+
+⏭️  Verify in Firebase console that new items appear correctly.
+   If you edit Firestore directly after this, manually bump:
+   Firebase Console → Firestore → meta → cacheVersion → version
+`);
+  } catch (err) {
+    console.error('\n❌ Seed failed:', err);
+    process.exit(1);
+  }
+}
+
+run();
+
+
+==================== FILE: firestore.rules ====================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidCalendarEvent() {
+      let data = request.resource.data;
+      let hasRequiredFields = data.keys().hasAll(['userId', 'type', 'date', 'createdAt'])
+        && data.userId is string
+        && data.type is string
+        && data.date is string;
+      let topicValid = !('topic' in data) || data.topic == null || data.topic is string;
+      let subtopicValid = !('subtopic' in data) || data.subtopic == null || data.subtopic is string;
+      return hasRequiredFields && topicValid && subtopicValid;
+    }
+
+    function isValidRecommendation() {
+      return request.resource.data.keys().hasAll(['topic', 'subtopic', 'priority', 'status'])
+        && request.resource.data.priority in ['HIGH', 'MEDIUM', 'LOW']
+        && request.resource.data.status in ['pending', 'accepted', 'dismissed'];
+    }
+
+    function isValidSRSCard() {
+      let data = request.resource.data;
+      return data.keys().hasAll([
+        'userId', 'questionId', 'interval', 'easeFactor',
+        'repetitionCount', 'nextReviewDate', 'status'
+      ])
+      && data.userId is string
+      && data.questionId is string
+      && data.interval is number
+      && data.easeFactor is number
+      && data.repetitionCount is number
+      && data.nextReviewDate is string
+      && data.status in ['new', 'learning', 'review', 'graduated'];
+    }
+
+    function isValidReviewAttempt() {
+      let data = request.resource.data;
+      return data.keys().hasAll([
+        'cardId', 'userId', 'questionId', 'attemptNumber',
+        'wasCorrect', 'attemptedAt'
+      ])
+      && data.userId is string
+      && data.cardId is string
+      && data.wasCorrect is bool;
+    }
+
+    function isValidReviewSession() {
+      let data = request.resource.data;
+      return data.keys().hasAll([
+        'userId', 'cardsReviewed', 'cardsCorrect', 'cardsFailed',
+        'sessionType', 'startedAt', 'completedAt'
+      ])
+      && data.userId is string
+      && data.cardsReviewed is number
+      && data.sessionType is string;
+    }
+
+    function isChemCityWriteBlocked(userId) {
+      return (
+        (!exists(/databases/$(database)/documents/users/$(userId)) && ('chemcity' in request.resource.data))
+        ||
+        (exists(/databases/$(database)/documents/users/$(userId))
+          && request.resource.data.diff(resource.data).affectedKeys().hasAny(['chemcity']))
+      );
+    }
+
+    // ============================================
+    // USER PROFILE & ECONOMY
+    // ============================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && !isChemCityWriteBlocked(userId);
+
+      match /tokenHistory/{historyId} {
+        allow read, create: if isOwner(userId);
+      }
+
+      match /rewardCooldowns/{cooldownId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // ✅ ADDED: Mistake index for Mistake Notebook
+      match /mistakes/{mistakeId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /mistake_stats/{docId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      // ✅ FIX B: USER CALENDAR SUBCOLLECTION (optimized calendar uses this)
+      match /calendar_events/{eventId} {
+        allow create: if isOwner(userId)
+                      && request.resource.data.userId == request.auth.uid
+                      && isValidCalendarEvent();
+
+        allow read: if isOwner(userId);
+
+        allow update: if isOwner(userId)
+                      && request.resource.data.userId == request.auth.uid;
+
+        allow delete: if isOwner(userId);
+      }
+
+      match /srs_daily_summaries/{dateId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
+      // ChemCity progress sub-doc (read-only for client; writes via Cloud Functions)
+      match /chemcity_progress/{docId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+    }
+
+    match /items/{itemId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /places/{placeId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /collections/{colId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /topics/{topicId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /meta/cacheVersion {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ============================================
+    // CHEMCITY GACHA STATIC DATA (READ-ONLY)
+    // ============================================
+
+    match /cosmetics/{cosmeticId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /gachaBanners/{bannerId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+
+      match /entries/{cosmeticId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+    }
+
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ============================================
+    // QUIZ DATA
+    // ============================================
+
+    match /attempts/{attemptId} {
+      allow read: if true;
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated()
+                            && resource.data.userId == request.auth.uid;
+    }
+
+    // ============================================
+    // WEEKLY LEADERBOARD (AGGREGATED) - READ ONLY FOR CLIENTS
+    // ============================================
+
+    match /weekly_leaderboards/{weekId} {
+      allow read: if isAuthenticated();
+
+      match /entries/{userId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if false;
+      }
+
+      match /payouts/{userId} {
+        allow read, create, update, delete: if false;
+      }
+    }
+
+    // ============================================
+    // CALENDAR EVENTS (global collection - keep if you still use it anywhere)
+    // ============================================
+
+    match /calendar_events/{eventId} {
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && isValidCalendarEvent();
+
+      allow read: if isAuthenticated()
+                  && resource.data.userId == request.auth.uid;
+
+      allow update: if isAuthenticated()
+                    && resource.data.userId == request.auth.uid
+                    && (
+                      request.resource.data.userId == request.auth.uid
+                      || request.resource.data.diff(resource.data)
+                        .affectedKeys()
+                        .hasOnly(['completed', 'completedAt', 'completionData', 'updatedAt'])
+                    );
+
+      allow delete: if isAuthenticated()
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    // ============================================
+    // USER PERFORMANCE TRACKING
+    // ============================================
+
+    match /user_performance/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /subtopics/{subtopicId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId);
+      }
+    }
+
+    // ============================================
+    // AI RECOMMENDATIONS
+    // ============================================
+
+    match /ai_recommendations/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /suggestions/{suggestionId} {
+        allow read: if isOwner(userId);
+
+        allow create: if isOwner(userId)
+                      && isValidRecommendation();
+
+        allow update: if isOwner(userId)
+                      && request.resource.data.diff(resource.data)
+                        .affectedKeys()
+                        .hasOnly(['status', 'acceptedAt', 'dismissedAt', 'updatedAt']);
+
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // ============================================
+    // SPACED REPETITION SYSTEM (SRS)
+    // ============================================
+
+    match /spaced_repetition_cards/{cardId} {
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && isValidSRSCard();
+
+      // ✅ FIX A: allow reading non-existent doc so code can check "exists()"
+      allow read: if isAuthenticated()
+                  && (resource == null || resource.data.userId == request.auth.uid);
+
+      allow update: if isAuthenticated()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid;
+
+      allow delete: if isAuthenticated()
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    match /review_attempts/{attemptId} {
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && isValidReviewAttempt();
+
+      allow read: if isAuthenticated()
+                  && resource.data.userId == request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
+    match /review_sessions/{sessionId} {
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && isValidReviewSession();
+
+      allow read: if isAuthenticated()
+                  && resource.data.userId == request.auth.uid;
+
+      allow update: if isAuthenticated()
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.diff(resource.data)
+                      .affectedKeys()
+                      .hasOnly(['completedAt', 'totalTimeSpent', 'updatedAt']);
+
+      allow delete: if isAuthenticated()
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    // ============================================
+    // FORUM & SOCIAL
+    // ============================================
+
+    match /forum_posts/{postId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['likes', 'likedBy', 'replyCount'])
+      );
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /forum_replies/{replyId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['likes', 'likedBy'])
+      );
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // ============================================
+    // GENERIC COMMENTS
+    // ============================================
+
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['likes', 'likedBy'])
+      );
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /comment_replies/{replyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['likes', 'likedBy'])
+      );
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // ============================================
+    // COMMENT QUESTION STATS (AGGREGATED)
+    // ============================================
+
+    match /comment_question_stats/{questionId} {
+      allow read: if true;
+      allow create, update, delete: if false;
+    }
+
+    // ============================================
+    // SYSTEM
+    // ============================================
+
+    match /notifications/{notifId} {
+      allow read, update, delete: if isAuthenticated() && (
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      );
+      allow create: if isAuthenticated();
+    }
+  }
+}
+
+
+==================== FILE: src/lib/chemcity/types.ts ====================
+
+// ============================================================
+// ChemCity — TypeScript Types
+// Single source of truth for all data shapes.
+// DO NOT change field names once users have data in Firestore.
+// ============================================================
+
+// ─── Item Documents ──────────────────────────────────────────
+
+/**
+ * Slim fields only — what is cached in localStorage.
+ * ~170 bytes per card. Never includes educational content.
+ */
+export interface SlimItemDocument {
+  id: string;                  // e.g. "item_nacl"
+  baseId?: string;              // optional grouping key for item variants, e.g. "chem_h2o"
+  name: string;                // e.g. "Salt"
+  chemicalFormula: string;     // e.g. "NaCl" (Unicode subscripts)
+  emoji: string;               // e.g. "🧂"
+  imageUrl?: string;
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+  rarityValue: 1 | 2 | 3 | 4;
+  placeId: PlaceId;            // which city location this belongs to
+  validSlots: string[];        // slot IDs within that place
+  shopData: {
+    coinCost?: number;         // undefined = not coin-purchasable
+    diamondCost?: number;      // undefined = not diamond-purchasable
+  };
+  skillContribution: number;   // this card's bonus value added to its place's skill total
+  collections: string[];       // collection group IDs only — not full objects
+  deprecated: boolean;         // true = hidden from UI, never delete the row
+}
+
+/**
+ * Full fields — fetched from Firestore on card detail tap only.
+ * ~800 bytes per card. NEVER stored in localStorage.
+ */
+export interface FullItemDocument extends SlimItemDocument {
+  displayName: string;         // e.g. "The Seasoning of Life"
+  description: string;
+  cardBackground?: string;     // CSS gradient or colour token
+  imageUrl?: string;
+  topicConnections: string[];  // topic IDs this card relates to
+  educational: {
+    funFact: string;
+    everydayUses: string[];
+    category: 'element' | 'compound' | 'mixture' | 'process';
+  };
+  albumMetadata: {
+    flavorText: string;
+    sortOrder: number;
+    tags: string[];
+  };
+}
+
+// ─── Places ──────────────────────────────────────────────────
+
+export type PlaceId =
+  | 'lab'
+  | 'kitchen'
+  | 'toilet'
+  | 'garden'
+  | 'gas_station'
+  | 'lifestyle_boutique'
+  | 'beach'
+  | 'school';
+
+export interface SlotDocument {
+  slotId: string;
+  unlockCost?: number;         // undefined = free by default
+  unlockCurrency?: 'coins' | 'diamonds';
+  budgetOnly?: boolean;        // if true, can only be unlocked via extraSlotsBudget
+  equippedItemId?: string;     // null = empty
+}
+
+export interface PlaceDocument {
+  id: PlaceId;
+  displayName: string;
+  emoji: string;
+  unlockCost: number;          // coin cost to unlock the place itself
+  slots: SlotDocument[];
+  skill: {
+    description: string;
+    formula: string;           // human-readable formula string for display
+  };
+}
+
+// ─── User Documents ──────────────────────────────────────────
+
+/**
+ * Main user document — users/{userId}
+ * Kept lean: only IDs and numbers, never full objects.
+ */
+export interface UserChemCityData {
+  userId: string;
+  currencies: {
+    coins: number;
+    diamonds: number;
+    tickets?: number;
+  };
+  storeSlotCount: number;
+  ownedItems: string[];        // array of item IDs only
+  ownedCosmetics?: string[];
+  equipped: {
+    [slotId: string]: string;  // slotId → itemId
+  };
+  equippedCosmetics?: {
+    avatarId?: string;
+    backgroundId?: string;
+    iconId?: string;
+  };
+  gachaState?: {
+    [bannerId: string]: {
+      sinceEpic: number;
+      sinceLegendary: number;
+      lifetimePulls: number;
+      updatedAt?: unknown;
+    };
+  };
+  activeBonuses: ActiveBonuses;
+  unlockedPlaces: PlaceId[];
+  unlockedSlots: string[];     // slot IDs unlocked by the user
+  extraSlotsBudget: number;    // remaining Gas Station bonus slots to distribute
+  passiveIncome: {
+    lastCollected: Date | null; // Firestore Timestamp — set by server
+  };
+  streaks: {
+    currentStreak: number;
+    longestStreak: number;
+    lastLoginDate: string;     // ISO date string YYYY-MM-DD
+    streakFreezeCount: number;
+  };
+  cacheVersion: number;        // last known version when user doc was written
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Progress sub-document — users/{userId}/progress/data
+ * Separated to protect the 1MB Firestore doc limit.
+ */
+export interface UserProgressData {
+  collections: {
+    [collectionId: string]: {
+      collected: number;
+      total: number;
+      completed: boolean;
+      rewardClaimed: boolean;
+    };
+  };
+  topicMastery: {
+    [topicId: string]: {
+      quizzesCompleted: number;
+      correctAnswers: number;
+      totalQuestions: number;
+    };
+  };
+}
+
+// ─── Bonus Engine ─────────────────────────────────────────────
+
+/**
+ * Computed bonuses — recalculated after every equip/unequip.
+ * Persisted to user doc so they're available instantly on load.
+ */
+export interface ActiveBonuses {
+  passiveBaseCoinsPerHour: number;      // Garden: total_bonus × 10
+  passiveMultiplier: number;            // Lab:    1 + (total_bonus × 0.1)
+  quizFlatDiamondBonus: number;         // Kitchen: total_bonus × random(1,3) — stored as max
+  quizDiamondMultiplier: number;        // School: 1 + (total_bonus × 0.1)
+  quizDoubleChancePercent: number;      // Beach:  min(total_bonus × 5, 100)
+  dailyLoginDiamonds: number;           // Toilet: 5 + (total_bonus × 2)
+  extraSlotsTotal: number;              // Gas Station: total_bonus
+  shopDiscountPercent: number;          // Boutique: min(total_bonus × 2, 50) — capped at 50%
+}
+
+// ─── Cache ────────────────────────────────────────────────────
+
+export interface CacheManifest {
+  version: number;
+  fetchedAt: number;           // Date.now() timestamp
+  itemIds: string[];           // IDs of what's cached
+}
+
+// ─── Collections ─────────────────────────────────────────────
+
+export interface CollectionDocument {
+  id: string;
+  displayName: string;
+  description: string;
+  itemIds: string[];
+  rewardCoins?: number;
+  rewardDiamonds?: number;
+}
+
+// ─── Topics ──────────────────────────────────────────────────
+
+export interface TopicDocument {
+  id: string;
+  name: string;
+  dseUnit: string;
+  description?: string;
+}
+
+// ─── Cosmetics + Gacha ───────────────────────────────────────
+
+export type CosmeticType = 'avatar' | 'background' | 'icon';
+
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+export interface FaceCropMeta {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface CosmeticAvailability {
+  channels: {
+    gacha: boolean;
+    shop: boolean;
+  };
+  eventKey?: string;
+  startAt?: unknown;
+  endAt?: unknown;
+}
+
+export interface CosmeticShopData {
+  coinCost?: number;
+  diamondCost?: number;
+  ticketCost?: number;
+}
+
+export interface Cosmetic {
+  id: string;
+  type: CosmeticType;
+  name: string;
+  rarity: Rarity;
+  imageUrl: string;
+  imageUrlBoy?: string;
+  imageUrlGirl?: string;
+  availability: CosmeticAvailability;
+  shopData?: CosmeticShopData;
+  faceCrop?: FaceCropMeta;
+  tags?: string[];
+  deprecated?: boolean;
+}
+
+export type RarityRates = Record<Rarity, number>;
+
+export type DuplicateRefunds = Record<Rarity, number>;
+
+export interface PityRules {
+  epicEvery: number;
+  legendaryEvery: number;
+}
+
+export interface GachaBanner {
+  id: string;
+  name: string;
+  description?: string;
+  bannerImageUrl?: string;
+  active: boolean;
+  startAt?: unknown;
+  endAt?: unknown;
+  eventKey?: string;
+  rarityRates: RarityRates;
+  duplicateRefundCoinsByRarity: DuplicateRefunds;
+  pityRules: PityRules;
+  cacheVersion: number;
+}
+
+export interface GachaDrawRequest {
+  bannerId: string;
+  count: 1 | 10;
+  payWith: 'tickets' | 'coins';
+}
+
+export interface GachaDrawResult {
+  cosmeticId: string;
+  rarity: Rarity;
+  isNew: boolean;
+  refundCoins: number;
+  pitied: boolean;
+}
+
+export interface GachaDrawResponse {
+  success: true;
+  results: GachaDrawResult[];
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
+  newGachaState: {
+    sinceEpic: number;
+    sinceLegendary: number;
+    lifetimePulls: number;
+    updatedAt?: unknown;
+  };
+}
+
+export interface PurchaseCosmeticRequest {
+  cosmeticId: string;
+  currency: 'coins' | 'diamonds' | 'tickets';
+}
+
+export interface PurchaseCosmeticResponse {
+  success: true;
+  cosmeticId: string;
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
+}
+
+export interface EquipCosmeticsRequest {
+  avatarId?: string;
+  backgroundId?: string;
+  iconId?: string;
+}
+
+export interface EquipCosmeticsResponse {
+  success: true;
+  equippedCosmetics: {
+    avatarId?: string;
+    backgroundId?: string;
+    iconId?: string;
+  };
+}
+
+export interface BuyTicketsRequest {
+  count: number;
+}
+
+export interface BuyTicketsResponse {
+  success: true;
+  count: number;
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
+}
+
+// ─── Cloud Function Request/Response Types ────────────────────
+
+export interface EquipCardRequest {
+  slotId: string;
+  itemId: string;
+}
+
+export interface UnequipCardRequest {
+  slotId: string;
+}
+
+export interface PurchaseCardRequest {
+  itemId: string;
+  currency: 'coins' | 'diamonds';
+}
+
+export interface UnlockPlaceRequest {
+  placeId: string;
+}
+
+export interface UnlockSlotRequest {
+  placeId: string;
+  slotId: string;
+  useExtraSlotBudget?: boolean;
+}
+
+export interface QuizRewardRequest {
+  baseCoins: number;
+  baseDiamonds: number;
+  topicId?: string;
+  correctAnswers?: number;
+  totalQuestions?: number;
+}
+
+export interface QuizRewardResult {
+  coinsAwarded: number;
+  diamondsAwarded: number;
+  didDouble?: boolean;
+  breakdown?: {
+    flatBonus: number;
+    afterSchool: number;
+    afterBeach: number;
+  };
+  ok?: boolean;
+}
+
+
+==================== FILE: src/store/chemcityStore.ts ====================
+
+import { create } from 'zustand';
+import { doc, getDoc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { fetchSlimItems, fetchPlaces, fetchFullItem, fetchCollections } from '../lib/cache';
+import type {
+  UserChemCityData,
+  UserProgressData,
+  SlimItemDocument,
+  PlaceDocument,
+  FullItemDocument,
+  CollectionDocument,
+  Cosmetic,
+  GachaBanner,
+} from '../lib/chemcity/types';
+import {
+  callChemCityInitUser,
+  callChemCityMigrateSlotIds,
+  callChemCityEquipCard,
+  callChemCityUnequipCard,
+  callChemCityCollectPassiveIncome,
+  callChemCityUnlockPlace,
+  callChemCityUnlockSlot,
+  callChemCityGetDailyLoginBonus,
+  callChemCityQuizReward,
+  callChemCityPurchaseCard,
+  callChemCityUnlockStoreSlot,
+  callChemCityClaimCollectionReward,
+  callChemCityDevGrantCoins,
+} from '../lib/chemcity/cloudFunctions';
+import { estimateUnclaimedCoins } from '../lib/chemcity/income';
+import { getDailyStoreItems, STORE_MIN_SLOTS } from '../lib/chemcity/dailyStore';
+import type { QuizRewardRequest, QuizRewardResult } from '../lib/chemcity/types';
+import { getActiveBanners, getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
+import { getServerCacheVersion } from '../lib/cache';
+
+const ONBOARDING_STORAGE_KEY = 'chemcity_onboarding_done_v1';
+
+function hasSeenOnboarding(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDING_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markOnboardingDone(): void {
+  try {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
+type View = 'map' | 'place' | 'inventory' | 'store' | 'gas_station_distributor' | 'collections';
+
+type GachaView = 'gacha' | 'cosmetics';
+
+type ExtendedView = View | GachaView;
+
+type RootUserDoc = {
+  chemcity?: UserChemCityData;
+} & Record<string, unknown>;
+
+interface ChemCityStore {
+  user: UserChemCityData | null;
+  userGender: 'boy' | 'girl' | null;
+  progress: UserProgressData | null;
+  slimItems: SlimItemDocument[];
+  places: PlaceDocument[];
+  collections: CollectionDocument[];
+
+  cosmeticsMap: Map<string, Cosmetic>;
+  activeBanners: GachaBanner[];
+  gachaStaticLoaded: boolean;
+  gachaStaticVersion: number | null;
+
+  isLoading: boolean;
+  error: string | null;
+
+  view: ExtendedView;
+  selectedPlaceId: string | null;
+
+  cardPickerSlotId: string | null;
+
+  cardDetailItemId: string | null;
+  cardDetailData: FullItemDocument | null;
+  cardDetailLoading: boolean;
+
+  passiveDisplayCoins: number;
+
+  // Phase 4: store + unlock modals
+  dailyStoreItems: SlimItemDocument[];
+  storeSlotCount: number;
+  storePurchaseItemId: string | null;
+  storePurchaseData: FullItemDocument | null;
+  storePurchaseLoading: boolean;
+  placeUnlockModalId: string | null;
+
+  quizReward: {
+    result: QuizRewardResult | null;
+    correctAnswers: number;
+    totalQuestions: number;
+    isAwarding: boolean;
+  };
+
+  dailyLogin: {
+    diamonds: number;
+    coins: number;
+    streak: number;
+    showModal: boolean;
+    checked: boolean;
+  };
+
+  showOnboarding: boolean;
+
+  _unsubUser: Unsubscribe | null;
+
+  loadAll: (userId: string) => Promise<void>;
+  teardown: () => void;
+
+  navigateToMap: () => void;
+  navigateToPlace: (placeId: string) => void;
+  navigateToInventory: () => void;
+  navigateToStore: () => void;
+  navigateToGasStationDistributor: () => void;
+  navigateToCollections: () => void;
+  navigateToGacha: () => void;
+  navigateToCosmetics: () => void;
+
+  openCardPicker: (slotId: string) => void;
+  closeCardPicker: () => void;
+
+  openCardDetail: (itemId: string) => Promise<void>;
+  closeCardDetail: () => void;
+
+  equipCard: (slotId: string, itemId: string) => Promise<void>;
+  unequipCard: (slotId: string) => Promise<void>;
+
+  collectIncome: () => Promise<{ coinsAwarded: number }>;
+
+  unlockPlace: (placeId: string) => Promise<void>;
+  unlockSlot: (placeId: string, slotId: string, useExtraSlotBudget?: boolean) => Promise<void>;
+
+  tickPassiveDisplay: () => void;
+
+  awardQuizReward: (request: QuizRewardRequest) => Promise<void>;
+  clearQuizReward: () => void;
+
+  checkDailyLogin: () => Promise<void>;
+  dismissDailyLogin: () => void;
+
+  computeDailyStore: (userId: string) => void;
+  unlockStoreSlot: () => Promise<void>;
+
+  devRefreshStaticData: () => Promise<void>;
+  devGrantCoins: (amount: number) => Promise<void>;
+  devRerollStore: () => void;
+
+  loadGachaStatic: () => Promise<void>;
+
+  openPurchaseConfirm: (itemId: string) => void;
+  closePurchaseConfirm: () => void;
+  purchaseCard: (itemId: string, currency: 'coins' | 'diamonds') => Promise<void>;
+
+  openPlaceUnlockModal: (placeId: string) => void;
+  closePlaceUnlockModal: () => void;
+
+  claimCollectionReward: (collectionId: string) => Promise<void>;
+  dismissOnboarding: () => void;
+}
+
+export const useChemCityStore = create<ChemCityStore>((set, get) => ({
+  user: null,
+  userGender: null,
+  progress: null,
+  slimItems: [],
+  places: [],
+  collections: [],
+
+  cosmeticsMap: new Map(),
+  activeBanners: [],
+  gachaStaticLoaded: false,
+  gachaStaticVersion: null,
+
+  isLoading: false,
+  error: null,
+
+  view: 'map',
+  selectedPlaceId: null,
+
+  cardPickerSlotId: null,
+
+  cardDetailItemId: null,
+  cardDetailData: null,
+  cardDetailLoading: false,
+
+  passiveDisplayCoins: 0,
+
+  dailyStoreItems: [],
+  storeSlotCount: STORE_MIN_SLOTS,
+  storePurchaseItemId: null,
+  storePurchaseData: null,
+  storePurchaseLoading: false,
+  placeUnlockModalId: null,
+
+  quizReward: {
+    result: null,
+    correctAnswers: 0,
+    totalQuestions: 0,
+    isAwarding: false,
+  },
+
+  dailyLogin: {
+    diamonds: 0,
+    coins: 0,
+    streak: 0,
+    showModal: false,
+    checked: false,
+  },
+
+  showOnboarding: false,
+
+  _unsubUser: null,
+
+  loadAll: async (userId: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const [slimItems, places, collections] = await Promise.all([
+        fetchSlimItems(),
+        fetchPlaces(),
+        fetchCollections(),
+      ]);
+
+      await callChemCityInitUser();
+      await callChemCityMigrateSlotIds();
+
+      const userRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userRef);
+      const root = (userSnap.data() || {}) as RootUserDoc;
+      const chemcity = (root.chemcity || null) as UserChemCityData | null;
+
+      const progressRef = doc(db, 'users', userId, 'chemcity_progress', 'data');
+      const progressSnap = await getDoc(progressRef);
+      const progress = (progressSnap.data() || null) as UserProgressData | null;
+
+      const existing = get()._unsubUser;
+      if (existing) existing();
+
+      const unsub = onSnapshot(userRef, (snap) => {
+        if (!snap.exists()) return;
+        const freshRoot = (snap.data() || {}) as RootUserDoc;
+        const fresh = (freshRoot.chemcity || null) as UserChemCityData | null;
+        const genderRaw = (freshRoot as any)?.gender;
+        const userGender: 'boy' | 'girl' | null = genderRaw === 'girl' ? 'girl' : genderRaw === 'boy' ? 'boy' : null;
+
+        // Phase 4: mirror storeSlotCount (default 3) + compute daily store items
+        const slotCount = (fresh as any)?.storeSlotCount ?? STORE_MIN_SLOTS;
+        const pool = get().slimItems;
+        const dailyStoreItems = fresh
+          ? getDailyStoreItems(userId, pool, slotCount)
+          : [];
+
+        set({ user: fresh, userGender, storeSlotCount: slotCount, dailyStoreItems });
+      });
+
+      const progressUnsub = onSnapshot(progressRef, (snap) => {
+        if (!snap.exists()) return;
+        const fresh = snap.data() as UserProgressData;
+        set({ progress: fresh });
+      });
+
+      const showOnboarding = (() => {
+        if (hasSeenOnboarding()) return false;
+        const createdAt = (chemcity as any)?.createdAt;
+        if (!createdAt) return true;
+        const createdMs =
+          typeof createdAt?.toMillis === 'function'
+            ? createdAt.toMillis()
+            : typeof createdAt === 'number'
+              ? createdAt
+              : Date.now();
+        return Date.now() - createdMs < 90_000;
+      })();
+
+      set({
+        user: chemcity,
+        progress,
+        slimItems,
+        places,
+        collections,
+        isLoading: false,
+        passiveDisplayCoins: 0,
+        storeSlotCount: (chemcity as any)?.storeSlotCount ?? STORE_MIN_SLOTS,
+        dailyStoreItems: chemcity
+          ? getDailyStoreItems(userId, slimItems, (chemcity as any)?.storeSlotCount ?? STORE_MIN_SLOTS)
+          : [],
+        showOnboarding,
+        _unsubUser: (() => {
+          return () => {
+            unsub();
+            progressUnsub();
+          };
+        })(),
+      });
+
+      // Phase 3: check daily login bonus (non-blocking)
+      get().checkDailyLogin();
+
+      // Phase 4: compute store (non-blocking)
+      setTimeout(() => get().computeDailyStore(userId), 200);
+
+      // Gacha: load static catalog (non-blocking)
+      setTimeout(() => get().loadGachaStatic(), 250);
+    } catch (err: any) {
+      set({ isLoading: false, error: err?.message || 'Failed to load ChemCity' });
+    }
+  },
+
+  devGrantCoins: async (amount: number) => {
+    if (!Number.isFinite(amount) || amount === 0) return;
+    await callChemCityDevGrantCoins(amount);
+  },
+
+  devRerollStore: () => {
+    const userId = get().user?.userId;
+    if (!userId) return;
+    const pool = get().slimItems;
+    const slotCount = get().storeSlotCount ?? STORE_MIN_SLOTS;
+    const salt = Math.random().toString(36).slice(2, 10);
+    const dailyStoreItems = getDailyStoreItems(`${userId}:dev:${salt}`, pool, slotCount);
+    set({ dailyStoreItems });
+  },
+
+  loadGachaStatic: async () => {
+    try {
+      const serverVersion = await getServerCacheVersion();
+      const prevVersion = get().gachaStaticVersion;
+      if (get().gachaStaticLoaded && prevVersion === serverVersion) return;
+
+      const [cosmeticsMap, activeBanners] = await Promise.all([
+        getCosmeticsMap(),
+        getActiveBanners(),
+      ]);
+      set({ cosmeticsMap, activeBanners, gachaStaticLoaded: true, gachaStaticVersion: serverVersion });
+    } catch (err: any) {
+      console.error('[Gacha] Failed to load static data:', err);
+      // Still mark as loaded so UI shows (with empty data if needed)
+      set({ gachaStaticLoaded: true });
+    }
+  },
+
+  teardown: () => {
+    const unsub = get()._unsubUser;
+    if (unsub) unsub();
+    set({ _unsubUser: null, userGender: null });
+  },
+
+  navigateToMap: () => set({ view: 'map', selectedPlaceId: null }),
+  navigateToPlace: (placeId) => set({ view: 'place', selectedPlaceId: placeId }),
+  navigateToInventory: () => set({ view: 'inventory' }),
+  navigateToStore: () => set({ view: 'store' }),
+  navigateToGasStationDistributor: () => set({ view: 'gas_station_distributor' }),
+  navigateToCollections: () => set({ view: 'collections' }),
+  navigateToGacha: () => set({ view: 'gacha' }),
+  navigateToCosmetics: () => set({ view: 'cosmetics' }),
+
+  openCardPicker: (slotId) => set({ cardPickerSlotId: slotId }),
+  closeCardPicker: () => set({ cardPickerSlotId: null }),
+
+  openCardDetail: async (itemId: string) => {
+    set({ cardDetailItemId: itemId, cardDetailData: null, cardDetailLoading: true });
+    try {
+      const full = await fetchFullItem(itemId);
+      set({ cardDetailData: full ?? null, cardDetailLoading: false });
+    } catch {
+      set({ cardDetailLoading: false });
+    }
+  },
+  closeCardDetail: () => set({ cardDetailItemId: null, cardDetailData: null, cardDetailLoading: false }),
+
+  equipCard: async (slotId, itemId) => {
+    const { user } = get();
+    if (!user) return;
+
+    // Optimistic update - show equipped immediately
+    const previousEquipped = user.equipped?.[slotId];
+    set({
+      user: {
+        ...user,
+        equipped: { ...user.equipped, [slotId]: itemId },
+      },
+    });
+
+    try {
+      await callChemCityEquipCard(slotId, itemId);
+    } catch (err) {
+      // Revert on error
+      set({
+        user: {
+          ...user,
+          equipped: { ...user.equipped, [slotId]: previousEquipped },
+        },
+      });
+      throw err;
+    }
+  },
+
+  unequipCard: async (slotId) => {
+    const { user } = get();
+    if (!user) return;
+
+    // Optimistic update - show unequipped immediately
+    const previousEquipped = user.equipped?.[slotId];
+    const newEquipped = { ...user.equipped };
+    delete newEquipped[slotId];
+
+    set({
+      user: {
+        ...user,
+        equipped: newEquipped,
+      },
+    });
+
+    try {
+      await callChemCityUnequipCard(slotId);
+    } catch (err) {
+      // Revert on error
+      set({
+        user: {
+          ...user,
+          equipped: { ...user.equipped, [slotId]: previousEquipped },
+        },
+      });
+      throw err;
+    }
+  },
+
+  collectIncome: async () => {
+    const result = await callChemCityCollectPassiveIncome();
+    set({ passiveDisplayCoins: 0 });
+    return { coinsAwarded: Number(result.coinsAwarded || 0) };
+  },
+
+  unlockPlace: async (placeId) => {
+    await callChemCityUnlockPlace(placeId);
+  },
+
+  unlockSlot: async (placeId, slotId, useExtraSlotBudget) => {
+    await callChemCityUnlockSlot(placeId, slotId, useExtraSlotBudget);
+  },
+
+  computeDailyStore: (userId: string) => {
+    const state = get();
+    if (!state.user) return;
+    const slotCount = state.storeSlotCount ?? STORE_MIN_SLOTS;
+    const dailyStoreItems = getDailyStoreItems(userId, state.slimItems, slotCount);
+    set({ dailyStoreItems });
+  },
+
+  devRefreshStaticData: async () => {
+    try {
+      localStorage.removeItem('cc_manifest');
+      localStorage.removeItem('cc_slim_items');
+      localStorage.removeItem('cc_places');
+      localStorage.removeItem('cc_collections');
+      localStorage.removeItem('cc_topics');
+    } catch {
+      // ignore
+    }
+
+    set({ gachaStaticLoaded: false, gachaStaticVersion: null });
+
+    const userId = get().user?.userId;
+    if (!userId) return;
+
+    set({ isLoading: true, error: null });
+    try {
+      const [slimItems, places, collections] = await Promise.all([
+        fetchSlimItems(),
+        fetchPlaces(),
+        fetchCollections(),
+      ]);
+
+      const slotCount = get().storeSlotCount ?? STORE_MIN_SLOTS;
+      const dailyStoreItems = getDailyStoreItems(userId, slimItems, slotCount);
+
+      set({ slimItems, places, collections, dailyStoreItems, isLoading: false });
+    } catch (err: any) {
+      set({ isLoading: false, error: err?.message || 'Failed to refresh ChemCity data' });
+    }
+  },
+
+  unlockStoreSlot: async () => {
+    await callChemCityUnlockStoreSlot();
+  },
+
+  openPurchaseConfirm: (itemId: string) => {
+    set({ storePurchaseItemId: itemId, storePurchaseData: null, storePurchaseLoading: true });
+    fetchFullItem(itemId)
+      .then((data) => set({ storePurchaseData: data ?? null, storePurchaseLoading: false }))
+      .catch(() => set({ storePurchaseLoading: false }));
+  },
+
+  closePurchaseConfirm: () =>
+    set({ storePurchaseItemId: null, storePurchaseData: null, storePurchaseLoading: false }),
+
+  purchaseCard: async (itemId: string, currency: 'coins' | 'diamonds') => {
+    await callChemCityPurchaseCard(itemId, currency);
+  },
+
+  openPlaceUnlockModal: (placeId: string) => set({ placeUnlockModalId: placeId }),
+  closePlaceUnlockModal: () => set({ placeUnlockModalId: null }),
+
+  tickPassiveDisplay: () => {
+    const user = get().user;
+    if (!user) return;
+
+    const lastCollected = (user.passiveIncome?.lastCollected ?? null) as any;
+    const coins = estimateUnclaimedCoins(user.activeBonuses, lastCollected);
+    set({ passiveDisplayCoins: coins });
+  },
+
+  awardQuizReward: async (request) => {
+    set((s) => ({
+      quizReward: {
+        ...s.quizReward,
+        isAwarding: true,
+        result: null,
+      },
+    }));
+
+    try {
+      const result = await callChemCityQuizReward(request);
+      set({
+        quizReward: {
+          result,
+          correctAnswers: request.correctAnswers ?? 0,
+          totalQuestions: request.totalQuestions ?? 0,
+          isAwarding: false,
+        },
+      });
+    } catch {
+      set((s) => ({
+        quizReward: { ...s.quizReward, isAwarding: false },
+      }));
+    }
+  },
+
+  clearQuizReward: () => {
+    set({
+      quizReward: {
+        result: null,
+        correctAnswers: 0,
+        totalQuestions: 0,
+        isAwarding: false,
+      },
+    });
+  },
+
+  checkDailyLogin: async () => {
+    const { dailyLogin } = get();
+    if (dailyLogin.checked) return;
+
+    try {
+      const result = await callChemCityGetDailyLoginBonus();
+      const alreadyClaimed = Boolean((result as any)?.alreadyClaimed);
+      if (alreadyClaimed) {
+        set((s) => ({ dailyLogin: { ...s.dailyLogin, checked: true } }));
+        return;
+      }
+
+      set({
+        dailyLogin: {
+          diamonds: Number((result as any)?.diamondsAwarded || 0),
+          coins: Number((result as any)?.coinsAwarded || 0),
+          streak: Number((result as any)?.currentStreak || 0),
+          showModal: true,
+          checked: true,
+        },
+      });
+    } catch {
+      set((s) => ({ dailyLogin: { ...s.dailyLogin, checked: true } }));
+    }
+  },
+
+  dismissDailyLogin: () => {
+    set((s) => ({ dailyLogin: { ...s.dailyLogin, showModal: false } }));
+  },
+
+  claimCollectionReward: async (collectionId: string) => {
+    await callChemCityClaimCollectionReward(collectionId);
+  },
+
+  dismissOnboarding: () => {
+    markOnboardingDone();
+    set({ showOnboarding: false });
+  },
+}));
+
+
+==================== FILE: src/lib/chemcity/gachaStaticCache.ts ====================
+
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import { db } from '../../firebase/config';
+import type { Cosmetic, GachaBanner } from './types';
+import { getServerCacheVersion } from '../cache';
+
+const COSMETICS_CACHE_PREFIX = 'cc_cosmetics_v';
+
+function safeGet<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+function entriesCacheKey(bannerId: string, version: number) {
+  return `cc_gacha_entries_${bannerId}_v${version}`;
+}
+
+export async function getCosmeticsMap(): Promise<Map<string, Cosmetic>> {
+  const version = await getServerCacheVersion();
+  const COSMETICS_CACHE_KEY = `${COSMETICS_CACHE_PREFIX}${version}`;
+
+  const cached = safeGet<Cosmetic[]>(COSMETICS_CACHE_KEY);
+  if (cached) {
+    return new Map(cached.map((c) => [c.id, c]));
+  }
+
+  const snap = await getDocs(collection(db, 'cosmetics'));
+  const cosmetics: Cosmetic[] = snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as any) } as Cosmetic))
+    .filter((c) => !c.deprecated);
+
+  safeSet(COSMETICS_CACHE_KEY, cosmetics);
+  return new Map(cosmetics.map((c) => [c.id, c]));
+}
+
+export function invalidateCosmeticsCache() {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(COSMETICS_CACHE_PREFIX)) keys.push(k);
+    }
+    keys.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
+}
+
+export async function getActiveBanners(): Promise<GachaBanner[]> {
+  const snap = await getDocs(collection(db, 'gachaBanners'));
+  const now = new Date();
+
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as any) } as GachaBanner))
+    .filter((b) => {
+      if (!b.active) return false;
+
+      if (b.startAt) {
+        const start = typeof (b.startAt as any)?.toDate === 'function'
+          ? (b.startAt as any).toDate()
+          : new Date(b.startAt as any);
+        if (now < start) return false;
+      }
+
+      if (b.endAt) {
+        const end = typeof (b.endAt as any)?.toDate === 'function'
+          ? (b.endAt as any).toDate()
+          : new Date(b.endAt as any);
+        if (now > end) return false;
+      }
+
+      return true;
+    });
+}
+
+export async function getBannerEntries(
+  bannerId: string,
+  cacheVersion: number,
+): Promise<Array<{ cosmeticId: string } & Record<string, unknown>>> {
+  const key = entriesCacheKey(bannerId, cacheVersion);
+  const cached = safeGet<Array<{ cosmeticId: string } & Record<string, unknown>>>(key);
+  if (cached) return cached;
+
+  const snap = await getDocs(collection(db, 'gachaBanners', bannerId, 'entries'));
+  const entries = snap.docs
+    .map((d) => ({ cosmeticId: d.id, ...(d.data() as any) }))
+    .filter((e) => e.enabled);
+
+  safeSet(key, entries);
+  return entries;
+}
+
+export async function getBanner(bannerId: string): Promise<GachaBanner | null> {
+  const snap = await getDoc(doc(db, 'gachaBanners', bannerId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...(snap.data() as any) } as GachaBanner;
+}
+
+
+==================== FILE: src/components/chemcity/gacha/AvatarTuner.tsx ====================
+
+import React, { useEffect, useMemo, useState } from 'react';
+
+type Gender = 'boy' | 'girl';
+export type AvatarTunerContext = 'profile_card' | 'gacha_result' | 'inventory';
+
+type FaceCrop = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+type BodyFrame = {
+  offsetXPercent?: number;
+  offsetYPercent?: number;
+  scale?: number;
+};
+
+export type AvatarTuning = {
+  offsetXPercent?: number;
+  offsetYPercent?: number;
+  scale?: number;
+};
+
+export type AvatarTunerConfig = {
+  version: 1;
+  noSplitAvatarNumbers?: number[];
+  globalDefaults?: {
+    faceCropByGender?: Partial<Record<Gender, FaceCrop>>;
+    bodyFrameByGender?: Partial<Record<Gender, BodyFrame>>;
+  };
+  byAvatarId?: Record<
+    string,
+    Partial<Record<AvatarTunerContext, Partial<Record<Gender, AvatarTuning>>>>
+  >;
+};
+
+const STORAGE_KEY = 'cc_avatar_tuner_config_v1';
+
+export function loadAvatarTunerConfig(): AvatarTunerConfig | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== 1) return null;
+    return parsed as AvatarTunerConfig;
+  } catch {
+    return null;
+  }
+}
+
+export function getGlobalFaceCrop(gender: Gender): FaceCrop | null {
+  const cfg = loadAvatarTunerConfig();
+  const crop = cfg?.globalDefaults?.faceCropByGender?.[gender];
+  if (!crop) return null;
+  const { x, y, w, h } = crop as any;
+  if (![x, y, w, h].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  return { x, y, w, h };
+}
+
+export function saveAvatarTunerConfig(cfg: AvatarTunerConfig): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  } catch {
+    // ignore
+  }
+}
+
+export function shouldForceNoSplit(avatarId: string | undefined | null): boolean {
+  const n = avatarNumberFromId(avatarId);
+  if (!n) return false;
+  const cfg = loadAvatarTunerConfig();
+  const list = cfg?.noSplitAvatarNumbers;
+  if (Array.isArray(list) && list.includes(n)) return true;
+  return false;
+}
+
+export function getAvatarTuning(
+  avatarId: string | undefined | null,
+  ctx: AvatarTunerContext,
+  gender: Gender,
+): AvatarTuning | null {
+  if (!avatarId) return null;
+  const cfg = loadAvatarTunerConfig();
+  const entry = cfg?.byAvatarId?.[avatarId]?.[ctx]?.[gender];
+  if (!entry) return null;
+  return entry;
+}
+
+export function avatarNumberFromId(avatarId: string | undefined | null): number | null {
+  if (!avatarId) return null;
+  const m = String(avatarId).match(/^avatar_(\d+)_/i);
+  if (!m?.[1]) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+const DEFAULT_CFG: AvatarTunerConfig = {
+  version: 1,
+  noSplitAvatarNumbers: [31, 32],
+  globalDefaults: {
+    faceCropByGender: {
+      boy: { x: 0.3, y: 0.05, w: 0.4, h: 0.3 },
+      girl: { x: 0.3, y: 0.05, w: 0.4, h: 0.3 },
+    },
+  },
+  byAvatarId: {},
+};
+
+export function AvatarTunerButton({
+  avatarId,
+  avatarImageUrl,
+  avatarImageUrlBoy,
+  avatarImageUrlGirl,
+  className = '',
+}: {
+  avatarId?: string;
+  avatarImageUrl?: string;
+  avatarImageUrlBoy?: string;
+  avatarImageUrlGirl?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const enable = useMemo(() => {
+    try {
+      const isDev = Boolean((import.meta as any)?.env?.DEV);
+      const host = (typeof window !== 'undefined' ? window.location.hostname : '') || '';
+      const isLocalhost = host === 'localhost' || host === '127.0.0.1';
+      return isDev || isLocalhost || localStorage.getItem('cc_enable_avatar_tuner') === '1';
+    } catch {
+      return false;
+    }
+  }, []);
+
+  if (!enable) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={className}
+      >
+        Avatar Tuner
+      </button>
+      {open ? (
+        <AvatarTunerModal
+          avatarId={avatarId}
+          avatarImageUrl={avatarImageUrl}
+          avatarImageUrlBoy={avatarImageUrlBoy}
+          avatarImageUrlGirl={avatarImageUrlGirl}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function AvatarTunerModal({
+  avatarId,
+  avatarImageUrl,
+  avatarImageUrlBoy,
+  avatarImageUrlGirl,
+  onClose,
+}: {
+  avatarId?: string;
+  avatarImageUrl?: string;
+  avatarImageUrlBoy?: string;
+  avatarImageUrlGirl?: string;
+  onClose: () => void;
+}) {
+  const [cfg, setCfg] = useState<AvatarTunerConfig>(() => loadAvatarTunerConfig() ?? DEFAULT_CFG);
+  const [tapGender, setTapGender] = useState<Gender>('boy');
+  const [tapStart, setTapStart] = useState<{ x: number; y: number } | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [importText, setImportText] = useState<string>('');
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    saveAvatarTunerConfig(cfg);
+  }, [cfg]);
+
+  const safeAvatarId = avatarId || '';
+
+  const tuning = useMemo(() => {
+    const base = cfg.byAvatarId?.[safeAvatarId] || {};
+    return base;
+  }, [cfg.byAvatarId, safeAvatarId]);
+
+  function setTuningValue(
+    ctx: AvatarTunerContext,
+    gender: Gender,
+    key: keyof AvatarTuning,
+    value: number,
+  ) {
+    setCfg((prev) => {
+      const next: AvatarTunerConfig = {
+        ...prev,
+        byAvatarId: { ...(prev.byAvatarId || {}) },
+      };
+      const byId = { ...(next.byAvatarId?.[safeAvatarId] || {}) };
+      const byCtx = { ...(byId[ctx] || {}) } as any;
+      const byGender = { ...(byCtx[gender] || {}) };
+      byGender[key] = value;
+      byCtx[gender] = byGender;
+      (byId as any)[ctx] = byCtx;
+      next.byAvatarId![safeAvatarId] = byId as any;
+      return next;
+    });
+  }
+
+  function getValue(ctx: AvatarTunerContext, gender: Gender, key: keyof AvatarTuning, fallback: number) {
+    const v = (tuning as any)?.[ctx]?.[gender]?.[key];
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  }
+
+  const noSplitNum = avatarNumberFromId(safeAvatarId);
+  const noSplitEnabled =
+    !!noSplitNum && Array.isArray(cfg.noSplitAvatarNumbers) && cfg.noSplitAvatarNumbers.includes(noSplitNum);
+
+  function toggleNoSplit() {
+    if (!noSplitNum) return;
+    setCfg((prev) => {
+      const list = Array.isArray(prev.noSplitAvatarNumbers) ? [...prev.noSplitAvatarNumbers] : [];
+      const idx = list.indexOf(noSplitNum);
+      if (idx >= 0) list.splice(idx, 1);
+      else list.push(noSplitNum);
+      list.sort((a, b) => a - b);
+      return { ...prev, noSplitAvatarNumbers: list };
+    });
+  }
+
+  function copyJson() {
+    const text = JSON.stringify(cfg, null, 2);
+    try {
+      const canClipboard = typeof navigator !== 'undefined' && !!navigator.clipboard?.writeText;
+      if (!canClipboard) {
+        setCopyStatus('Clipboard blocked. Use Select All or Download.');
+        return;
+      }
+      navigator.clipboard
+        .writeText(text)
+        .then(() => setCopyStatus('Copied to clipboard.'))
+        .catch(() => setCopyStatus('Clipboard blocked. Use Select All or Download.'));
+    } catch {
+      setCopyStatus('Clipboard blocked. Use Select All or Download.');
+    }
+  }
+
+  const jsonText = useMemo(() => JSON.stringify(cfg, null, 2), [cfg]);
+
+  function selectAllJson() {
+    const el = document.getElementById('cc-avatar-tuner-json') as HTMLTextAreaElement | null;
+    if (!el) return;
+    el.focus();
+    el.select();
+    try {
+      document.execCommand('copy');
+      setCopyStatus('Selected (and attempted copy). If it did not copy, press Cmd+C.');
+    } catch {
+      setCopyStatus('Selected. Press Cmd+C to copy.');
+    }
+  }
+
+  function downloadJson() {
+    try {
+      const blob = new Blob([jsonText], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cc_avatar_tuner_config_v1.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setCopyStatus('Downloaded JSON file.');
+    } catch {
+      setCopyStatus('Download failed. Use Select All instead.');
+    }
+  }
+
+  function applyImportedJson() {
+    try {
+      const parsed = JSON.parse(importText);
+      if (!parsed || parsed.version !== 1) {
+        setImportStatus('Invalid JSON: expected { version: 1, ... }.');
+        return;
+      }
+      setCfg(parsed as AvatarTunerConfig);
+      setImportStatus('Imported and applied. Reload to ensure all views update.');
+    } catch {
+      setImportStatus('Invalid JSON (parse failed).');
+    }
+  }
+
+  function setGlobalFaceCrop(gender: Gender, key: keyof FaceCrop, value: number) {
+    setCfg((prev) => {
+      const next: AvatarTunerConfig = {
+        ...prev,
+        globalDefaults: {
+          ...(prev.globalDefaults || {}),
+          faceCropByGender: { ...(prev.globalDefaults?.faceCropByGender || {}) },
+        },
+      };
+      const existing =
+        (next.globalDefaults!.faceCropByGender?.[gender] || { x: 0.3, y: 0.05, w: 0.4, h: 0.3 }) as FaceCrop;
+      next.globalDefaults!.faceCropByGender![gender] = { ...existing, [key]: value };
+      return next;
+    });
+  }
+
+  function getGlobalFaceCropValue(gender: Gender, key: keyof FaceCrop, fallback: number) {
+    const v = (cfg.globalDefaults?.faceCropByGender as any)?.[gender]?.[key];
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  }
+
+  const previewUrl = useMemo(() => {
+    if (tapGender === 'boy') return avatarImageUrlBoy || avatarImageUrl || '';
+    return avatarImageUrlGirl || avatarImageUrl || '';
+  }, [avatarImageUrl, avatarImageUrlBoy, avatarImageUrlGirl, tapGender]);
+
+  function handlePreviewClick(e: React.MouseEvent<HTMLImageElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    const nx = Math.max(0, Math.min(1, x));
+    const ny = Math.max(0, Math.min(1, y));
+
+    if (!tapStart) {
+      setTapStart({ x: nx, y: ny });
+      return;
+    }
+
+    const x1 = Math.min(tapStart.x, nx);
+    const y1 = Math.min(tapStart.y, ny);
+    const x2 = Math.max(tapStart.x, nx);
+    const y2 = Math.max(tapStart.y, ny);
+    const w = Math.max(0.01, x2 - x1);
+    const h = Math.max(0.01, y2 - y1);
+
+    setGlobalFaceCrop(tapGender, 'x', Number(x1.toFixed(4)));
+    setGlobalFaceCrop(tapGender, 'y', Number(y1.toFixed(4)));
+    setGlobalFaceCrop(tapGender, 'w', Number(w.toFixed(4)));
+    setGlobalFaceCrop(tapGender, 'h', Number(h.toFixed(4)));
+    setTapStart(null);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999]">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute left-1/2 top-1/2 w-[min(720px,95vw)] max-h-[85vh] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white text-slate-900 overflow-hidden shadow-2xl">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="font-bold">Avatar Tuner</div>
+          <div className="flex items-center gap-2">
+            <button type="button" className="px-3 py-1.5 rounded-lg border" onClick={copyJson}>
+              Copy JSON
+            </button>
+            <button type="button" className="px-3 py-1.5 rounded-lg border" onClick={selectAllJson}>
+              Select All
+            </button>
+            <button type="button" className="px-3 py-1.5 rounded-lg border" onClick={downloadJson}>
+              Download
+            </button>
+            <button type="button" className="px-3 py-1.5 rounded-lg border" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-4 overflow-auto">
+          <div className="rounded-xl border p-3 bg-slate-50">
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-bold text-sm">Config JSON</div>
+              {copyStatus ? <div className="text-xs text-slate-600">{copyStatus}</div> : null}
+            </div>
+            <textarea
+              id="cc-avatar-tuner-json"
+              readOnly
+              value={jsonText}
+              className="mt-2 w-full h-[160px] font-mono text-xs rounded-lg border bg-white p-2"
+            />
+            <div className="mt-2 text-xs text-slate-600">If copy is blocked, click Select All then press Cmd+C.</div>
+          </div>
+
+          <div className="rounded-xl border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="font-bold text-sm">Import JSON</div>
+              {importStatus ? <div className="text-xs text-slate-600">{importStatus}</div> : null}
+            </div>
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder="Paste JSON here and click Apply"
+              className="mt-2 w-full h-[120px] font-mono text-xs rounded-lg border bg-white p-2"
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <button type="button" className="px-3 py-1.5 rounded-lg border" onClick={applyImportedJson}>
+                Apply
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-lg border"
+                onClick={() => {
+                  setImportText(jsonText);
+                  setImportStatus('Loaded current config into import box.');
+                }}
+              >
+                Load Current
+              </button>
+            </div>
+            <div className="mt-2 text-xs text-slate-600">
+              This writes to localStorage key <span className="font-mono">cc_avatar_tuner_config_v1</span>.
+            </div>
+          </div>
+          <div className="text-sm">
+            <div className="font-semibold">avatarId</div>
+            <div className="font-mono break-all">{safeAvatarId || '(none)'}</div>
+          </div>
+
+          {noSplitNum ? (
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={noSplitEnabled} onChange={toggleNoSplit} />
+              Treat avatar #{noSplitNum} as single-person (do not split)
+            </label>
+          ) : null}
+
+          <div className="rounded-xl border p-3">
+            <div className="font-bold text-sm mb-2">Global defaults (most avatars)</div>
+            <div className="text-xs text-slate-600 mb-3">
+              FaceCrop is normalized (0–1) in the gendered cropped image. Used for ProfileIcon when an avatar has no faceCrop.
+            </div>
+
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setTapGender('boy');
+                  setTapStart(null);
+                }}
+                className={`px-3 py-1.5 rounded-lg border text-sm font-semibold ${
+                  tapGender === 'boy' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700'
+                }`}
+              >
+                Tap: boy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTapGender('girl');
+                  setTapStart(null);
+                }}
+                className={`px-3 py-1.5 rounded-lg border text-sm font-semibold ${
+                  tapGender === 'girl' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700'
+                }`}
+              >
+                Tap: girl
+              </button>
+              <div className="text-xs text-slate-600">
+                {tapStart ? 'Now tap bottom-right of face.' : 'Tap top-left of face, then bottom-right.'}
+              </div>
+            </div>
+
+            {previewUrl ? (
+              <div className="rounded-xl border bg-slate-50 p-2 mb-3">
+                <img
+                  src={previewUrl}
+                  alt=""
+                  onClick={handlePreviewClick}
+                  className="block mx-auto max-h-[320px] w-auto max-w-full cursor-crosshair select-none"
+                  draggable={false}
+                />
+              </div>
+            ) : (
+              <div className="text-xs text-slate-600 mb-3">No preview image available for this avatar.</div>
+            )}
+
+            {(['boy', 'girl'] as Gender[]).map((g) => (
+              <div key={g} className="mb-3">
+                <div className="font-semibold text-sm mb-2">{g}</div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Field
+                    label="face x"
+                    value={getGlobalFaceCropValue(g, 'x', 0.3)}
+                    onChange={(v) => setGlobalFaceCrop(g, 'x', v)}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                  />
+                  <Field
+                    label="face y"
+                    value={getGlobalFaceCropValue(g, 'y', 0.05)}
+                    onChange={(v) => setGlobalFaceCrop(g, 'y', v)}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                  />
+                  <Field
+                    label="face w"
+                    value={getGlobalFaceCropValue(g, 'w', 0.4)}
+                    onChange={(v) => setGlobalFaceCrop(g, 'w', v)}
+                    min={0.05}
+                    max={1}
+                    step={0.01}
+                  />
+                  <Field
+                    label="face h"
+                    value={getGlobalFaceCropValue(g, 'h', 0.3)}
+                    onChange={(v) => setGlobalFaceCrop(g, 'h', v)}
+                    min={0.05}
+                    max={1}
+                    step={0.01}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {(['profile_card', 'gacha_result', 'inventory'] as AvatarTunerContext[]).map((ctx) => (
+            <div key={ctx} className="rounded-xl border p-3">
+              <div className="font-bold text-sm mb-2">{ctx}</div>
+
+              {(['boy', 'girl'] as Gender[]).map((g) => (
+                <div key={g} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-center mb-3">
+                  <div className="font-semibold text-sm">{g}</div>
+
+                  <Field
+                    label="offsetX%"
+                    value={getValue(ctx, g, 'offsetXPercent', 0)}
+                    onChange={(v) => setTuningValue(ctx, g, 'offsetXPercent', v)}
+                    min={-30}
+                    max={30}
+                    step={0.5}
+                  />
+
+                  <Field
+                    label="offsetY%"
+                    value={getValue(ctx, g, 'offsetYPercent', 0)}
+                    onChange={(v) => setTuningValue(ctx, g, 'offsetYPercent', v)}
+                    min={-30}
+                    max={30}
+                    step={0.5}
+                  />
+
+                  <Field
+                    label="scale"
+                    value={getValue(ctx, g, 'scale', 1)}
+                    onChange={(v) => setTuningValue(ctx, g, 'scale', v)}
+                    min={0.5}
+                    max={1.8}
+                    step={0.01}
+                  />
+                </div>
+              ))}
+            </div>
+          ))}
+
+          <div className="text-xs text-slate-600">
+            Tip: set `localStorage.cc_enable_avatar_tuner = '1'` to show the button outside dev.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs text-slate-600">{label}</span>
+      <input
+        type="number"
+        className="px-2 py-1 rounded-lg border text-sm"
+        value={String(value)}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    </label>
+  );
+}
+
+
+==================== FILE: src/components/chemcity/gacha/ProfileCard.tsx ====================
+
+import React, { useMemo } from 'react';
+import { useChemCityStore } from '../../../store/chemcityStore';
+import type { Cosmetic, FaceCropMeta } from '../../../lib/chemcity/types';
+import { getAvatarTuning, getGlobalFaceCrop, shouldForceNoSplit } from './AvatarTuner';
+
+const EMPTY_EQUIPPED: { avatarId?: string; backgroundId?: string; iconId?: string } = {};
+const EMPTY_MAP: Map<string, any> = new Map();
+
+type CardSize = 'sm' | 'md' | 'lg' | 'xl';
+
+const CARD_DIMS: Record<CardSize, { w: number; h: number; textSize: string }> = {
+  sm: { w: 80, h: 110, textSize: 'text-[10px]' },
+  md: { w: 120, h: 165, textSize: 'text-xs' },
+  lg: { w: 180, h: 248, textSize: 'text-sm' },
+  xl: { w: 280, h: 385, textSize: 'text-base' },
+};
+
+interface ProfileCardProps {
+  displayName?: string;
+  avatarId?: string;
+  backgroundId?: string;
+  gender?: 'boy' | 'girl' | null;
+  cosmeticsMap?: Map<string, Cosmetic>;
+  size?: CardSize;
+  className?: string;
+}
+
+export function ProfileCard({
+  displayName,
+  avatarId: propAvatarId,
+  backgroundId: propBgId,
+  gender: genderOverride,
+  cosmeticsMap: cosmeticsMapOverride,
+  size = 'md',
+  className = '',
+}: ProfileCardProps) {
+  const equippedCosmetics = useChemCityStore(
+    (s) => ((s.user as any)?.equippedCosmetics as typeof EMPTY_EQUIPPED) || EMPTY_EQUIPPED,
+  );
+  const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
+  const cosmeticsMapFromStore = useChemCityStore(
+    (s) => ((s as any).cosmeticsMap as Map<string, Cosmetic>) || EMPTY_MAP,
+  );
+
+  const cosmeticsMap = cosmeticsMapOverride ?? cosmeticsMapFromStore;
+  const effectiveGender = genderOverride ?? userGender;
+
+  const avatarId = propAvatarId ?? equippedCosmetics.avatarId;
+  const backgroundId = propBgId ?? equippedCosmetics.backgroundId;
+
+  const avatar = avatarId ? cosmeticsMap?.get(avatarId) : undefined;
+  const background = backgroundId ? cosmeticsMap?.get(backgroundId) : undefined;
+
+  const dims = CARD_DIMS[size];
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl select-none ${className}`}
+      style={{ width: dims.w, height: dims.h }}
+    >
+      {background?.imageUrl ? (
+        <img
+          src={background.imageUrl}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          draggable={false}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-b from-indigo-900 to-gray-900" />
+      )}
+
+      {avatar?.imageUrl ? (
+        <div className="absolute bottom-0 left-0 right-0 h-[85%] overflow-hidden">
+          {effectiveGender && !shouldForceNoSplit(avatarId) && (avatar as any)?.[effectiveGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy'] ? (
+            <img
+              src={(avatar as any)[effectiveGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy']}
+              alt={displayName ?? 'Avatar'}
+              draggable={false}
+              className="absolute bottom-0 left-1/2 h-full w-auto max-w-none"
+              style={{
+                transform: (() => {
+                  const tune = getAvatarTuning(avatarId, 'profile_card', effectiveGender);
+                  const ox = tune?.offsetXPercent ?? (effectiveGender === 'girl' ? -6 : 6);
+                  const oy = tune?.offsetYPercent ?? 0;
+                  const sc = tune?.scale ?? 1;
+                  return `translateX(calc(-50% + ${ox}%)) translateY(${oy}%) scale(${sc})`;
+                })(),
+              }}
+            />
+          ) : (
+            <img
+              src={avatar.imageUrl}
+              alt={displayName ?? 'Avatar'}
+              draggable={false}
+              className="absolute bottom-0 left-1/2 h-full w-auto max-w-none"
+              style={{
+                transform: (() => {
+                  const ox = effectiveGender === 'girl' ? -6 : 6;
+                  return `translateX(calc(-50% + ${ox}%))`;
+                })(),
+              }}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 h-[70%] w-[60%] flex items-end justify-center">
+          <span className="text-6xl">🧑</span>
+        </div>
+      )}
+
+      {displayName && (
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
+          <p className={`text-white font-semibold text-center truncate ${dims.textSize}`}>{displayName}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ProfileIconProps {
+  size?: number;
+  avatarId?: string;
+  iconId?: string;
+  gender?: 'boy' | 'girl' | null;
+  cosmeticsMap?: Map<string, Cosmetic>;
+  className?: string;
+}
+
+export function ProfileIcon({
+  size = 40,
+  avatarId: propAvatarId,
+  iconId: propIconId,
+  gender: genderOverride,
+  cosmeticsMap: cosmeticsMapOverride,
+  className = '',
+}: ProfileIconProps) {
+  const equippedCosmetics = useChemCityStore(
+    (s) => ((s.user as any)?.equippedCosmetics as typeof EMPTY_EQUIPPED) || EMPTY_EQUIPPED,
+  );
+  const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
+  const cosmeticsMapFromStore = useChemCityStore(
+    (s) => ((s as any).cosmeticsMap as Map<string, Cosmetic>) || EMPTY_MAP,
+  );
+
+  const cosmeticsMap = cosmeticsMapOverride ?? cosmeticsMapFromStore;
+  const effectiveGender = genderOverride ?? userGender;
+
+  const iconId = propIconId ?? equippedCosmetics.iconId;
+  const avatarId = propAvatarId ?? equippedCosmetics.avatarId;
+
+  const iconCosmetic = iconId ? cosmeticsMap?.get(iconId) : undefined;
+  const avatarCosmetic = !iconCosmetic && avatarId ? cosmeticsMap?.get(avatarId) : undefined;
+
+  const globalFaceCrop =
+    effectiveGender && avatarCosmetic?.type === 'avatar' && !shouldForceNoSplit(avatarId)
+      ? getGlobalFaceCrop(effectiveGender)
+      : null;
+  const faceCrop: FaceCropMeta | undefined =
+    iconCosmetic?.faceCrop ?? avatarCosmetic?.faceCrop ?? (globalFaceCrop as any) ?? undefined;
+  const genderedAvatarUrl =
+    effectiveGender && avatarCosmetic
+      ? ((avatarCosmetic as any)[effectiveGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy'] as string | undefined)
+      : undefined;
+  const imageUrl = iconCosmetic?.imageUrl ?? genderedAvatarUrl ?? avatarCosmetic?.imageUrl;
+
+  const cropStyle = useMemo(() => {
+    if (!faceCrop || !imageUrl) return undefined;
+    const { x, y, w, h } = faceCrop;
+    const scaleX = 1 / w;
+    const scaleY = 1 / h;
+    const scale = Math.max(scaleX, scaleY);
+    return {
+      backgroundImage: `url(${imageUrl})`,
+      backgroundSize: `${scale * 100}%`,
+      backgroundPosition: `${-x * scale * 100}% ${-y * scale * 100}%`,
+    } as React.CSSProperties;
+  }, [faceCrop, imageUrl]);
+
+  return (
+    <div
+      className={`rounded-full overflow-hidden shrink-0 bg-gray-700 ${className}`}
+      style={{ width: size, height: size }}
+    >
+      {cropStyle ? (
+        <div className="w-full h-full" style={cropStyle} />
+      ) : imageUrl ? (
+        <img
+          src={imageUrl}
+          alt=""
+          className="w-full h-full max-w-none object-cover object-top"
+          draggable={false}
+          style={
+            iconCosmetic?.type === 'avatar'
+              ? {
+                  width: '200%',
+                  maxWidth: '200%',
+                  transform: effectiveGender === 'girl' ? 'translateX(-50%)' : 'translateX(0%)',
+                }
+              : undefined
+          }
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-gray-500">
+          <span style={{ fontSize: size * 0.5 }}>👤</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+==================== FILE: src/components/chemcity/gacha/GachaResultsModal.tsx ====================
+
+import { useEffect, useState } from 'react';
+import { useChemCityStore } from '../../../store/chemcityStore';
+import type { Cosmetic, GachaDrawResult, Rarity } from '../../../lib/chemcity/types';
+import { getAvatarTuning, shouldForceNoSplit } from './AvatarTuner';
+
+interface Props {
+  results: GachaDrawResult[];
+  onClose: () => void;
+}
+
+const RARITY_STYLES: Record<
+  Rarity,
+  { border: string; glow: string; bg: string; label: string; badge: string }
+> = {
+  common: {
+    border: 'border-gray-500',
+    glow: '',
+    bg: 'bg-gray-700',
+    label: 'Common',
+    badge: 'bg-gray-600 text-gray-200',
+  },
+  uncommon: {
+    border: 'border-green-500',
+    glow: 'shadow-[0_0_12px_2px] shadow-green-500/50',
+    bg: 'bg-green-900/30',
+    label: 'Uncommon',
+    badge: 'bg-green-700 text-green-100',
+  },
+  rare: {
+    border: 'border-blue-400',
+    glow: 'shadow-[0_0_16px_4px] shadow-blue-400/60',
+    bg: 'bg-blue-900/30',
+    label: 'Rare',
+    badge: 'bg-blue-600 text-blue-100',
+  },
+  epic: {
+    border: 'border-purple-400',
+    glow: 'shadow-[0_0_20px_6px] shadow-purple-400/70',
+    bg: 'bg-purple-900/30',
+    label: 'Epic',
+    badge: 'bg-purple-600 text-purple-100',
+  },
+  legendary: {
+    border: 'border-yellow-400',
+    glow: 'shadow-[0_0_28px_8px] shadow-yellow-400/80',
+    bg: 'bg-yellow-900/30',
+    label: 'Legendary',
+    badge: 'bg-yellow-500 text-yellow-950 font-bold',
+  },
+};
+
+export function GachaResultsModal({ results, onClose }: Props) {
+  const cosmeticsMap = useChemCityStore((s) => (s as any).cosmeticsMap as Map<string, any> | undefined);
+  const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
+  const [revealedCount, setRevealedCount] = useState(0);
+  const [allRevealed, setAllRevealed] = useState(false);
+
+  useEffect(() => {
+    if (allRevealed) return;
+    if (revealedCount >= results.length) {
+      setAllRevealed(true);
+      return;
+    }
+    const t = setTimeout(() => setRevealedCount((n) => n + 1), revealedCount === 0 ? 300 : 400);
+    return () => clearTimeout(t);
+  }, [revealedCount, results.length, allRevealed]);
+
+  function revealAll() {
+    setRevealedCount(results.length);
+    setAllRevealed(true);
+  }
+
+  const totalRefund = results.reduce((acc, r) => acc + r.refundCoins, 0);
+  const newCount = results.filter((r) => r.isNew).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-gray-950/95 backdrop-blur-sm">
+      <div className="flex items-center justify-between px-4 pt-6 pb-2">
+        <h2 className="text-xl font-bold">
+          {results.length === 1 ? 'Draw Result' : `${results.length}× Draw Results`}
+        </h2>
+        {!allRevealed && (
+          <button onClick={revealAll} className="text-sm text-indigo-400 hover:text-indigo-300">
+            Reveal All
+          </button>
+        )}
+      </div>
+
+      <div className="px-4 pb-3 text-sm text-gray-400">
+        {newCount > 0 && <span className="text-green-400 mr-3">✦ {newCount} new</span>}
+        {totalRefund > 0 && (
+          <span className="text-yellow-400">🪙 +{totalRefund} coins (duplicates)</span>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4">
+        <div
+          className={`grid gap-3 pb-6 ${
+            results.length === 1
+              ? 'grid-cols-1 max-w-xs mx-auto'
+              : results.length <= 4
+                ? 'grid-cols-2'
+                : 'grid-cols-3 sm:grid-cols-5'
+          }`}
+        >
+          {results.map((result, i) => (
+            <ResultCard
+              key={i}
+              result={result}
+              cosmetic={cosmeticsMap?.get(result.cosmeticId)}
+              userGender={userGender}
+              revealed={i < revealedCount}
+              isSingle={results.length === 1}
+            />
+          ))}
+        </div>
+      </div>
+
+      {allRevealed && (
+        <div className="px-4 pb-8 pt-2">
+          <button
+            onClick={onClose}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-2xl transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResultCard({
+  result,
+  cosmetic,
+  userGender,
+  revealed,
+  isSingle,
+}: {
+  result: GachaDrawResult;
+  cosmetic: any;
+  userGender: 'boy' | 'girl' | null;
+  revealed: boolean;
+  isSingle: boolean;
+}) {
+  const style = RARITY_STYLES[result.rarity];
+
+  return (
+    <div
+      className={`relative rounded-2xl border-2 overflow-hidden transition-all duration-500 ${
+        revealed ? `opacity-100 scale-100 ${style.border} ${style.glow}` : 'opacity-0 scale-90'
+      } ${style.bg} ${isSingle ? 'aspect-[3/4]' : 'aspect-square'}`}
+    >
+      {revealed ? (
+        <>
+          {cosmetic?.imageUrl ? (
+            cosmetic?.type === 'avatar' ? (
+              <div className="absolute inset-0 overflow-hidden">
+                {userGender && !shouldForceNoSplit(cosmetic?.id) && (cosmetic as any)?.[userGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy'] ? (
+                  <img
+                    src={(cosmetic as any)[userGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy']}
+                    alt={cosmetic.name}
+                    className="absolute bottom-0 left-1/2 h-full w-auto max-w-none"
+                    style={{
+                      transform: (() => {
+                        const tune = getAvatarTuning(cosmetic?.id, 'gacha_result', userGender);
+                        const ox = tune?.offsetXPercent ?? (userGender === 'girl' ? -6 : 6);
+                        const oy = tune?.offsetYPercent ?? 0;
+                        const sc = tune?.scale ?? 1;
+                        return `translateX(calc(-50% + ${ox}%)) translateY(${oy}%) scale(${sc})`;
+                      })(),
+                    }}
+                    draggable={false}
+                  />
+                ) : (
+                  <img
+                    src={cosmetic.imageUrl}
+                    alt={cosmetic.name}
+                    className="absolute bottom-0 left-0 h-full w-[200%] max-w-none object-cover object-bottom"
+                    style={{
+                      transform: userGender === 'girl' ? 'translateX(-50%)' : 'translateX(0%)',
+                    }}
+                    draggable={false}
+                  />
+                )}
+              </div>
+            ) : (
+              <img src={cosmetic.imageUrl} alt={cosmetic.name} className="w-full h-full object-cover" />
+            )
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-4xl">
+              {result.rarity === 'legendary' ? '⭐' : result.rarity === 'epic' ? '💜' : '🎁'}
+            </div>
+          )}
+
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-2">
+            <p className="text-white text-xs font-semibold leading-tight truncate">
+              {cosmetic?.name ?? result.cosmeticId}
+            </p>
+            <div className="flex items-center gap-1 mt-0.5">
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${style.badge}`}>{style.label}</span>
+              {result.pitied && (
+                <span className="text-[10px] bg-blue-700 text-blue-100 px-1.5 py-0.5 rounded-full">Pity</span>
+              )}
+              {!result.isNew && (
+                <span className="text-[10px] bg-yellow-700 text-yellow-100 px-1.5 py-0.5 rounded-full">
+                  +{result.refundCoins}🪙
+                </span>
+              )}
+              {result.isNew && (
+                <span className="text-[10px] bg-green-700 text-green-100 px-1.5 py-0.5 rounded-full">New!</span>
+              )}
+            </div>
+          </div>
+
+          {result.rarity === 'legendary' && (
+            <div className="absolute inset-0 bg-gradient-to-br from-yellow-400/10 via-transparent to-yellow-400/10 animate-pulse pointer-events-none" />
+          )}
+        </>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
+          <span className="text-3xl">❓</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+==================== FILE: src/components/chemcity/gacha/CosmeticsInventory.tsx ====================
+
+import { useState } from 'react';
+import { useChemCityStore } from '../../../store/chemcityStore';
+import type { CosmeticType, Rarity, Cosmetic } from '../../../lib/chemcity/types';
+import { ProfileCard } from './ProfileCard';
+import { callChemCityEquipCosmetics } from '../../../lib/chemcity/cloudFunctions';
+import { getAvatarTuning, shouldForceNoSplit } from './AvatarTuner';
+
+const RARITY_ORDER: Rarity[] = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+
+const RARITY_BADGE: Record<Rarity, string> = {
+  legendary: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40',
+  epic: 'bg-purple-500/20 text-purple-300 border border-purple-500/40',
+  rare: 'bg-blue-500/20 text-blue-300 border border-blue-500/40',
+  uncommon: 'bg-green-500/20 text-green-300 border border-green-500/40',
+  common: 'bg-gray-500/20 text-gray-300 border border-gray-500/40',
+};
+
+const TYPE_LABELS: Record<CosmeticType, string> = {
+  avatar: 'Avatars',
+  background: 'Backgrounds',
+  icon: 'Icons',
+};
+
+export function CosmeticsInventory() {
+  const user = useChemCityStore((s) => s.user);
+  const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
+  const cosmeticsMap = useChemCityStore((s) => (s as any).cosmeticsMap as Map<string, Cosmetic> | undefined);
+
+  const ownedCosmetics = new Set((user as any)?.ownedCosmetics ?? []);
+  const equippedCosmetics = (user as any)?.equippedCosmetics ?? {};
+
+  const [activeType, setActiveType] = useState<CosmeticType | 'all'>('all');
+  const [activeRarity, setActiveRarity] = useState<Rarity | 'all'>('all');
+  const [equipping, setEquipping] = useState(false);
+
+  const owned = Array.from(cosmeticsMap?.values?.() ?? []).filter((c) => ownedCosmetics.has(c.id));
+
+  const filtered = owned.filter((c) => {
+    if (activeType !== 'all' && c.type !== activeType) return false;
+    if (activeRarity !== 'all' && c.rarity !== activeRarity) return false;
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    const ri = RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity);
+    if (ri !== 0) return ri;
+    return a.name.localeCompare(b.name);
+  });
+
+  async function handleEquip(cosmetic: Cosmetic) {
+    setEquipping(true);
+    try {
+      const patch: Record<string, string> = {};
+      if (cosmetic.type === 'avatar') patch.avatarId = cosmetic.id;
+      else if (cosmetic.type === 'background') patch.backgroundId = cosmetic.id;
+      else if (cosmetic.type === 'icon') patch.iconId = cosmetic.id;
+
+      await callChemCityEquipCosmetics(patch);
+    } finally {
+      setEquipping(false);
+    }
+  }
+
+  const isEquipped = (cosmetic: Cosmetic) => {
+    if (cosmetic.type === 'avatar') return equippedCosmetics.avatarId === cosmetic.id;
+    if (cosmetic.type === 'background') return equippedCosmetics.backgroundId === cosmetic.id;
+    if (cosmetic.type === 'icon') return equippedCosmetics.iconId === cosmetic.id;
+    return false;
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-950 text-white">
+      <div className="px-4 pt-6 pb-4">
+        <h1 className="text-2xl font-bold mb-4">My Cosmetics</h1>
+        <div className="flex gap-4 items-end">
+          <ProfileCard size="lg" />
+          <div className="flex-1 space-y-1 text-sm text-gray-400">
+            <p>
+              <span className="text-white font-medium">Avatar:</span>{' '}
+              {equippedCosmetics.avatarId
+                ? cosmeticsMap?.get(equippedCosmetics.avatarId)?.name ?? 'Unknown'
+                : 'None'}
+            </p>
+            <p>
+              <span className="text-white font-medium">Background:</span>{' '}
+              {equippedCosmetics.backgroundId
+                ? cosmeticsMap?.get(equippedCosmetics.backgroundId)?.name ?? 'Unknown'
+                : 'None'}
+            </p>
+            <p className="text-xs">{owned.length} cosmetics owned</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
+        {(['all', 'avatar', 'background', 'icon'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setActiveType(t)}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-sm transition-colors ${
+              activeType === t
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+            }`}
+          >
+            {t === 'all' ? 'All' : TYPE_LABELS[t]}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-2 px-4 pb-4 overflow-x-auto">
+        {(['all', ...RARITY_ORDER] as const).map((r) => (
+          <button
+            key={r}
+            onClick={() => setActiveRarity(r)}
+            className={`shrink-0 px-3 py-1 rounded-full text-xs capitalize transition-colors ${
+              activeRarity === r
+                ? 'bg-white text-gray-900 font-bold'
+                : 'bg-gray-800 text-gray-400'
+            }`}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+          <span className="text-5xl mb-3">🎁</span>
+          <p>No cosmetics here yet.</p>
+          <p className="text-sm mt-1">Visit the Gacha machine or Shop!</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 px-4 pb-8">
+          {filtered.map((cosmetic) => {
+            const equipped = isEquipped(cosmetic);
+            return (
+              <button
+                key={cosmetic.id}
+                onClick={() => handleEquip(cosmetic)}
+                disabled={equipping || equipped}
+                className={`relative rounded-xl overflow-hidden aspect-square border-2 transition-all active:scale-95 ${
+                  equipped
+                    ? 'border-indigo-400 ring-2 ring-indigo-400/50'
+                    : 'border-gray-700 hover:border-gray-500'
+                }`}
+              >
+                {cosmetic.imageUrl ? (
+                  cosmetic.type === 'avatar' ? (
+                    <div className="absolute inset-0 overflow-hidden">
+                      {userGender && !shouldForceNoSplit(cosmetic?.id) && (cosmetic as any)?.[userGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy'] ? (
+                        <img
+                          src={(cosmetic as any)[userGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy']}
+                          alt={cosmetic.name}
+                          className="absolute bottom-0 left-1/2 h-full w-auto max-w-none"
+                          style={{
+                            transform: (() => {
+                              const tune = getAvatarTuning(cosmetic?.id, 'inventory', userGender);
+                              const ox = tune?.offsetXPercent ?? (userGender === 'girl' ? -6 : 6);
+                              const oy = tune?.offsetYPercent ?? 0;
+                              const sc = tune?.scale ?? 1;
+                              return `translateX(calc(-50% + ${ox}%)) translateY(${oy}%) scale(${sc})`;
+                            })(),
+                          }}
+                          draggable={false}
+                        />
+                      ) : (
+                        <img
+                          src={cosmetic.imageUrl}
+                          alt={cosmetic.name}
+                          className="absolute bottom-0 left-0 h-full w-[200%] max-w-none object-cover object-bottom"
+                          style={{
+                            transform: userGender === 'girl' ? 'translateX(-50%)' : 'translateX(0%)',
+                          }}
+                          draggable={false}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <img src={cosmetic.imageUrl} alt={cosmetic.name} className="w-full h-full object-cover" />
+                  )
+                ) : (
+                  <div className="w-full h-full bg-gray-800 flex items-center justify-center text-3xl">🎴</div>
+                )}
+
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-1.5 py-1">
+                  <p className="text-white text-[9px] leading-tight truncate">{cosmetic.name}</p>
+                  <span className={`inline-block text-[8px] px-1 py-0.5 rounded-full mt-0.5 ${RARITY_BADGE[cosmetic.rarity]}`}>
+                    {cosmetic.rarity}
+                  </span>
+                </div>
+
+                {equipped && (
+                  <div className="absolute top-1.5 right-1.5 bg-indigo-600 rounded-full w-5 h-5 flex items-center justify-center">
+                    <span className="text-[10px]">✓</span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+==================== FILE: src/components/chemcity/gacha/GachaScreen.tsx ====================
+
+import { useEffect, useState } from 'react';
+import { useChemCityStore } from '../../../store/chemcityStore';
+import { GachaResultsModal } from './GachaResultsModal';
+import { PityBar } from './PityBar';
+import type { GachaBanner } from '../../../lib/chemcity/types';
+import { callChemCityGachaDraw } from '../../../lib/chemcity/cloudFunctions';
+
+export function GachaScreen() {
+  const user = useChemCityStore((s) => s.user);
+
+  const loadGachaStatic = useChemCityStore((s) => s.loadGachaStatic);
+
+  const activeBanners = useChemCityStore((s) => s.activeBanners);
+
+  const [selectedBannerId, setSelectedBannerId] = useState<string | null>(null);
+  const [showResults, setShowResults] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [lastResults, setLastResults] = useState<any[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showAnimation, setShowAnimation] = useState(false);
+  const [pendingDraw, setPendingDraw] = useState<{ count: 1 | 10 } | null>(null);
+  const [animationDone, setAnimationDone] = useState(false);
+
+  // Fallback default banner if none exist in database
+  const defaultBanner: GachaBanner = {
+    id: 'banner_standard',
+    name: 'Standard Banner',
+    active: true,
+    cacheVersion: 1,
+    rarityRates: { common: 0.6, uncommon: 0.25, rare: 0.1, epic: 0.04, legendary: 0.01 },
+    pityRules: { epicEvery: 50, legendaryEvery: 100 },
+    duplicateRefundCoinsByRarity: { common: 10, uncommon: 25, rare: 50, epic: 100, legendary: 500 },
+  };
+
+  // Use activeBanners if available, otherwise use default
+  const effectiveBanners = activeBanners.length > 0 ? activeBanners : [defaultBanner];
+  
+  const selectedBanner: GachaBanner | undefined =
+    effectiveBanners.find((b) => b.id === selectedBannerId) ?? effectiveBanners[0];
+
+  useEffect(() => {
+    if (effectiveBanners.length && !selectedBannerId) {
+      setSelectedBannerId(effectiveBanners[0].id);
+    }
+  }, [effectiveBanners, selectedBannerId]);
+
+  useEffect(() => {
+    loadGachaStatic();
+  }, [loadGachaStatic]);
+
+  useEffect(() => {
+    if (pendingDraw) {
+      setShowAnimation(true);
+      setAnimationDone(false);
+      setError(null);
+      setIsDrawing(true);
+      callChemCityGachaDraw({ bannerId: (selectedBanner as any).id, count: pendingDraw.count, payWith: 'tickets' })
+        .then((res) => {
+          setLastResults(res.results);
+        })
+        .catch((err: any) => {
+          setError(err?.message ?? 'Draw failed');
+        })
+        .finally(() => {
+          setIsDrawing(false);
+        });
+    }
+  }, [pendingDraw, selectedBanner]);
+
+  useEffect(() => {
+    if (!showAnimation && animationDone && lastResults && !isDrawing) {
+      setShowResults(true);
+    }
+  }, [animationDone, isDrawing, lastResults, showAnimation]);
+
+  const currencies = user?.currencies ?? { coins: 0, diamonds: 0, tickets: 0 };
+
+  const gachaState = (user as any)?.gachaState ?? {};
+  const pity = selectedBanner ? gachaState[selectedBanner.id] ?? { sinceEpic: 0, sinceLegendary: 0, lifetimePulls: 0 } : null;
+
+  const canPayTickets1x = (currencies as any).tickets >= 1;
+  const canPayTickets10x = (currencies as any).tickets >= 10;
+
+  function handleStartDraw(count: 1 | 10) {
+    if (!selectedBanner) return;
+    if (showAnimation || isDrawing) return;
+    setLastResults(null);
+    setShowResults(false);
+    setPendingDraw({ count });
+  }
+
+  function handleCloseResults() {
+    setShowResults(false);
+    setLastResults(null);
+  }
+
+  function handleAnimationEnded() {
+    setShowAnimation(false);
+    setPendingDraw(null);
+    setAnimationDone(true);
+  }
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-900 text-white">
+        <span className="animate-pulse text-lg">Loading...</span>
+      </div>
+    );
+  }
+
+  // Show gacha machine even while loading static data
+  const hasBanner = selectedBanner && pity;
+
+  return (
+    <div className="relative min-h-screen bg-black text-white overflow-hidden flex flex-col">
+      {/* Background image */}
+      <img
+        src="/GachaMachine.png"
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover"
+        draggable={false}
+      />
+
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/20 to-black/60 pointer-events-none" />
+
+      {/* Animation overlay */}
+      {showAnimation ? (
+        <div className="absolute inset-0 z-20 flex items-center justify-center">
+          <video
+            src="/Gacha animation.mp4"
+            className="w-full h-full object-cover"
+            autoPlay
+            muted
+            playsInline
+            onEnded={handleAnimationEnded}
+          />
+        </div>
+      ) : null}
+
+      {/* Top bar with tickets/coins */}
+      <div className="relative z-30 flex items-center justify-between gap-3 px-4 py-4">
+        <div className="flex gap-3">
+          <CurrencyBadge emoji="🎟️" label="Tickets" value={(currencies as any).tickets ?? 0} />
+          <CurrencyBadge emoji="🪙" label="Coins" value={currencies.coins} />
+        </div>
+        {effectiveBanners.length > 1 && hasBanner ? (
+          <select
+            value={selectedBanner.id}
+            onChange={(e) => setSelectedBannerId(e.target.value)}
+            className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm"
+            disabled={showAnimation || isDrawing}
+          >
+            {effectiveBanners.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </div>
+
+      {/* Middle spacer */}
+      <div className="flex-1" />
+
+      {/* Bottom controls */}
+      <div className="relative z-30 flex flex-col items-center gap-3 px-4 pb-8">
+        {error ? (
+          <div className="w-full max-w-md bg-red-900/40 border border-red-700 rounded-xl px-4 py-3 text-sm text-red-200">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="w-full max-w-md grid grid-cols-2 gap-3">
+          <DrawButton
+            label="Draw × 1"
+            sublabel="1 Ticket"
+            emoji="🎟️"
+            disabled={!canPayTickets1x || isDrawing || showAnimation || !hasBanner}
+            loading={isDrawing && pendingDraw?.count === 1}
+            onClick={() => handleStartDraw(1)}
+            variant="primary"
+          />
+          <DrawButton
+            label="Draw × 10"
+            sublabel="10 Tickets (Rare+)"
+            emoji="🎟️"
+            disabled={!canPayTickets10x || isDrawing || showAnimation || !hasBanner}
+            loading={isDrawing && pendingDraw?.count === 10}
+            onClick={() => handleStartDraw(10)}
+            variant="secondary"
+          />
+        </div>
+
+        <div className="w-full max-w-md space-y-2">
+          {hasBanner ? (
+            <>
+              <PityBar label="Epic Pity" current={pity.sinceEpic} max={selectedBanner.pityRules.epicEvery} color="purple" />
+              <PityBar label="Legendary Pity" current={pity.sinceLegendary} max={selectedBanner.pityRules.legendaryEvery} color="yellow" />
+            </>
+          ) : (
+            <div className="text-center text-gray-400 text-sm">No active banners available</div>
+          )}
+        </div>
+      </div>
+
+      {showResults && lastResults ? (
+        <GachaResultsModal results={lastResults as any} onClose={handleCloseResults} />
+      ) : null}
+    </div>
+  );
+}
+
+function CurrencyBadge({ emoji, label, value }: { emoji: string; label: string; value: number }) {
+  return (
+    <div className="flex items-center gap-1.5 bg-gray-800 rounded-xl px-3 py-2">
+      <span className="text-lg">{emoji}</span>
+      <div>
+        <p className="text-[10px] text-gray-500 leading-none">{label}</p>
+        <p className="text-sm font-bold leading-tight">{value.toLocaleString()}</p>
+      </div>
+    </div>
+  );
+}
+
+function DrawButton({
+  label,
+  sublabel,
+  emoji,
+  disabled,
+  loading,
+  onClick,
+  variant,
+}: {
+  label: string;
+  sublabel: string;
+  emoji: string;
+  disabled: boolean;
+  loading: boolean;
+  onClick: () => void;
+  variant: 'primary' | 'secondary';
+}) {
+  const base =
+    'flex flex-col items-center justify-center rounded-2xl py-4 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed';
+  const styles = {
+    primary: 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/40',
+    secondary: 'bg-gray-700 hover:bg-gray-600 text-white',
+  };
+
+  return (
+    <button onClick={onClick} disabled={disabled} className={`${base} ${styles[variant]}`}>
+      {loading ? (
+        <span className="animate-spin text-xl">⟳</span>
+      ) : (
+        <>
+          <span className="text-base font-bold">{label}</span>
+          <span className="text-xs text-gray-200/70">
+            {emoji} {sublabel}
+          </span>
+        </>
+      )}
+    </button>
+  );
+}
+
+function RateTable({ rates }: { rates: Record<string, number> }) {
+  const order = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+  const colors: Record<string, string> = {
+    legendary: 'text-yellow-400',
+    epic: 'text-purple-400',
+    rare: 'text-blue-400',
+    uncommon: 'text-green-400',
+    common: 'text-gray-400',
+  };
+
+  return (
+    <div className="mt-4 bg-gray-800/60 rounded-xl px-4 py-3">
+      <p className="text-xs text-gray-500 mb-2 uppercase tracking-wide">Drop Rates</p>
+      <div className="grid grid-cols-5 gap-1 text-center">
+        {order.map((r) => (
+          <div key={r} className="flex flex-col items-center">
+            <span className={`text-xs font-bold capitalize ${colors[r]}`}>{r}</span>
+            <span className="text-[10px] text-gray-400">{((rates[r] ?? 0) * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BannerCountdown({ endAt }: { endAt: any }) {
+  const end = typeof endAt === 'string' ? new Date(endAt) : typeof endAt?.toDate === 'function' ? endAt.toDate() : new Date(endAt);
+  const diff = end.getTime() - Date.now();
+  if (diff < 0) return null;
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+  return (
+    <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm text-white text-xs rounded-full px-3 py-1">
+      ⏳ {days}d {hours}h left
+    </div>
+  );
+}
+
+
+==================== FILE: src/pages/ProfilePage.jsx ====================
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import { updateProfile } from 'firebase/auth';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import { User, GraduationCap, Mail, Calendar, Save, ArrowLeft, Trophy, Target, BookOpen, Lock, Unlock } from 'lucide-react';
+import { useQuizData } from '../hooks/useQuizData';
+import { ProfileCard } from '../components/chemcity/gacha/ProfileCard';
+import { getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
+import { AvatarTunerButton } from '../components/chemcity/gacha/AvatarTuner';
+
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
+
+export default function ProfilePage() {
+  const { currentUser, userProfile, loadUserProfile } = useAuth();
+  const { t, isEnglish } = useLanguage();
+  const navigate = useNavigate();
+  const { questions, loading: questionsLoading } = useQuizData(SHEET_URL);
+  
+  const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
+  const [level, setLevel] = useState(userProfile?.level || 'S5');
+  const [learnedUpTo, setLearnedUpTo] = useState(userProfile?.learnedUpTo || '');
+  const [gender, setGender] = useState(userProfile?.gender || 'boy');
+  const [topicExceptions, setTopicExceptions] = useState(userProfile?.topicExceptions || []);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
+
+  const [cosmeticsMap, setCosmeticsMap] = useState(null);
+
+  const equippedAvatarId = userProfile?.chemcity?.equippedCosmetics?.avatarId;
+  const equippedBackgroundId = userProfile?.chemcity?.equippedCosmetics?.backgroundId;
+
+  const fallbackIds = useMemo(() => {
+    if (!cosmeticsMap) return { avatarId: undefined, backgroundId: undefined };
+    if (equippedAvatarId && equippedBackgroundId) {
+      return { avatarId: equippedAvatarId, backgroundId: equippedBackgroundId };
+    }
+
+    const all = Array.from(cosmeticsMap.values());
+    const firstAvatar = all.find((c) => c?.type === 'avatar');
+    const firstBg = all.find((c) => c?.type === 'background');
+
+    return {
+      avatarId: equippedAvatarId || firstAvatar?.id,
+      backgroundId: equippedBackgroundId || firstBg?.id,
+    };
+  }, [cosmeticsMap, equippedAvatarId, equippedBackgroundId]);
+
+  const previewAvatar = useMemo(() => {
+    if (!cosmeticsMap) return null;
+    const id = fallbackIds.avatarId;
+    if (!id) return null;
+    try {
+      return cosmeticsMap.get(id) || null;
+    } catch {
+      return null;
+    }
+  }, [cosmeticsMap, fallbackIds.avatarId]);
+
+  useEffect(() => {
+    setGender(userProfile?.gender || 'boy');
+  }, [userProfile]);
+
+  useEffect(() => {
+    let mounted = true;
+    getCosmeticsMap()
+      .then((m) => {
+        if (!mounted) return;
+        setCosmeticsMap(m);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCosmeticsMap(new Map());
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Extract all unique topics from questions
+  const allTopics = useMemo(() => {
+    if (!questions || questions.length === 0) return [];
+    return [...new Set(questions.map(q => q.Topic))]
+      .filter(t => t && t !== "Uncategorized")
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [questions]);
+
+  // Get currently available topics based on learnedUpTo and exceptions
+  const availableTopics = useMemo(() => {
+    if (!learnedUpTo) return [];
+    
+    const available = [];
+    for (const topic of allTopics) {
+      const topicNum = topic.match(/^\d+/)?.[0];
+      if (topicNum && topicNum <= learnedUpTo && !topicExceptions.includes(topic)) {
+        available.push(topic);
+      }
+    }
+    return available;
+  }, [allTopics, learnedUpTo, topicExceptions]);
+
+  // Get topics that are within learned range (for exceptions UI)
+  const learnedRangeTopics = useMemo(() => {
+    if (!learnedUpTo) return [];
+    
+    return allTopics.filter(topic => {
+      const topicNum = topic.match(/^\d+/)?.[0];
+      return topicNum && topicNum <= learnedUpTo;
+    });
+  }, [allTopics, learnedUpTo]);
+
+  const toggleTopicException = (topic) => {
+    setTopicExceptions(prev => 
+      prev.includes(topic) 
+        ? prev.filter(t => t !== topic)
+        : [...prev, topic]
+    );
+  };
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage({ type: '', text: '' });
+
+    try {
+      // Update Firebase Auth profile
+      await updateProfile(currentUser, {
+        displayName: displayName
+      });
+
+      // Update Firestore user document
+      const userRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userRef, {
+        displayName: displayName,
+        gender: gender,
+        level: level,
+        learnedUpTo: learnedUpTo,
+        topicExceptions: topicExceptions,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Reload user profile
+      await loadUserProfile(currentUser.uid);
+
+      setMessage({ 
+        type: 'success', 
+        text: t('profile.profileUpdated')
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      setMessage({ 
+        type: 'error', 
+        text: t('profile.failedUpdate')
+      });
+    }
+
+    setSaving(false);
+  }
+
+  const formatDate = (isoString) => {
+    if (!isoString) return t('common.notAvailable');
+    const date = new Date(isoString);
+    return date.toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', { 
+      day: '2-digit', 
+      month: 'short', 
+      year: 'numeric'
+    });
+  };
+
+  const overallAccuracy = userProfile?.totalQuestions > 0
+    ? Math.round((userProfile.totalCorrect / userProfile.totalQuestions) * 100)
+    : 0;
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="p-3 bg-white rounded-lg border-2 border-slate-200 hover:border-lab-blue transition-all"
+        >
+          <ArrowLeft size={20} />
+        </button>
+        
+        <div className="flex-1 flex justify-center">
+          <div className="paper-island paper-island-md paper-amber">
+            <div className="paper-island-content">
+              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-emerald">
+                <User size={32} className="text-emerald-700" />
+                {t('profile.profileSettings')}
+              </h1>
+              <p className="text-slate-700 mt-1 font-semibold">
+                {t('profile.manageAccount')}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Summary */}
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div className="bg-slate-50 p-4 border-b">
+          <h2 className="text-lg font-bold text-slate-800">
+            {t('profile.yourStatistics')}
+          </h2>
+        </div>
+        
+        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
+            <div className="flex items-center gap-2 mb-2">
+              <Trophy className="text-lab-blue" size={20} />
+              <span className="text-sm font-semibold text-slate-600">
+                {t('profile.totalAttempts')}
+              </span>
+            </div>
+            <div className="text-3xl font-black text-lab-blue">
+              {userProfile?.totalAttempts || 0}
+            </div>
+          </div>
+
+          <div className="bg-green-50 rounded-xl p-4 border-2 border-green-200">
+            <div className="flex items-center gap-2 mb-2">
+              <Target className="text-chemistry-green" size={20} />
+              <span className="text-sm font-semibold text-slate-600">
+                {t('profile.overallAccuracy')}
+              </span>
+            </div>
+            <div className="text-3xl font-black text-chemistry-green">
+              {overallAccuracy}%
+            </div>
+          </div>
+
+          <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
+            <div className="flex items-center gap-2 mb-2">
+              <GraduationCap className="text-purple-600" size={20} />
+              <span className="text-sm font-semibold text-slate-600">
+                {t('profile.questionsSolved')}
+              </span>
+            </div>
+            <div className="text-3xl font-black text-purple-600">
+              {userProfile?.totalQuestions || 0}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Profile Form */}
+      <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div className="bg-slate-50 p-4 border-b">
+          <h2 className="text-lg font-bold text-slate-800">
+            {t('profile.accountInformation')}
+          </h2>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Success/Error Message */}
+          {message.text && (
+            <div className={`p-4 rounded-lg border-2 ${
+              message.type === 'success' 
+                ? 'bg-green-50 border-green-200 text-green-800' 
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              <p className="font-semibold">{message.text}</p>
+            </div>
+          )}
+
+          {/* Display Name */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <User size={16} />
+              {t('profile.displayName')}
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              required
+              className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-lab-blue focus:ring-2 focus:ring-blue-100 outline-none transition-all"
+              placeholder={t('profile.enterYourName')}
+            />
+          </div>
+
+          {/* Gender */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <User size={16} />
+              Gender
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setGender('boy')}
+                className={`py-3 rounded-xl border-2 font-bold transition-all ${
+                  gender === 'boy'
+                    ? 'border-lab-blue bg-blue-50 text-lab-blue'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                Boy
+              </button>
+              <button
+                type="button"
+                onClick={() => setGender('girl')}
+                className={`py-3 rounded-xl border-2 font-bold transition-all ${
+                  gender === 'girl'
+                    ? 'border-lab-blue bg-blue-50 text-lab-blue'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                }`}
+              >
+                Girl
+              </button>
+            </div>
+          </div>
+          {/* Profile Card (ChemCity avatar + background) */}
+          <div className="border-t-2 border-slate-100 pt-6">
+            <label className="block text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+              <User size={16} />
+              Profile Card
+            </label>
+
+            <div className="flex items-center gap-4 mb-2">
+              <ProfileCard
+                size="lg"
+                displayName={displayName}
+                gender={gender}
+                cosmeticsMap={cosmeticsMap || undefined}
+                avatarId={fallbackIds.avatarId}
+                backgroundId={fallbackIds.backgroundId}
+              />
+              <div className="text-sm text-slate-600">
+                <div className="font-bold text-slate-800">{t('profile.preview')}</div>
+                <div className="text-xs text-slate-500">
+                  Set avatar/background in ChemCity → Cosmetics
+                </div>
+                <div className="mt-2">
+                  <AvatarTunerButton
+                    avatarId={fallbackIds.avatarId}
+                    avatarImageUrl={previewAvatar?.imageUrl}
+                    avatarImageUrlBoy={previewAvatar?.imageUrlBoy}
+                    avatarImageUrlGirl={previewAvatar?.imageUrlGirl}
+                    className="px-3 py-2 rounded-lg border-2 border-slate-200 text-slate-700 font-bold hover:border-slate-300"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Email (Read-only) */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <Mail size={16} />
+              {t('profile.email')}
+            </label>
+            <input
+              type="email"
+              value={currentUser?.email || ''}
+              disabled
+              className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg bg-slate-50 text-slate-500 cursor-not-allowed"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              {t('profile.emailCannotChange')}
+            </p>
+          </div>
+
+          {/* School Level */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <GraduationCap size={16} />
+              {t('profile.schoolLevel')}
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              {['S4', 'S5', 'S6'].map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => setLevel(lvl)}
+                  className={`py-3 rounded-xl border-2 font-bold transition-all ${
+                    level === lvl
+                      ? 'border-lab-blue bg-blue-50 text-lab-blue'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mt-2">
+              {t('profile.selectCurrentForm')}
+            </p>
+          </div>
+
+          {/* LEARNED UP TO SELECTOR */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <BookOpen size={16} />
+              {t('profile.topicsLearnedUpTo')}
+            </label>
+            <p className="text-xs text-slate-500 mb-3">
+              {t('profile.selectHighestTopic')}
+            </p>
+            <div className="grid grid-cols-6 md:grid-cols-8 gap-2">
+              {allTopics.map((topic) => {
+                const topicNum = topic.match(/^\d+/)?.[0];
+                return (
+                  <button
+                    key={topic}
+                    type="button"
+                    onClick={() => setLearnedUpTo(topicNum)}
+                    className={`py-2 rounded-lg border-2 font-bold transition-all text-sm ${
+                      learnedUpTo === topicNum
+                        ? 'border-chemistry-green bg-green-50 text-chemistry-green'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                    title={topic}
+                  >
+                    {topicNum}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* TOPIC EXCEPTIONS */}
+          {learnedUpTo && learnedRangeTopics.length > 0 && (
+            <div className="border-t-2 border-slate-100 pt-6">
+              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                <Lock size={16} />
+                {t('profile.topicExceptionsLabel')}
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                {t('profile.clickToExclude')}
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {learnedRangeTopics.map((topic) => {
+                  const isException = topicExceptions.includes(topic);
+                  return (
+                    <button
+                      key={topic}
+                      type="button"
+                      onClick={() => toggleTopicException(topic)}
+                      className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all ${
+                        isException
+                          ? 'border-red-300 bg-red-50 text-red-700'
+                          : 'border-green-200 bg-green-50 text-green-700'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">{topic}</span>
+                      {isException ? (
+                        <Lock size={16} className="text-red-600" />
+                      ) : (
+                        <Unlock size={16} className="text-green-600" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Available Topics Preview */}
+          {availableTopics.length > 0 && (
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+              <h3 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
+                <BookOpen size={16} />
+                {t('profile.yourAvailableTopicsCount')} ({availableTopics.length})
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {availableTopics.map((topic) => (
+                  <span
+                    key={topic}
+                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold"
+                  >
+                    {topic}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-blue-700 mt-2">
+                {t('profile.theseTopicsWillAppear')}
+              </p>
+            </div>
+          )}
+
+          {/* Account Created Date */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <Calendar size={16} />
+              {t('profile.memberSince')}
+            </label>
+            <div className="px-4 py-3 border-2 border-slate-200 rounded-lg bg-slate-50 text-slate-700 font-semibold">
+              {formatDate(userProfile?.createdAt)}
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <button
+            type="submit"
+            disabled={saving || questionsLoading}
+            className="w-full py-4 bg-lab-blue text-white rounded-xl font-bold text-lg shadow-lg hover:bg-blue-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 active:scale-95"
+          >
+            {saving ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                {t('profile.saving')}
+              </>
+            ) : (
+              <>
+                <Save size={20} />
+                {t('profile.saveChanges')}
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

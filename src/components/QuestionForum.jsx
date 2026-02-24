@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { forumService, canEditComment, editTimeRemaining, EDIT_WINDOW_MS } from '../services/forumService';
 import { MessageSquare, Send, Edit2, Trash2, ThumbsUp, X, AlertCircle, Clock, Lock } from 'lucide-react';
-import Avatar from './Avatar';
+import ChemCityUserProfileIcon from './ChemCityUserProfileIcon';
 
 function EditTimer({ createdAt, onExpire }) {
   const { t, tf } = useLanguage();
@@ -335,7 +335,7 @@ export default function QuestionForum({ question, onClose }) {
         {currentUser ? (
           <div className="p-6 border-b-2 border-slate-200 bg-white">
             <div className="flex gap-3">
-              <Avatar userId={currentUser.uid} displayName={currentUser.displayName} size="md" />
+              <ChemCityUserProfileIcon userId={currentUser.uid} displayName={currentUser.displayName} size={40} />
               <div className="flex-1">
                 <textarea value={newComment} onChange={e => setNewComment(e.target.value)}
                   placeholder={t('forum.shareYourThoughts')}
@@ -381,7 +381,7 @@ export default function QuestionForum({ question, onClose }) {
                   <div key={comment.id} className="bg-slate-50 rounded-xl p-4 border-2 border-slate-200">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center gap-3">
-                        <Avatar userId={comment.userId} displayName={comment.userDisplayName} size="sm" />
+                        <ChemCityUserProfileIcon userId={comment.userId} displayName={comment.userDisplayName} size={32} />
                         <div>
                           <div className="font-bold text-slate-800">{comment.userDisplayName || t('common.anonymous')}</div>
                           <div className="text-xs text-slate-500 flex items-center gap-2">
@@ -459,7 +459,7 @@ export default function QuestionForum({ question, onClose }) {
                                   <div key={r.id} className="bg-white rounded-lg border-2 border-slate-200 p-3">
                                     <div className="flex items-start justify-between gap-3">
                                       <div className="flex items-center gap-2">
-                                        <Avatar userId={r.userId} displayName={r.userDisplayName} size="xs" />
+                                        <ChemCityUserProfileIcon userId={r.userId} displayName={r.userDisplayName} size={28} />
                                         <div>
                                           <div className="font-bold text-slate-800 text-sm">{r.userDisplayName || t('common.anonymous')}</div>
                                           <div className="text-xs text-slate-500">{r.CreatedAt ? formatDate(r.CreatedAt) : ''}</div>
@@ -479,7 +479,7 @@ export default function QuestionForum({ question, onClose }) {
                               {currentUser ? (
                                 <div className="bg-white rounded-lg border-2 border-slate-200 p-3">
                                   <div className="flex gap-2">
-                                    <Avatar userId={currentUser.uid} displayName={currentUser.displayName} size="xs" />
+                                    <ChemCityUserProfileIcon userId={currentUser.uid} displayName={currentUser.displayName} size={28} />
                                     <div className="flex-1">
                                       <textarea
                                         value={replyDraftByComment[comment.id] || ''}

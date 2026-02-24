@@ -1,0 +1,4306 @@
+==================== FILE: src/components/chemcity/gacha/AvatarTuner.tsx ====================
+
+import React, { useEffect, useMemo, useState } from 'react';
+
+type Gender = 'boy' | 'girl';
+export type AvatarTunerContext = 'profile_card' | 'gacha_result' | 'inventory';
+
+type FaceCrop = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+type BodyFrame = {
+  offsetXPercent?: number;
+  offsetYPercent?: number;
+  scale?: number;
+};
+
+export type AvatarTuning = {
+  offsetXPercent?: number;
+  offsetYPercent?: number;
+  scale?: number;
+};
+
+export type AvatarTunerConfig = {
+  version: 1;
+  noSplitAvatarNumbers?: number[];
+  globalDefaults?: {
+    faceCropByGender?: Partial<Record<Gender, FaceCrop>>;
+    // Fallback face crop used for no-split (single-person) avatars that have
+    // not yet been tap-to-cropped in the tuner. Applied in both ProfileIcon
+    // and CosmeticsInventory face squares.
+    noSplitFaceCropDefault?: FaceCrop;
+    bodyFrameByGender?: Partial<Record<Gender, BodyFrame>>;
+  };
+  byAvatarId?: Record<
+    string,
+    // faceCrop: per-avatar face crop override used for no-split avatars in ProfileIcon.
+    // For split avatars the global faceCropByGender defaults are used instead.
+    { faceCrop?: FaceCrop } &
+    Partial<Record<AvatarTunerContext, Partial<Record<Gender, AvatarTuning>>>>
+  >;
+};
+
+const STORAGE_KEY = 'cc_avatar_tuner_config_v1';
+
+// ─── Hardcoded fallbacks ──────────────────────────────────────────────────────
+// These mirror DEFAULT_CFG and are used by utility functions that run BEFORE
+// the DEFAULT_CFG const is declared (or before the user has ever opened the
+// tuner and saved to localStorage).
+
+const FALLBACK_FACE_CROPS: Record<Gender, FaceCrop> = {
+  // Calibrated from avatar_49_rustic (representative mid-range avatar).
+  boy:  { x: 0.5327, y: 0.1179, w: 0.2449, h: 0.2357 },
+  girl: { x: 0.1980, y: 0.1214, w: 0.2857, h: 0.2393 },
+};
+
+const FALLBACK_NO_SPLIT_NUMBERS: number[] = [31, 32];
+
+// Default face crop for SINGLE-PERSON (no-split) avatars that haven't been
+// tap-to-cropped yet. These are rough anime-proportion estimates for a
+// full-body standing character: head occupies roughly the top 25% of the
+// image, centered slightly left-of-middle (most characters face slightly right).
+const FALLBACK_NO_SPLIT_FACE_CROP: FaceCrop = { x: 0.30, y: 0.04, w: 0.38, h: 0.26 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function loadAvatarTunerConfig(): AvatarTunerConfig | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== 1) return null;
+    return parsed as AvatarTunerConfig;
+  } catch {
+    return null;
+  }
+}
+
+export function getGlobalFaceCrop(gender: Gender): FaceCrop | null {
+  const cfg = loadAvatarTunerConfig();
+  // Fall back to hardcoded defaults when localStorage is empty (fresh install /
+  // first visit before the tuner has been saved for the first time).
+  const crop = cfg?.globalDefaults?.faceCropByGender?.[gender] ?? FALLBACK_FACE_CROPS[gender];
+  if (!crop) return null;
+  const { x, y, w, h } = crop as any;
+  if (![x, y, w, h].every((n) => typeof n === 'number' && Number.isFinite(n))) return null;
+  return { x, y, w, h };
+}
+
+export const TUNER_UPDATED_EVENT = 'cc-avatar-tuner-updated';
+
+export function saveAvatarTunerConfig(cfg: AvatarTunerConfig): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+    // Notify React components to re-read — localStorage writes don't trigger re-renders.
+    window.dispatchEvent(new CustomEvent(TUNER_UPDATED_EVENT, { detail: cfg }));
+  } catch {
+    // ignore
+  }
+}
+
+export function shouldForceNoSplit(avatarId: string | undefined | null): boolean {
+  const n = avatarNumberFromId(avatarId);
+  if (!n) return false;
+  const cfg = loadAvatarTunerConfig();
+  // Fall back to hardcoded list when localStorage is empty.
+  const list = cfg?.noSplitAvatarNumbers ?? FALLBACK_NO_SPLIT_NUMBERS;
+  if (Array.isArray(list) && list.includes(n)) return true;
+  return false;
+}
+
+export function getAvatarTuning(
+  avatarId: string | undefined | null,
+  ctx: AvatarTunerContext,
+  gender: Gender,
+): AvatarTuning | null {
+  if (!avatarId) return null;
+  const cfg = loadAvatarTunerConfig();
+  const entry = cfg?.byAvatarId?.[avatarId]?.[ctx]?.[gender];
+  if (!entry) return null;
+  return entry;
+}
+
+export function getAvatarFaceCrop(avatarId: string | undefined | null): FaceCrop | null {
+  if (!avatarId) return null;
+  const cfg = loadAvatarTunerConfig();
+
+  // Priority 1: per-avatar crop set via tap-to-crop in the tuner
+  const perAvatar = cfg?.byAvatarId?.[avatarId]?.faceCrop;
+  if (perAvatar) {
+    const { x, y, w, h } = perAvatar;
+    if ([x, y, w, h].every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0)) {
+      return { x, y, w, h };
+    }
+  }
+
+  // Priority 2: global no-split default from config (overrideable via tuner import)
+  const cfgDefault = cfg?.globalDefaults?.noSplitFaceCropDefault;
+  if (cfgDefault) {
+    const { x, y, w, h } = cfgDefault;
+    if ([x, y, w, h].every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0)) {
+      return { x, y, w, h };
+    }
+  }
+
+  // Priority 3: hardcoded fallback (works before any localStorage save)
+  return FALLBACK_NO_SPLIT_FACE_CROP;
+}
+
+export function avatarNumberFromId(avatarId: string | undefined | null): number | null {
+  if (!avatarId) return null;
+  const m = String(avatarId).match(/^avatar_(\d+)_/i);
+  if (!m?.[1]) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+// ─── AI Alignment Prompt Generator ──────────────────────────────────────────
+
+export function generateAvatarAlignmentPrompt(
+  avatarId: string,
+  config?: AvatarTunerConfig,
+): string {
+  const cfg = config ?? loadAvatarTunerConfig() ?? DEFAULT_CFG;
+  const num = avatarNumberFromId(avatarId);
+  const noSplit = num
+    ? (Array.isArray(cfg.noSplitAvatarNumbers) && cfg.noSplitAvatarNumbers.includes(num))
+    : false;
+
+  const globalCrops = (cfg.globalDefaults?.faceCropByGender ?? {}) as Partial<Record<Gender, FaceCrop>>;
+  const perAvatar = cfg.byAvatarId?.[avatarId] ?? {};
+  const contexts: AvatarTunerContext[] = ['profile_card', 'gacha_result', 'inventory'];
+  const genders: Gender[] = ['boy', 'girl'];
+
+  const lines: string[] = [];
+
+  lines.push('═══════════════════════════════════════════════════════════');
+  lines.push(`AVATAR ALIGNMENT DATA  ·  avatarId: "${avatarId}"`);
+  lines.push('═══════════════════════════════════════════════════════════');
+  lines.push('');
+  lines.push(`Avatar number   : ${num ?? '(none — id format not avatar_N_name)'}`)
+  lines.push(`No-split mode   : ${noSplit} ${noSplit ? '← entire image is ONE person, do not split' : '← split: left=boy, right=girl'}`);
+  lines.push('');
+
+  lines.push('── FACE CROP  (used for ProfileIcon round head thumbnail) ─────────');
+  lines.push('   Coordinates are NORMALIZED (0–1) within the gendered half-image.');
+  lines.push('   (x,y) = top-left corner of face box; (w,h) = width/height of box');
+  lines.push('');
+
+  for (const g of genders) {
+    const crop = globalCrops[g];
+    if (crop) {
+      const { x, y, w, h } = crop;
+      const cx = Math.round((x + w / 2) * 100);
+      const cy = Math.round((y + h / 2) * 100);
+      const scale = Math.max(1 / w, 1 / h);
+      const posX = ((0.5 - (x + w / 2) * scale) / (1 - scale)) * 100;
+      const posY = ((0.5 - (y + h / 2) * scale) / (1 - scale)) * 100;
+      lines.push(`  ${g.toUpperCase()} face:`);
+      lines.push(`    x=${x.toFixed(4)}, y=${y.toFixed(4)}, w=${w.toFixed(4)}, h=${h.toFixed(4)}`);
+      lines.push(`    Face CENTER is at ~(${cx}%, ${cy}%) of the gendered image`);
+      lines.push(`    Face occupies ~${Math.round(w * 100)}% width, ~${Math.round(h * 100)}% height of image`);
+      lines.push(`    CSS backgroundSize: ${(scale * 100).toFixed(1)}%`);
+      lines.push(`    CSS backgroundPosition: ${posX.toFixed(1)}% ${posY.toFixed(1)}%`);
+    } else {
+      lines.push(`  ${g.toUpperCase()} face: ⚠️  NOT SET — using fallback (x=0.3, y=0.05, w=0.4, h=0.3)`);
+      lines.push(`    → Open Avatar Tuner → Global defaults → Tap-to-crop to set this.`);
+    }
+    lines.push('');
+  }
+
+  lines.push('── BODY FRAME TUNING  (used for full-body avatar display) ─────────');
+  lines.push('   offsetXPercent: horizontal shift (negative=left, positive=right)');
+  lines.push('   offsetYPercent: vertical shift (negative=up, positive=down)');
+  lines.push('   scale: zoom multiplier (1.0=normal, 1.2=20% bigger)');
+  lines.push('   All values are % of the container width/height.');
+  lines.push('');
+
+  for (const ctx of contexts) {
+    lines.push(`  [${ctx}]`);
+    const contextDescriptions: Record<AvatarTunerContext, string> = {
+      profile_card:  'ProfileCard component — tall card (aspect ~1:1.4), avatar fills bottom 85%',
+      gacha_result:  'GachaResultsModal — square card, avatar fills full height bottom-anchored',
+      inventory:     'CosmeticsInventory face square — square tile, avatar fills full height',
+    };
+    lines.push(`  ${contextDescriptions[ctx]}`);
+    for (const g of genders) {
+      const tune = (perAvatar as any)?.[ctx]?.[g] as AvatarTuning | undefined;
+      const ox = tune?.offsetXPercent ?? (g === 'girl' ? -6 : 6);
+      const oy = tune?.offsetYPercent ?? 0;
+      const sc = tune?.scale ?? 1;
+      const isTuned = tune && (
+        tune.offsetXPercent !== undefined ||
+        tune.offsetYPercent !== undefined ||
+        tune.scale !== undefined
+      );
+      lines.push(`    ${g}: offsetX=${ox}%, offsetY=${oy}%, scale=${sc}  ${isTuned ? '✓ custom' : '(default)'}`);
+      lines.push(`    → CSS: translateX(calc(-50% + ${ox}%)) translateY(${oy}%) scale(${sc})`);
+    }
+    lines.push('');
+  }
+
+  lines.push('── HOW TO ADJUST (instructions for AI coder) ──────────────────────');
+  lines.push('');
+  lines.push('SPLIT LOGIC:');
+  if (noSplit) {
+    lines.push('  This avatar is a SINGLE person — do NOT split.');
+    lines.push('  Use: imageUrl (full image), no gendered variants.');
+    lines.push('  Center the image normally with translateX(-50%).');
+  } else {
+    lines.push('  This avatar has BOY (left half) and GIRL (right half) variants.');
+    lines.push('  The seeder split the original image down the middle with sharp.');
+    lines.push('  imageUrlBoy  = left half, transparent-padded, may need trimming offset.');
+    lines.push('  imageUrlGirl = right half, transparent-padded, may need trimming offset.');
+    lines.push('  Both halves start at translateX(-50%) and offsetX shifts them left/right.');
+  }
+  lines.push('');
+  lines.push('COMMON FIXES:');
+  lines.push('  Avatar appears too far LEFT  → increase offsetXPercent (e.g. 0 → 4)');
+  lines.push('  Avatar appears too far RIGHT → decrease offsetXPercent (e.g. 6 → 2)');
+  lines.push('  Avatar appears too HIGH      → increase offsetYPercent (e.g. 0 → 5)');
+  lines.push('  Avatar appears too LOW       → decrease offsetYPercent (e.g. 0 → -5)');
+  lines.push('  Avatar appears too SMALL     → increase scale (e.g. 1.0 → 1.15)');
+  lines.push('  Avatar appears too BIG       → decrease scale (e.g. 1.0 → 0.9)');
+  lines.push('');
+  lines.push('FACE CROP FIXES (ProfileIcon round thumbnail):');
+  lines.push('  Face too far RIGHT in circle → increase faceCrop.x');
+  lines.push('  Face too far LEFT  in circle → decrease faceCrop.x');
+  lines.push('  Face too far DOWN  in circle → increase faceCrop.y');
+  lines.push('  Face too far UP    in circle → decrease faceCrop.y');
+  lines.push('  Face too SMALL (too zoomed out) → decrease faceCrop.w and/or h');
+  lines.push('  Face too BIG (too zoomed in)    → increase faceCrop.w and/or h');
+  lines.push('');
+  lines.push('TUNER TOOL USAGE:');
+  lines.push('  • Open Avatar Tuner (Profile page, dev mode only)');
+  lines.push('  • Use "Tap to crop" on preview image to set face box with 2 clicks');
+  lines.push('  • Adjust offsetX/Y/scale sliders per context/gender');
+  lines.push('  • Export JSON → paste into AvatarTuner DEFAULT_CFG or localStorage');
+  lines.push('  • localStorage key: cc_avatar_tuner_config_v1');
+  lines.push('');
+  lines.push('════════════════════════════════════════════════════════════════════');
+
+  return lines.join('\n');
+}
+
+export async function copyAvatarAlignmentPrompt(avatarId: string): Promise<void> {
+  const text = generateAvatarAlignmentPrompt(avatarId);
+  try {
+    await navigator.clipboard.writeText(text);
+    console.log('[AvatarTuner] Alignment prompt copied to clipboard for:', avatarId);
+    console.log(text);
+  } catch {
+    console.log('[AvatarTuner] Clipboard blocked. Here is the prompt:');
+    console.log(text);
+  }
+}
+
+export function logAllAvatarAlignmentPrompts(): void {
+  const cfg = loadAvatarTunerConfig();
+  const ids = Object.keys(cfg?.byAvatarId ?? {});
+  if (ids.length === 0) {
+    console.log('[AvatarTuner] No per-avatar tuning found. Try setting some values first.');
+    console.log('[AvatarTuner] You can still generate a prompt for any avatar ID:');
+    console.log('  copyAvatarAlignmentPrompt("avatar_20_yourname")');
+    return;
+  }
+  for (const id of ids) {
+    console.log(generateAvatarAlignmentPrompt(id, cfg));
+    console.log('');
+  }
+}
+
+if (typeof window !== 'undefined') {
+  (window as any).copyAvatarAlignmentPrompt = copyAvatarAlignmentPrompt;
+  (window as any).logAllAvatarAlignmentPrompts = logAllAvatarAlignmentPrompts;
+  (window as any).generateAvatarAlignmentPrompt = generateAvatarAlignmentPrompt;
+}
+
+// ─── Default Config ───────────────────────────────────────────────────────────
+
+const DEFAULT_CFG: AvatarTunerConfig = {
+  version: 1,
+
+  // ── No-split (single-person) avatar numbers ───────────────────────────────
+  // These avatars are ONE character — do NOT split into boy/girl halves.
+  // Add new single-character avatar numbers here as they are seeded.
+  noSplitAvatarNumbers: [31, 32],
+
+  globalDefaults: {
+    // ── Split avatar face crops (boy = left half, girl = right half) ─────────
+    // Calibrated from avatar_49_rustic (representative mid-range avatar).
+    // BOY  half: face is right-of-centre within the half-image
+    // GIRL half: face is left-of-centre within the half-image
+    faceCropByGender: {
+      boy:  { x: 0.5327, y: 0.1179, w: 0.2449, h: 0.2357 },
+      girl: { x: 0.1980, y: 0.1214, w: 0.2857, h: 0.2393 },
+    },
+
+    // ── No-split avatar face crop default ────────────────────────────────────
+    // Used for single-person avatars that haven't been tap-to-cropped yet.
+    // Rough anime full-body standing pose: head in top ~26% of image,
+    // centered slightly left (most characters face slightly right).
+    // Override per-avatar via byAvatarId[id].faceCrop using tap-to-crop.
+    noSplitFaceCropDefault: { x: 0.30, y: 0.04, w: 0.38, h: 0.26 },
+  },
+
+  byAvatarId: {
+    // ── avatar_32_demonslayer ─────────────────────────────────────────────────
+    // Single-person (no-split). No-split: same imageUrl for both genders.
+    // Profile_card body offsets: confirmed from tuner.
+    // Gacha_result: calculated same as profile_card (both are full-body views).
+    // Inventory: body offsets confirmed from tuner (neutral — face crop handles face).
+    // FaceCrop: estimated from anime proportions; refine with tap-to-crop.
+    avatar_32_demonslayer: {
+      faceCrop: { x: 0.33, y: 0.04, w: 0.35, h: 0.26 },
+      profile_card: {
+        boy:  { offsetXPercent:  5.5, offsetYPercent: 0, scale: 1 },
+        girl: { offsetXPercent: -6,   offsetYPercent: 0, scale: 1 },
+      },
+      gacha_result: {
+        // Calculated: same offsets as profile_card (both full-body view contexts).
+        boy:  { offsetXPercent:  5.5, offsetYPercent: 0, scale: 1 },
+        girl: { offsetXPercent: -6,   offsetYPercent: 0, scale: 1 },
+      },
+      inventory: {
+        // Neutral — the faceCrop above handles correct face framing.
+        // If the crop is re-tuned via tap-to-crop, these stay at 0/0/1.
+        boy:  { offsetXPercent: 0, offsetYPercent: 0, scale: 1 },
+        girl: { offsetXPercent: 0, offsetYPercent: 0, scale: 1 },
+      },
+    },
+
+    // ── avatar_49_rustic ──────────────────────────────────────────────────────
+    // Split avatar. Large horizontal offsets needed because the two halves
+    // have extra transparent padding after the sharp split.
+    avatar_49_rustic: {
+      profile_card: {
+        boy:  { offsetXPercent: -19, offsetYPercent: -2, scale: 1.2 },
+        girl: { offsetXPercent:  20, offsetYPercent: -2, scale: 1.2 },
+      },
+      gacha_result: {
+        boy:  { offsetXPercent: -19, offsetYPercent: -2, scale: 1.2 },
+        girl: { offsetXPercent:  20, offsetYPercent: -2, scale: 1.2 },
+      },
+      inventory: {
+        boy:  { offsetXPercent:  7, offsetYPercent: 0, scale: 0.8 },
+        girl: { offsetXPercent:  0, offsetYPercent: 3, scale: 0.7 },
+      },
+    },
+
+    // ── avatar_59_findingnemo ─────────────────────────────────────────────────
+    // Split avatar with unusually wide girl-half padding post-split.
+    avatar_59_findingnemo: {
+      profile_card: {
+        boy:  { offsetXPercent: 0 },
+        girl: { offsetXPercent: 19, scale: 1 },
+      },
+      gacha_result: {
+        boy: { offsetXPercent: 0 },
+      },
+    },
+  },
+};
+
+// ─── Tuner Button ─────────────────────────────────────────────────────────────
+
+export function AvatarTunerButton({
+  avatarId,
+  avatarImageUrl,
+  avatarImageUrlBoy,
+  avatarImageUrlGirl,
+  className = '',
+  style,
+}: {
+  avatarId?: string;
+  avatarImageUrl?: string;
+  avatarImageUrlBoy?: string;
+  avatarImageUrlGirl?: string;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const enable = useMemo(() => {
+    try {
+      const isDev = Boolean((import.meta as any)?.env?.DEV);
+      const host = (typeof window !== 'undefined' ? window.location.hostname : '') || '';
+      const isLocalhost = host === 'localhost' || host === '127.0.0.1';
+      return isDev || isLocalhost || localStorage.getItem('cc_enable_avatar_tuner') === '1';
+    } catch {
+      return false;
+    }
+  }, []);
+
+  if (!enable) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={className}
+        style={style}
+      >
+        🎛 Avatar Tuner
+      </button>
+      {open ? (
+        <AvatarTunerModal
+          avatarId={avatarId}
+          avatarImageUrl={avatarImageUrl}
+          avatarImageUrlBoy={avatarImageUrlBoy}
+          avatarImageUrlGirl={avatarImageUrlGirl}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+// ─── Tuner Modal ──────────────────────────────────────────────────────────────
+
+function AvatarTunerModal({
+  avatarId,
+  avatarImageUrl,
+  avatarImageUrlBoy,
+  avatarImageUrlGirl,
+  onClose,
+}: {
+  avatarId?: string;
+  avatarImageUrl?: string;
+  avatarImageUrlBoy?: string;
+  avatarImageUrlGirl?: string;
+  onClose: () => void;
+}) {
+  const [cfg, setCfg] = useState<AvatarTunerConfig>(() => loadAvatarTunerConfig() ?? DEFAULT_CFG);
+  const [tapGender, setTapGender] = useState<Gender>('boy');
+  const [tapStart, setTapStart] = useState<{ x: number; y: number } | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [importText, setImportText] = useState<string>('');
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'tuning' | 'prompt' | 'import'>('tuning');
+
+  useEffect(() => {
+    saveAvatarTunerConfig(cfg);
+  }, [cfg]);
+
+  const safeAvatarId = avatarId || '';
+
+  const tuning = useMemo(() => {
+    const base = cfg.byAvatarId?.[safeAvatarId] || {};
+    return base;
+  }, [cfg.byAvatarId, safeAvatarId]);
+
+  function setTuningValue(
+    ctx: AvatarTunerContext,
+    gender: Gender,
+    key: keyof AvatarTuning,
+    value: number,
+  ) {
+    setCfg((prev) => {
+      const next: AvatarTunerConfig = {
+        ...prev,
+        byAvatarId: { ...(prev.byAvatarId || {}) },
+      };
+      const byId = { ...(next.byAvatarId?.[safeAvatarId] || {}) };
+      const byCtx = { ...(byId[ctx] || {}) } as any;
+      const byGender = { ...(byCtx[gender] || {}) };
+      byGender[key] = value;
+      byCtx[gender] = byGender;
+      (byId as any)[ctx] = byCtx;
+      next.byAvatarId![safeAvatarId] = byId as any;
+      return next;
+    });
+  }
+
+  function getValue(ctx: AvatarTunerContext, gender: Gender, key: keyof AvatarTuning, fallback: number) {
+    const v = (tuning as any)?.[ctx]?.[gender]?.[key];
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  }
+
+  const noSplitNum = avatarNumberFromId(safeAvatarId);
+  const noSplitEnabled =
+    !!noSplitNum && Array.isArray(cfg.noSplitAvatarNumbers) && cfg.noSplitAvatarNumbers.includes(noSplitNum);
+
+  function toggleNoSplit() {
+    if (!noSplitNum) return;
+    setCfg((prev) => {
+      const list = Array.isArray(prev.noSplitAvatarNumbers) ? [...prev.noSplitAvatarNumbers] : [];
+      const idx = list.indexOf(noSplitNum);
+      if (idx >= 0) list.splice(idx, 1);
+      else list.push(noSplitNum);
+      list.sort((a, b) => a - b);
+      return { ...prev, noSplitAvatarNumbers: list };
+    });
+  }
+
+  const jsonText = useMemo(() => JSON.stringify(cfg, null, 2), [cfg]);
+
+  const promptText = useMemo(
+    () => generateAvatarAlignmentPrompt(safeAvatarId, cfg),
+    [safeAvatarId, cfg],
+  );
+
+  function copyText(text: string, label: string) {
+    try {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => setCopyStatus(`✓ ${label} copied to clipboard`))
+        .catch(() => setCopyStatus('Clipboard blocked — use Select All'));
+    } catch {
+      setCopyStatus('Clipboard blocked — use Select All');
+    }
+  }
+
+  function selectTextarea(id: string) {
+    const el = document.getElementById(id) as HTMLTextAreaElement | null;
+    if (!el) return;
+    el.focus();
+    el.select();
+    try { document.execCommand('copy'); } catch { /* ignore */ }
+    setCopyStatus('Selected. Press Cmd+C / Ctrl+C to copy.');
+  }
+
+  function downloadJson() {
+    try {
+      const blob = new Blob([jsonText], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cc_avatar_tuner_config_v1.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setCopyStatus('Downloaded JSON file.');
+    } catch {
+      setCopyStatus('Download failed.');
+    }
+  }
+
+  function applyImportedJson() {
+    try {
+      const parsed = JSON.parse(importText);
+      if (!parsed || parsed.version !== 1) {
+        setImportStatus('Invalid JSON: expected { version: 1, ... }.');
+        return;
+      }
+      setCfg(parsed as AvatarTunerConfig);
+      // Switch to tuning tab so the user can immediately see the imported values.
+      setActiveTab('tuning');
+      setImportStatus('✓ Imported and applied — check the Tuning tab to verify values.');
+    } catch {
+      setImportStatus('Invalid JSON (parse failed). Make sure you copied the full JSON block.');
+    }
+  }
+
+  function setPerAvatarFaceCrop(key: keyof FaceCrop, value: number) {
+    if (!safeAvatarId) return;
+    setCfg((prev) => {
+      const next: AvatarTunerConfig = {
+        ...prev,
+        byAvatarId: { ...(prev.byAvatarId || {}) },
+      };
+      const byId = { ...(next.byAvatarId?.[safeAvatarId] || {}) };
+      const existing: FaceCrop = (byId.faceCrop as FaceCrop | undefined) || { x: 0.3, y: 0.05, w: 0.35, h: 0.3 };
+      (byId as any).faceCrop = { ...existing, [key]: value };
+      next.byAvatarId![safeAvatarId] = byId as any;
+      return next;
+    });
+  }
+
+  function setGlobalFaceCrop(gender: Gender, key: keyof FaceCrop, value: number) {
+    setCfg((prev) => {
+      const next: AvatarTunerConfig = {
+        ...prev,
+        globalDefaults: {
+          ...(prev.globalDefaults || {}),
+          faceCropByGender: { ...(prev.globalDefaults?.faceCropByGender || {}) },
+        },
+      };
+      const existing =
+        (next.globalDefaults!.faceCropByGender?.[gender] || { x: 0.3, y: 0.05, w: 0.4, h: 0.3 }) as FaceCrop;
+      next.globalDefaults!.faceCropByGender![gender] = { ...existing, [key]: value };
+      return next;
+    });
+  }
+
+  function getGlobalFaceCropValue(gender: Gender, key: keyof FaceCrop, fallback: number) {
+    const v = (cfg.globalDefaults?.faceCropByGender as any)?.[gender]?.[key];
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  }
+
+  function getPerAvatarFaceCropValue(key: keyof FaceCrop, fallback: number) {
+    const v = (cfg.byAvatarId?.[safeAvatarId] as any)?.faceCrop?.[key];
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  }
+
+  const previewUrl = useMemo(() => {
+    // No-split avatars are a single person — always show the full imageUrl.
+    if (noSplitEnabled) return avatarImageUrl || '';
+    if (tapGender === 'boy') return avatarImageUrlBoy || avatarImageUrl || '';
+    return avatarImageUrlGirl || avatarImageUrl || '';
+  }, [avatarImageUrl, avatarImageUrlBoy, avatarImageUrlGirl, tapGender, noSplitEnabled]);
+
+  function handlePreviewClick(e: React.MouseEvent<HTMLImageElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    const nx = Math.max(0, Math.min(1, x));
+    const ny = Math.max(0, Math.min(1, y));
+
+    if (!tapStart) {
+      setTapStart({ x: nx, y: ny });
+      return;
+    }
+
+    const x1 = Math.min(tapStart.x, nx);
+    const y1 = Math.min(tapStart.y, ny);
+    const x2 = Math.max(tapStart.x, nx);
+    const y2 = Math.max(tapStart.y, ny);
+    const w = Math.max(0.01, x2 - x1);
+    const h = Math.max(0.01, y2 - y1);
+
+    if (noSplitEnabled) {
+      // No-split avatars: save to per-avatar faceCrop, not the global gender crop.
+      setPerAvatarFaceCrop('x', Number(x1.toFixed(4)));
+      setPerAvatarFaceCrop('y', Number(y1.toFixed(4)));
+      setPerAvatarFaceCrop('w', Number(w.toFixed(4)));
+      setPerAvatarFaceCrop('h', Number(h.toFixed(4)));
+    } else {
+      setGlobalFaceCrop(tapGender, 'x', Number(x1.toFixed(4)));
+      setGlobalFaceCrop(tapGender, 'y', Number(y1.toFixed(4)));
+      setGlobalFaceCrop(tapGender, 'w', Number(w.toFixed(4)));
+      setGlobalFaceCrop(tapGender, 'h', Number(h.toFixed(4)));
+    }
+    setTapStart(null);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999]">
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="absolute left-1/2 top-1/2 w-[min(800px,96vw)] max-h-[88vh] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white text-slate-900 overflow-hidden shadow-2xl flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-50 shrink-0">
+          <div className="font-bold text-slate-800">🎛 Avatar Tuner</div>
+          <div className="flex items-center gap-2">
+            {['tuning', 'prompt', 'import'].map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab as any)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors ${
+                  activeTab === tab
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400'
+                }`}
+              >
+                {tab === 'tuning' ? '🎚 Tuning' : tab === 'prompt' ? '📋 AI Prompt' : '⬆ Import'}
+              </button>
+            ))}
+            <button type="button" className="px-3 py-1.5 rounded-lg border text-sm" onClick={downloadJson}>
+              ⬇ JSON
+            </button>
+            <button type="button" className="px-3 py-1.5 rounded-lg border text-sm" onClick={onClose}>
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {copyStatus && (
+          <div className="bg-green-50 text-green-800 text-xs px-4 py-2 border-b border-green-200 shrink-0">
+            {copyStatus}
+          </div>
+        )}
+
+        <div className="overflow-auto flex-1 p-4 space-y-4">
+
+          {/* ── TUNING TAB ── */}
+          {activeTab === 'tuning' && (
+            <>
+              <div className="text-sm font-mono text-slate-600 bg-slate-100 rounded-lg px-3 py-2">
+                avatarId: <span className="text-slate-900 font-bold">{safeAvatarId || '(none)'}</span>
+              </div>
+
+              {noSplitNum ? (
+                <label className="flex items-center gap-2 text-sm bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
+                  <input type="checkbox" checked={noSplitEnabled} onChange={toggleNoSplit} className="w-4 h-4" />
+                  <span className="font-semibold">Single-person avatar #{noSplitNum}</span>
+                  <span className="text-amber-700 text-xs">(do not split into boy/girl halves)</span>
+                </label>
+              ) : null}
+
+              {/* Face crop section — per-avatar for no-split, global defaults for split */}
+              <div className="rounded-xl border p-3">
+                {noSplitEnabled ? (
+                  <>
+                    <div className="font-bold text-sm mb-1">Per-Avatar Face Crop</div>
+                    <p className="text-xs text-slate-500 mb-1">
+                      This is a single-person avatar — global gender crops don't apply.
+                      Set the face box here; it is saved per-avatar in localStorage and used for
+                      ProfileIcon and inventory squares.
+                    </p>
+                    <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-3 border border-amber-200">
+                      ℹ️ Tap top-left then bottom-right of the face on the preview to set automatically.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-bold text-sm mb-1">Global Face Crop Defaults</div>
+                    <p className="text-xs text-slate-500 mb-3">
+                      Normalized (0–1) within gendered image. Used for ProfileIcon head circle AND inventory face squares.
+                      Tap top-left then bottom-right of face on the preview below.
+                    </p>
+                  </>
+                )}
+
+                {!noSplitEnabled && (
+                  <div className="flex items-center gap-2 mb-3">
+                    {(['boy', 'girl'] as Gender[]).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => { setTapGender(g); setTapStart(null); }}
+                        className={`px-3 py-1.5 rounded-lg border text-sm font-semibold ${
+                          tapGender === g ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300'
+                        }`}
+                      >
+                        Tap: {g}
+                      </button>
+                    ))}
+                    <div className="text-xs text-slate-500">
+                      {tapStart ? '→ Now click bottom-right of face' : '→ Click top-left of face, then bottom-right'}
+                    </div>
+                  </div>
+                )}
+
+                {noSplitEnabled && (
+                  <div className="text-xs text-slate-500 mb-2">
+                    {tapStart ? '→ Now click bottom-right of face' : '→ Click top-left of face, then bottom-right'}
+                  </div>
+                )}
+
+                {previewUrl ? (
+                  <div className="rounded-xl border bg-slate-50 p-2 mb-3">
+                    <img
+                      src={previewUrl}
+                      alt=""
+                      onClick={handlePreviewClick}
+                      className="block mx-auto max-h-[280px] w-auto max-w-full cursor-crosshair select-none"
+                      draggable={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-500 mb-3 bg-slate-100 rounded-lg p-3">
+                    No preview image available for this avatar.
+                  </div>
+                )}
+
+                {noSplitEnabled ? (
+                  /* Single face crop for no-split avatars */
+                  <div>
+                    <div className="font-semibold text-sm mb-2">Face crop (this avatar only)</div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(['x', 'y', 'w', 'h'] as (keyof FaceCrop)[]).map((k) => (
+                        <Field
+                          key={k}
+                          label={`face ${k}`}
+                          value={getPerAvatarFaceCropValue(k, k === 'x' ? 0.3 : k === 'y' ? 0.05 : 0.35)}
+                          onChange={(v) => setPerAvatarFaceCrop(k, v)}
+                          min={k === 'w' || k === 'h' ? 0.05 : 0}
+                          max={1}
+                          step={0.01}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* Global gender crops for split avatars */
+                  <div className="grid grid-cols-2 gap-4">
+                    {(['boy', 'girl'] as Gender[]).map((g) => (
+                      <div key={g}>
+                        <div className="font-semibold text-sm mb-2 capitalize">{g}</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(['x', 'y', 'w', 'h'] as (keyof FaceCrop)[]).map((k) => (
+                            <Field
+                              key={k}
+                              label={`face ${k}`}
+                              value={getGlobalFaceCropValue(g, k, k === 'x' ? 0.3 : k === 'y' ? 0.05 : 0.4)}
+                              onChange={(v) => setGlobalFaceCrop(g, k, v)}
+                              min={k === 'w' || k === 'h' ? 0.05 : 0}
+                              max={1}
+                              step={0.01}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Per-context body tuning */}
+              {(['profile_card', 'gacha_result', 'inventory'] as AvatarTunerContext[]).map((ctx) => (
+                <div key={ctx} className="rounded-xl border p-3">
+                  <div className="font-bold text-sm mb-1">{ctx}</div>
+                  {ctx === 'inventory' && (
+                    <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2 border border-amber-200">
+                      ℹ️ Inventory offsets shift the face crop window within the square tile.
+                      Use for per-avatar corrections on top of the global face crop.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {(['boy', 'girl'] as Gender[]).map((g) => (
+                      <div key={g}>
+                        <div className="text-xs font-semibold text-slate-600 mb-2 capitalize">{g}</div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <Field
+                            label="offsetX%"
+                            value={getValue(ctx, g, 'offsetXPercent', g === 'girl' ? -6 : 6)}
+                            onChange={(v) => setTuningValue(ctx, g, 'offsetXPercent', v)}
+                            min={-30} max={30} step={0.5}
+                          />
+                          <Field
+                            label="offsetY%"
+                            value={getValue(ctx, g, 'offsetYPercent', 0)}
+                            onChange={(v) => setTuningValue(ctx, g, 'offsetYPercent', v)}
+                            min={-30} max={30} step={0.5}
+                          />
+                          <Field
+                            label="scale"
+                            value={getValue(ctx, g, 'scale', 1)}
+                            onChange={(v) => setTuningValue(ctx, g, 'scale', v)}
+                            min={0.5} max={1.8} step={0.01}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* ── AI PROMPT TAB ── */}
+          {activeTab === 'prompt' && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="font-bold text-sm">AI Alignment Prompt</div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Copy this and paste into your AI coder context to describe how to position this avatar.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-lg border text-sm font-semibold bg-indigo-600 text-white border-indigo-600"
+                    onClick={() => copyText(promptText, 'Prompt')}
+                  >
+                    Copy Prompt
+                  </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-lg border text-sm"
+                    onClick={() => selectTextarea('cc-tuner-prompt')}
+                  >
+                    Select All
+                  </button>
+                </div>
+              </div>
+              <textarea
+                id="cc-tuner-prompt"
+                readOnly
+                value={promptText}
+                className="w-full h-[400px] font-mono text-xs rounded-lg border bg-slate-50 p-3 resize-y"
+              />
+              <div className="mt-2 text-xs text-slate-500">
+                <strong>Config JSON</strong> (paste into import tab or save to file):
+              </div>
+              <textarea
+                id="cc-tuner-json"
+                readOnly
+                value={jsonText}
+                className="mt-1 w-full h-[140px] font-mono text-xs rounded-lg border bg-slate-50 p-2"
+              />
+              <button
+                type="button"
+                className="mt-2 px-3 py-1.5 rounded-lg border text-sm"
+                onClick={() => copyText(jsonText, 'JSON')}
+              >
+                Copy JSON
+              </button>
+            </div>
+          )}
+
+          {/* ── IMPORT TAB ── */}
+          {activeTab === 'import' && (
+            <div>
+              <div className="font-bold text-sm mb-1">Import JSON Config</div>
+              <p className="text-xs text-slate-500 mb-3">
+                Paste a full config JSON here (e.g. exported via ⬇ JSON or Copy JSON). After applying,
+                the modal will switch to the Tuning tab so you can verify the values immediately.
+                All open inventory squares and profile cards update live — no page reload needed.
+              </p>
+              {importStatus && (
+                <div className={`text-sm rounded-lg px-3 py-2 mb-3 border ${
+                  importStatus.startsWith('✓')
+                    ? 'text-green-700 bg-green-50 border-green-200'
+                    : 'text-red-700 bg-red-50 border-red-200'
+                }`}>
+                  {importStatus}
+                </div>
+              )}
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder='Paste JSON config here e.g. {"version":1,"noSplitAvatarNumbers":[31,32],...}'
+                className="w-full h-[300px] font-mono text-xs rounded-lg border bg-white p-3 resize-y"
+              />
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold text-sm"
+                  onClick={applyImportedJson}
+                >
+                  Apply Import
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg border text-sm"
+                  onClick={() => { setImportText(jsonText); setImportStatus('Loaded current config into box.'); }}
+                >
+                  Load Current
+                </button>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                Writes to localStorage key: <code>cc_avatar_tuner_config_v1</code>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Dev console helpers available:{' '}
+                <code>copyAvatarAlignmentPrompt("avatar_20_name")</code>,{' '}
+                <code>logAllAvatarAlignmentPrompts()</code>
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Field Component ──────────────────────────────────────────────────────────
+
+function Field({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs text-slate-500">{label}</span>
+      <input
+        type="number"
+        className="px-2 py-1 rounded-lg border text-sm bg-white"
+        value={String(value)}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    </label>
+  );
+}
+
+==================== FILE: src/components/chemcity/gacha/ProfileCard.tsx ====================
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { useChemCityStore } from '../../../store/chemcityStore';
+import type { Cosmetic, FaceCropMeta } from '../../../lib/chemcity/types';
+import { getAvatarTuning, getGlobalFaceCrop, getAvatarFaceCrop, shouldForceNoSplit, TUNER_UPDATED_EVENT } from './AvatarTuner';
+
+const EMPTY_EQUIPPED: { avatarId?: string; backgroundId?: string; iconId?: string } = {};
+const EMPTY_MAP: Map<string, any> = new Map();
+
+type CardSize = 'sm' | 'md' | 'lg' | 'xl';
+
+const CARD_DIMS: Record<CardSize, { w: number; h: number; textSize: string }> = {
+  sm: { w: 80, h: 110, textSize: 'text-[10px]' },
+  md: { w: 120, h: 165, textSize: 'text-xs' },
+  lg: { w: 180, h: 248, textSize: 'text-sm' },
+  xl: { w: 280, h: 385, textSize: 'text-base' },
+};
+
+// ── Hook: re-render when AvatarTuner saves new config ────────────────────────
+// Used by ProfileCard and ProfileIcon so live tuner adjustments are reflected
+// immediately without a page reload.
+function useTunerVersion(): number {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    const handler = () => setV((n) => n + 1);
+    window.addEventListener(TUNER_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(TUNER_UPDATED_EVENT, handler);
+  }, []);
+  return v;
+}
+
+// ─── Shared face-crop style helper ───────────────────────────────────────────
+function faceCropStyle(
+  faceCrop: FaceCropMeta,
+  imageUrl: string,
+): React.CSSProperties {
+  const { x, y, w, h } = faceCrop;
+  const scale = Math.max(1 / w, 1 / h);
+  const posX = (0.5 - (x + w / 2) * scale) / (1 - scale) * 100;
+  const posY = (0.5 - (y + h / 2) * scale) / (1 - scale) * 100;
+  return {
+    backgroundImage: `url(${imageUrl})`,
+    backgroundSize: `${scale * 100}%`,
+    backgroundPosition: `${posX}% ${posY}%`,
+  };
+}
+
+interface ProfileCardProps {
+  displayName?: string;
+  avatarId?: string;
+  backgroundId?: string;
+  gender?: 'boy' | 'girl' | null;
+  cosmeticsMap?: Map<string, Cosmetic>;
+  size?: CardSize;
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+export function ProfileCard({
+  displayName,
+  avatarId: propAvatarId,
+  backgroundId: propBgId,
+  gender: genderOverride,
+  cosmeticsMap: cosmeticsMapOverride,
+  size = 'md',
+  className = '',
+  style,
+}: ProfileCardProps) {
+  // Re-render whenever the tuner saves so live adjustments are visible immediately.
+  const tunerVersion = useTunerVersion();
+
+  const equippedCosmetics = useChemCityStore(
+    (s) => ((s.user as any)?.equippedCosmetics as typeof EMPTY_EQUIPPED) || EMPTY_EQUIPPED,
+  );
+  const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
+  const cosmeticsMapFromStore = useChemCityStore(
+    (s) => ((s as any).cosmeticsMap as Map<string, Cosmetic>) || EMPTY_MAP,
+  );
+
+  const cosmeticsMap = cosmeticsMapOverride ?? cosmeticsMapFromStore;
+  const effectiveGender = genderOverride ?? userGender;
+
+  const avatarId = propAvatarId ?? equippedCosmetics.avatarId;
+  const backgroundId = propBgId ?? equippedCosmetics.backgroundId;
+
+  const avatar = avatarId ? cosmeticsMap?.get(avatarId) : undefined;
+  const background = backgroundId ? cosmeticsMap?.get(backgroundId) : undefined;
+
+  const dims = CARD_DIMS[size];
+
+  // Compute transform from tuner config — re-derives when tunerVersion changes.
+  const avatarTransform = useMemo(() => {
+    if (!effectiveGender) return `translateX(calc(-50% + ${effectiveGender === 'girl' ? -6 : 6}%))`;
+    const tune = getAvatarTuning(avatarId, 'profile_card', effectiveGender);
+    const ox = tune?.offsetXPercent ?? (effectiveGender === 'girl' ? -6 : 6);
+    const oy = tune?.offsetYPercent ?? 0;
+    const sc = tune?.scale ?? 1;
+    return `translateX(calc(-50% + ${ox}%)) translateY(${oy}%) scale(${sc})`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarId, effectiveGender, tunerVersion]);
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl select-none ${className}`}
+      style={{ width: dims.w, height: dims.h, ...style }}
+    >
+      {/* Background layer */}
+      {background?.imageUrl ? (
+        <img
+          src={background.imageUrl}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+          draggable={false}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-gradient-to-b from-indigo-900 to-gray-900" />
+      )}
+
+      {/* Avatar layer */}
+      {avatar?.imageUrl ? (
+        <div className="absolute bottom-0 left-0 right-0 h-[85%] overflow-hidden">
+          {effectiveGender &&
+          !shouldForceNoSplit(avatarId) &&
+          (avatar as any)?.[effectiveGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy'] ? (
+            <img
+              src={(avatar as any)[effectiveGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy']}
+              alt={displayName ?? 'Avatar'}
+              draggable={false}
+              className="absolute bottom-0 left-1/2 h-full w-auto max-w-none"
+              style={{ transform: avatarTransform }}
+            />
+          ) : (
+            <img
+              src={avatar.imageUrl}
+              alt={displayName ?? 'Avatar'}
+              draggable={false}
+              className="absolute bottom-0 left-1/2 h-full w-auto max-w-none"
+              style={{
+                transform: `translateX(calc(-50% + ${effectiveGender === 'girl' ? -6 : 6}%))`,
+              }}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 h-[70%] w-[60%] flex items-end justify-center">
+          <span className="text-6xl">🧑</span>
+        </div>
+      )}
+
+      {/* Name bar */}
+      {displayName && (
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1">
+          <p className={`text-white font-semibold text-center truncate ${dims.textSize}`}>
+            {displayName}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ProfileIcon ──────────────────────────────────────────────────────────────
+
+interface ProfileIconProps {
+  size?: number;
+  avatarId?: string;
+  iconId?: string;
+  gender?: 'boy' | 'girl' | null;
+  cosmeticsMap?: Map<string, Cosmetic>;
+  className?: string;
+}
+
+export function ProfileIcon({
+  size = 40,
+  avatarId: propAvatarId,
+  iconId: propIconId,
+  gender: genderOverride,
+  cosmeticsMap: cosmeticsMapOverride,
+  className = '',
+}: ProfileIconProps) {
+  // Re-render whenever the tuner saves.
+  const tunerVersion = useTunerVersion();
+
+  const equippedCosmetics = useChemCityStore(
+    (s) => ((s.user as any)?.equippedCosmetics as typeof EMPTY_EQUIPPED) || EMPTY_EQUIPPED,
+  );
+  const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
+  const cosmeticsMapFromStore = useChemCityStore(
+    (s) => ((s as any).cosmeticsMap as Map<string, Cosmetic>) || EMPTY_MAP,
+  );
+
+  const cosmeticsMap = cosmeticsMapOverride ?? cosmeticsMapFromStore;
+  const effectiveGender = genderOverride ?? userGender;
+
+  const iconId = propIconId ?? equippedCosmetics.iconId;
+  const avatarId = propAvatarId ?? equippedCosmetics.avatarId;
+
+  const iconCosmetic = iconId ? cosmeticsMap?.get(iconId) : undefined;
+  const avatarCosmetic = !iconCosmetic && avatarId ? cosmeticsMap?.get(avatarId) : undefined;
+
+  const isNoSplit = shouldForceNoSplit(avatarId);
+
+  const globalFaceCrop =
+    effectiveGender && avatarCosmetic?.type === 'avatar' && !isNoSplit
+      ? getGlobalFaceCrop(effectiveGender)
+      : null;
+
+  // For no-split avatars, check the tuner's per-avatar faceCrop stored in localStorage.
+  const tunerPerAvatarCrop =
+    avatarCosmetic?.type === 'avatar' && isNoSplit
+      ? getAvatarFaceCrop(avatarId)
+      : null;
+
+  const faceCrop: FaceCropMeta | undefined =
+    iconCosmetic?.faceCrop ??
+    avatarCosmetic?.faceCrop ??
+    (tunerPerAvatarCrop as FaceCropMeta | null) ??
+    (globalFaceCrop as FaceCropMeta | null) ??
+    undefined;
+
+  const genderedAvatarUrl =
+    effectiveGender && avatarCosmetic && !isNoSplit
+      ? ((avatarCosmetic as any)[
+          effectiveGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy'
+        ] as string | undefined)
+      : undefined;
+
+  const imageUrl = iconCosmetic?.imageUrl ?? genderedAvatarUrl ?? avatarCosmetic?.imageUrl;
+
+  // Build crop style — tunerVersion in deps ensures it re-runs on tuner save,
+  // including changes to per-avatar crops for no-split avatars.
+  const cropStyle = useMemo<React.CSSProperties | undefined>(() => {
+    if (!faceCrop || !imageUrl) return undefined;
+    return faceCropStyle(faceCrop, imageUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [faceCrop, imageUrl, tunerVersion, tunerPerAvatarCrop]);
+
+  return (
+    <div
+      className={`rounded-full overflow-hidden shrink-0 bg-gray-700 ${className}`}
+      style={{ width: size, height: size }}
+    >
+      {cropStyle ? (
+        <div className="w-full h-full" style={cropStyle} />
+      ) : imageUrl ? (
+        <img
+          src={imageUrl}
+          alt=""
+          className="w-full h-full max-w-none object-cover object-top"
+          draggable={false}
+          style={
+            iconCosmetic?.type === 'avatar'
+              ? {
+                  width: '200%',
+                  maxWidth: '200%',
+                  transform: effectiveGender === 'girl' ? 'translateX(-50%)' : 'translateX(0%)',
+                }
+              : undefined
+          }
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-gray-500">
+          <span style={{ fontSize: size * 0.5 }}>👤</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+==================== FILE: src/components/chemcity/gacha/GachaResultsModal.tsx ====================
+
+import { useEffect, useState } from 'react';
+import { useChemCityStore } from '../../../store/chemcityStore';
+import type { Cosmetic, GachaDrawResult, Rarity } from '../../../lib/chemcity/types';
+import { getAvatarTuning, shouldForceNoSplit, avatarNumberFromId } from './AvatarTuner';
+
+interface Props {
+  results: GachaDrawResult[];
+  onClose: () => void;
+}
+
+// ── Brand palette (matches landing page) ─────────────────────────────────────
+const BRAND = {
+  bg: '#071412',
+  bgCard: '#0d2320',
+  teal: '#76A8A5',
+  sage: '#C5D7B5',
+};
+
+const RARITY_CONFIG: Record<
+  Rarity,
+  {
+    label: string;
+    border: string;
+    glow: string;
+    bg: string;
+    badgeBg: string;
+    badgeText: string;
+    headerGradient: string;
+  }
+> = {
+  common: {
+    label: 'Common',
+    border: 'rgba(118,168,165,0.3)',
+    glow: 'none',
+    bg: 'rgba(118,168,165,0.06)',
+    badgeBg: 'rgba(118,168,165,0.18)',
+    badgeText: '#C5D7B5',
+    headerGradient: 'linear-gradient(135deg, rgba(118,168,165,0.25), rgba(118,168,165,0.05))',
+  },
+  uncommon: {
+    label: 'Uncommon',
+    border: 'rgba(110,200,120,0.45)',
+    glow: '0 0 16px 2px rgba(110,200,120,0.2)',
+    bg: 'rgba(30,80,40,0.25)',
+    badgeBg: 'rgba(110,200,120,0.2)',
+    badgeText: '#90efb0',
+    headerGradient: 'linear-gradient(135deg, rgba(60,140,70,0.3), rgba(30,80,40,0.1))',
+  },
+  rare: {
+    label: 'Rare',
+    border: 'rgba(100,170,240,0.55)',
+    glow: '0 0 20px 4px rgba(100,170,240,0.25)',
+    bg: 'rgba(20,50,100,0.3)',
+    badgeBg: 'rgba(100,170,240,0.2)',
+    badgeText: '#93c5fd',
+    headerGradient: 'linear-gradient(135deg, rgba(40,100,200,0.3), rgba(20,50,100,0.1))',
+  },
+  epic: {
+    label: 'Epic',
+    border: 'rgba(170,100,230,0.6)',
+    glow: '0 0 24px 6px rgba(170,100,230,0.3)',
+    bg: 'rgba(50,20,80,0.35)',
+    badgeBg: 'rgba(170,100,230,0.2)',
+    badgeText: '#d8b4fe',
+    headerGradient: 'linear-gradient(135deg, rgba(120,50,180,0.35), rgba(50,20,80,0.1))',
+  },
+  legendary: {
+    label: 'Legendary',
+    border: 'rgba(245,185,60,0.7)',
+    glow: '0 0 32px 8px rgba(245,185,60,0.35)',
+    bg: 'rgba(70,40,0,0.4)',
+    badgeBg: 'rgba(245,185,60,0.25)',
+    badgeText: '#fde68a',
+    headerGradient: 'linear-gradient(135deg, rgba(180,100,10,0.4), rgba(70,40,0,0.1))',
+  },
+};
+
+// ── Main modal ────────────────────────────────────────────────────────────────
+
+export function GachaResultsModal({ results, onClose }: Props) {
+  const cosmeticsMap = useChemCityStore((s) => (s as any).cosmeticsMap as Map<string, Cosmetic> | undefined);
+  const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
+  const [revealedCount, setRevealedCount] = useState(0);
+  const [allRevealed, setAllRevealed] = useState(false);
+
+  useEffect(() => {
+    if (allRevealed) return;
+    if (revealedCount >= results.length) {
+      setAllRevealed(true);
+      return;
+    }
+    const delay = revealedCount === 0 ? 400 : 350;
+    const t = setTimeout(() => setRevealedCount((n) => n + 1), delay);
+    return () => clearTimeout(t);
+  }, [revealedCount, results.length, allRevealed]);
+
+  function revealAll() {
+    setRevealedCount(results.length);
+    setAllRevealed(true);
+  }
+
+  const totalRefund = results.reduce((acc, r) => acc + r.refundCoins, 0);
+  const newCount = results.filter((r) => r.isNew).length;
+  const isSingle = results.length === 1;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col"
+      style={{ background: BRAND.bg, fontFamily: "'Quicksand', sans-serif" }}
+    >
+      {/* Ambient glow overlay */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse 70% 50% at 50% 30%, rgba(118,168,165,0.08) 0%, transparent 70%)',
+      }} />
+
+      {/* Header */}
+      <div className="relative z-10 flex items-center justify-between px-5 pt-6 pb-3 shrink-0">
+        <div>
+          <h2 className="text-2xl font-black" style={{ color: BRAND.sage }}>
+            {isSingle ? 'Draw Result' : `${results.length}× Draw`}
+          </h2>
+          <div className="flex items-center gap-3 mt-1">
+            {newCount > 0 && (
+              <span className="text-sm font-bold" style={{ color: '#86efac' }}>
+                ✦ {newCount} new
+              </span>
+            )}
+            {totalRefund > 0 && (
+              <span className="text-sm font-bold" style={{ color: '#fde68a' }}>
+                🪙 +{totalRefund} refunded
+              </span>
+            )}
+          </div>
+        </div>
+        {!allRevealed ? (
+          <button
+            onClick={revealAll}
+            className="px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95"
+            style={{ background: 'rgba(118,168,165,0.15)', color: BRAND.teal, border: `1px solid rgba(118,168,165,0.3)` }}
+          >
+            Reveal All
+          </button>
+        ) : (
+          <div style={{ width: 80 }} />
+        )}
+      </div>
+
+      {/* Cards grid */}
+      <div className="relative z-10 flex-1 overflow-y-auto px-4 pb-4">
+        <div
+          className={`grid gap-3 py-2 ${
+            isSingle
+              ? 'grid-cols-1 max-w-xs mx-auto'
+              : results.length <= 4
+                ? 'grid-cols-2'
+                : 'grid-cols-3 sm:grid-cols-5'
+          }`}
+        >
+          {results.map((result, i) => (
+            <ResultCard
+              key={i}
+              result={result}
+              cosmetic={cosmeticsMap?.get(result.cosmeticId)}
+              userGender={userGender}
+              revealed={i < revealedCount}
+              isSingle={isSingle}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Done button */}
+      {allRevealed && (
+        <div className="relative z-10 px-4 pb-8 pt-2 shrink-0">
+          <button
+            onClick={onClose}
+            className="w-full py-4 rounded-2xl text-lg font-black transition-all active:scale-95"
+            style={{
+              background: `linear-gradient(135deg, ${BRAND.teal}, #5d9190)`,
+              color: '#0a1a18',
+              boxShadow: `0 4px 24px rgba(118,168,165,0.4)`,
+            }}
+          >
+            Done
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Individual result card ─────────────────────────────────────────────────────
+
+function ResultCard({
+  result,
+  cosmetic,
+  userGender,
+  revealed,
+  isSingle,
+}: {
+  result: GachaDrawResult;
+  cosmetic: Cosmetic | undefined;
+  userGender: 'boy' | 'girl' | null;
+  revealed: boolean;
+  isSingle: boolean;
+}) {
+  const cfg = RARITY_CONFIG[result.rarity];
+  const num = cosmetic ? avatarNumberFromId(cosmetic.id) : null;
+
+  return (
+    <div
+      className={`relative rounded-2xl overflow-hidden transition-all duration-500 ${
+        isSingle ? 'aspect-[3/4]' : 'aspect-square'
+      }`}
+      style={
+        revealed
+          ? {
+              border: `2px solid ${cfg.border}`,
+              boxShadow: cfg.glow,
+              background: cfg.bg,
+              opacity: 1,
+              transform: 'scale(1)',
+            }
+          : {
+              border: '2px solid rgba(118,168,165,0.1)',
+              background: 'rgba(118,168,165,0.04)',
+              opacity: 0,
+              transform: 'scale(0.9)',
+            }
+      }
+    >
+      {revealed ? (
+        <>
+          {/* Avatar image */}
+          {cosmetic?.imageUrl ? (
+            cosmetic.type === 'avatar' ? (
+              <div className="absolute inset-0 overflow-hidden">
+                {userGender &&
+                !shouldForceNoSplit(cosmetic.id) &&
+                (cosmetic as any)?.[userGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy'] ? (
+                  <img
+                    src={(cosmetic as any)[userGender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy']}
+                    alt={cosmetic.name}
+                    className="absolute bottom-0 left-1/2 h-full w-auto max-w-none"
+                    style={{
+                      transform: (() => {
+                        const tune = getAvatarTuning(cosmetic.id, 'gacha_result', userGender);
+                        const ox = tune?.offsetXPercent ?? (userGender === 'girl' ? -6 : 6);
+                        const oy = tune?.offsetYPercent ?? 0;
+                        const sc = tune?.scale ?? 1;
+                        return `translateX(calc(-50% + ${ox}%)) translateY(${oy}%) scale(${sc})`;
+                      })(),
+                    }}
+                    draggable={false}
+                  />
+                ) : (
+                  <img
+                    src={cosmetic.imageUrl}
+                    alt={cosmetic.name}
+                    className="absolute bottom-0 left-0 h-full w-[200%] max-w-none object-cover object-bottom"
+                    style={{ transform: userGender === 'girl' ? 'translateX(-50%)' : 'translateX(0%)' }}
+                    draggable={false}
+                  />
+                )}
+              </div>
+            ) : (
+              /* Background image */
+              <img
+                src={cosmetic.imageUrl}
+                alt={cosmetic.name}
+                className="w-full h-full object-cover"
+                draggable={false}
+              />
+            )
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-5xl">
+              {result.rarity === 'legendary' ? '⭐' : result.rarity === 'epic' ? '💜' : '🎁'}
+            </div>
+          )}
+
+          {/* Header gradient overlay */}
+          <div className="absolute inset-x-0 top-0 h-16 pointer-events-none"
+            style={{ background: cfg.headerGradient }} />
+
+          {/* Avatar number badge — top right */}
+          {num !== null && (
+            <div
+              className="absolute top-2 right-2 rounded-md px-1.5 py-0.5"
+              style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)' }}
+            >
+              <span className="text-[11px] font-bold" style={{ color: 'rgba(255,255,255,0.65)' }}>
+                #{num}
+              </span>
+            </div>
+          )}
+
+          {/* Status badges — top left */}
+          <div className="absolute top-2 left-2 flex flex-col gap-1">
+            {result.pitied && (
+              <span
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(100,170,240,0.25)', color: '#93c5fd', border: '1px solid rgba(100,170,240,0.4)' }}
+              >
+                Pity
+              </span>
+            )}
+            {result.isNew && (
+              <span
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(110,200,120,0.25)', color: '#86efac', border: '1px solid rgba(110,200,120,0.4)' }}
+              >
+                New!
+              </span>
+            )}
+          </div>
+
+          {/* Bottom info bar */}
+          <div
+            className="absolute inset-x-0 bottom-0 px-3 py-3"
+            style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85) 60%, transparent)' }}
+          >
+            <p className="text-white font-black text-base leading-tight truncate mb-1.5">
+              {cosmetic?.name ?? result.cosmeticId}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className="text-xs font-bold px-2 py-0.5 rounded-full"
+                style={{
+                  background: cfg.badgeBg,
+                  color: cfg.badgeText,
+                  border: `1px solid ${cfg.border}`,
+                }}
+              >
+                {cfg.label}
+              </span>
+              {!result.isNew && result.refundCoins > 0 && (
+                <span
+                  className="text-xs font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(245,185,60,0.2)', color: '#fde68a', border: '1px solid rgba(245,185,60,0.35)' }}
+                >
+                  +{result.refundCoins} 🪙
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Legendary shimmer */}
+          {result.rarity === 'legendary' && (
+            <div
+              className="absolute inset-0 pointer-events-none animate-pulse"
+              style={{ background: 'linear-gradient(135deg, rgba(245,185,60,0.08) 0%, transparent 50%, rgba(245,185,60,0.08) 100%)' }}
+            />
+          )}
+        </>
+      ) : (
+        /* Unrevealed state */
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3"
+          style={{ background: 'rgba(118,168,165,0.06)' }}
+        >
+          <span className="text-4xl">❓</span>
+          <p className="text-xs font-bold" style={{ color: 'rgba(118,168,165,0.5)' }}>Tap reveal all</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+==================== FILE: src/components/chemcity/gacha/CosmeticsInventory.tsx ====================
+
+import { useMemo, useState, useEffect } from 'react';
+import React from 'react';
+import { useChemCityStore } from '../../../store/chemcityStore';
+import type { CosmeticType, Rarity, Cosmetic } from '../../../lib/chemcity/types';
+import { ProfileCard } from './ProfileCard';
+import { callChemCityEquipCosmetics } from '../../../lib/chemcity/cloudFunctions';
+import {
+  shouldForceNoSplit,
+  getGlobalFaceCrop,
+  getAvatarFaceCrop,
+  getAvatarTuning,
+  avatarNumberFromId,
+  TUNER_UPDATED_EVENT,
+  AvatarTunerButton,
+} from './AvatarTuner';
+import type { FaceCropMeta } from '../../../lib/chemcity/types';
+
+// ── Hook: re-render when AvatarTuner saves new config to localStorage ────────
+function useTunerVersion(): number {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    const handler = () => setV((n) => n + 1);
+    window.addEventListener(TUNER_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(TUNER_UPDATED_EVENT, handler);
+  }, []);
+  return v;
+}
+
+// ── Brand palette ─────────────────────────────────────────────────────────────
+const BRAND = {
+  bg: '#0a1a18',
+  bgPanel: '#0f2825',
+  teal: '#76A8A5',
+  sage: '#C5D7B5',
+  border: 'rgba(118,168,165,0.25)',
+};
+
+const RARITY_ORDER: Rarity[] = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+
+const RARITY_BAR: Record<Rarity, string> = {
+  legendary: 'rgba(245,185,60,0.85)',
+  epic:      'rgba(170,100,230,0.85)',
+  rare:      'rgba(100,170,240,0.85)',
+  uncommon:  'rgba(110,200,120,0.75)',
+  common:    'rgba(118,168,165,0.45)',
+};
+
+const RARITY_BADGE: Record<Rarity, React.CSSProperties> = {
+  legendary: { background: 'rgba(245,185,60,0.18)',  color: '#fde68a', border: '1px solid rgba(245,185,60,0.4)' },
+  epic:      { background: 'rgba(170,100,230,0.18)', color: '#d8b4fe', border: '1px solid rgba(170,100,230,0.4)' },
+  rare:      { background: 'rgba(100,170,240,0.18)', color: '#93c5fd', border: '1px solid rgba(100,170,240,0.4)' },
+  uncommon:  { background: 'rgba(110,200,120,0.18)', color: '#86efac', border: '1px solid rgba(110,200,120,0.4)' },
+  common:    { background: 'rgba(118,168,165,0.15)', color: '#C5D7B5', border: '1px solid rgba(118,168,165,0.3)' },
+};
+
+type ActiveTab = 'avatars' | 'backgrounds';
+
+// ── CSS background-position math ──────────────────────────────────────────────
+function buildCropStyle(crop: FaceCropMeta, url: string): React.CSSProperties {
+  const { x, y, w, h } = crop;
+  const scale = Math.max(1 / w, 1 / h);
+  const px = ((0.5 - (x + w / 2) * scale) / (1 - scale)) * 100;
+  const py = ((0.5 - (y + h / 2) * scale) / (1 - scale)) * 100;
+  return {
+    backgroundImage: `url(${url})`,
+    backgroundSize: `${scale * 100}%`,
+    backgroundPosition: `${px}% ${py}%`,
+    backgroundRepeat: 'no-repeat',
+  };
+}
+
+// ── AvatarFaceSquare ──────────────────────────────────────────────────────────
+
+function AvatarFaceSquare({
+  cosmetic, gender, isEquipped, onClick, disabled,
+}: {
+  cosmetic: Cosmetic;
+  gender: 'boy' | 'girl' | null;
+  isEquipped: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const avatarId = cosmetic.id;
+  const num = avatarNumberFromId(avatarId);
+  const tunerVersion = useTunerVersion();
+
+  const imageUrl = useMemo(() => {
+    if (gender && !shouldForceNoSplit(avatarId)) {
+      const key = gender === 'girl' ? 'imageUrlGirl' : 'imageUrlBoy';
+      return ((cosmetic as any)[key] as string | undefined) ?? cosmetic.imageUrl;
+    }
+    return cosmetic.imageUrl;
+  }, [cosmetic, gender, avatarId]);
+
+  const cropStyle = useMemo<React.CSSProperties | undefined>(() => {
+    const crop: FaceCropMeta | null =
+      // For no-split avatars: use per-avatar tuner crop (set via tap-to-crop in Avatar Tuner).
+      // For split avatars: use the global gender crop calibrated for half-images.
+      (cosmetic as any).faceCrop ??
+      (shouldForceNoSplit(avatarId)
+        ? getAvatarFaceCrop(avatarId)
+        : gender ? getGlobalFaceCrop(gender) : null) ??
+      null;
+    if (!crop || !imageUrl) return undefined;
+    return buildCropStyle(crop, imageUrl);
+    // tunerVersion in deps ensures this re-runs whenever the tuner saves new config
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cosmetic, gender, imageUrl, tunerVersion]);
+
+  // Per-avatar inventory context adjustments (offsetX, offsetY, scale).
+  // These are applied as a CSS transform ON TOP of the face-crop background,
+  // so you can nudge or zoom individual avatars without redefining the global crop.
+  const inventoryTransform = useMemo<string>(() => {
+    if (!gender) return '';
+    const tune = getAvatarTuning(avatarId, 'inventory', gender);
+    if (!tune && !tunerVersion) return ''; // tunerVersion keeps memo reactive
+    const ox = tune?.offsetXPercent ?? 0;
+    const oy = tune?.offsetYPercent ?? 0;
+    const sc = tune?.scale ?? 1;
+    if (ox === 0 && oy === 0 && sc === 1) return '';
+    return `translate(${ox}%, ${oy}%) scale(${sc})`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarId, gender, tunerVersion]);
+
+  return (
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '100%' }}>
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 12,
+          overflow: 'hidden',
+          border: `2px solid ${isEquipped ? BRAND.teal : 'rgba(118,168,165,0.22)'}`,
+          background: 'rgba(13,35,32,0.85)',
+          boxShadow: isEquipped
+            ? `0 0 0 2px rgba(118,168,165,0.3), inset 0 0 0 1px rgba(118,168,165,0.15)`
+            : 'none',
+          cursor: disabled ? 'default' : 'pointer',
+          transition: 'transform 0.1s, box-shadow 0.15s',
+        }}
+      >
+        {/* Image — wrap in an extra div so transform applies to the image
+            without affecting the overlaid badges/rarity bar */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            transform: inventoryTransform || undefined,
+            transformOrigin: 'center center',
+          }}
+        >
+          {cropStyle ? (
+            <div style={{ position: 'absolute', inset: 0, ...cropStyle }} />
+          ) : imageUrl ? (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundImage: `url(${imageUrl})`,
+                backgroundSize: '130%',
+                backgroundPosition: '50% 5%',
+                backgroundRepeat: 'no-repeat',
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 24,
+                background: 'rgba(118,168,165,0.08)',
+              }}
+            >
+              🎴
+            </div>
+          )}
+        </div>
+
+        {/* Bottom scrim — outside the transform div so it stays anchored */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: '65% 0 0 0',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.65), transparent)',
+            pointerEvents: 'none',
+          }}
+        />
+
+        {/* #N badge — top right */}
+        {num !== null && (
+          <span
+            style={{
+              position: 'absolute',
+              top: 4,
+              right: 4,
+              fontSize: 9,
+              fontWeight: 700,
+              lineHeight: 1,
+              padding: '2px 4px',
+              borderRadius: 4,
+              background: 'rgba(0,0,0,0.6)',
+              color: 'rgba(255,255,255,0.55)',
+            }}
+          >
+            #{num}
+          </span>
+        )}
+
+        {/* Equipped ✓ — top left */}
+        {isEquipped && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 4,
+              left: 4,
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              background: BRAND.teal,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <span style={{ fontSize: 9, color: '#fff', fontWeight: 700 }}>✓</span>
+          </div>
+        )}
+
+        {/* Rarity bar */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 3,
+            background: RARITY_BAR[cosmetic.rarity],
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+// ── BackgroundSquare ──────────────────────────────────────────────────────────
+
+function BackgroundSquare({
+  cosmetic, isEquipped, onClick, disabled,
+}: {
+  cosmetic: Cosmetic;
+  isEquipped: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const numMatch = cosmetic.id.match(/_(\d+)/);
+  const num = numMatch?.[1];
+
+  return (
+    <div style={{ position: 'relative', width: '100%', paddingBottom: '100%' }}>
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 12,
+          overflow: 'hidden',
+          border: `2px solid ${isEquipped ? BRAND.teal : 'rgba(118,168,165,0.22)'}`,
+          background: 'rgba(13,35,32,0.85)',
+          boxShadow: isEquipped ? `0 0 0 2px rgba(118,168,165,0.3)` : 'none',
+          cursor: disabled ? 'default' : 'pointer',
+          transition: 'transform 0.1s',
+        }}
+      >
+        {cosmetic.imageUrl ? (
+          <img
+            src={cosmetic.imageUrl}
+            alt={cosmetic.name}
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+            draggable={false}
+          />
+        ) : (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>
+            🖼
+          </div>
+        )}
+
+        <div style={{ position: 'absolute', inset: '55% 0 0 0', background: 'linear-gradient(to top, rgba(0,0,0,0.75), transparent)', pointerEvents: 'none' }} />
+
+        {num && (
+          <span style={{ position: 'absolute', top: 4, right: 4, fontSize: 9, fontWeight: 700, padding: '2px 4px', borderRadius: 4, background: 'rgba(0,0,0,0.6)', color: 'rgba(255,255,255,0.6)' }}>
+            #{num}
+          </span>
+        )}
+
+        {isEquipped && (
+          <div style={{ position: 'absolute', top: 4, left: 4, width: 16, height: 16, borderRadius: '50%', background: BRAND.teal, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 9, color: '#fff', fontWeight: 700 }}>✓</span>
+          </div>
+        )}
+
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '0 6px 6px' }}>
+          <p style={{ color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1.2, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', margin: '0 0 2px' }}>
+            {cosmetic.name}
+          </p>
+          <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 999, ...RARITY_BADGE[cosmetic.rarity] }}>
+            {cosmetic.rarity}
+          </span>
+        </div>
+
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, background: RARITY_BAR[cosmetic.rarity] }} />
+      </button>
+    </div>
+  );
+}
+
+// ── InfoRow ───────────────────────────────────────────────────────────────────
+
+function InfoRow({ label, value, rarity }: { label: string; value: string; rarity?: Rarity }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(118,168,165,0.08)', border: '1px solid rgba(118,168,165,0.15)' }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(118,168,165,0.7)', flexShrink: 0 }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: '#e6f5e6', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{value}</span>
+        {rarity && (
+          <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 999, ...RARITY_BADGE[rarity] }}>
+            {rarity}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+export function CosmeticsInventory() {
+  const user = useChemCityStore((s) => s.user);
+  const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
+  const cosmeticsMap = useChemCityStore((s) => (s as any).cosmeticsMap as Map<string, Cosmetic> | undefined);
+  const navigateToGacha = useChemCityStore((s) => s.navigateToGacha);
+
+  const ownedSet = new Set<string>((user as any)?.ownedCosmetics ?? []);
+  const equippedCosmetics = (user as any)?.equippedCosmetics ?? {};
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>('avatars');
+  const [activeRarity, setActiveRarity] = useState<Rarity | 'all'>('all');
+  const [equipping, setEquipping] = useState(false);
+  const [equippingId, setEquippingId] = useState<string | null>(null);
+
+  const allOwned = useMemo(
+    () => Array.from(cosmeticsMap?.values?.() ?? []).filter((c) => ownedSet.has(c.id)),
+    [cosmeticsMap, ownedSet.size],
+  );
+
+  const ownedAvatars = useMemo(() =>
+    allOwned
+      .filter((c) => c.type === 'avatar' && (activeRarity === 'all' || c.rarity === activeRarity))
+      .sort((a, b) => {
+        const ri = RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity);
+        return ri !== 0 ? ri : (avatarNumberFromId(a.id) ?? 999) - (avatarNumberFromId(b.id) ?? 999);
+      }),
+    [allOwned, activeRarity],
+  );
+
+  const ownedBgs = useMemo(() =>
+    allOwned
+      .filter((c) => c.type === 'background' && (activeRarity === 'all' || c.rarity === activeRarity))
+      .sort((a, b) => {
+        const ri = RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity);
+        return ri !== 0 ? ri : a.name.localeCompare(b.name);
+      }),
+    [allOwned, activeRarity],
+  );
+
+  const activeList = activeTab === 'avatars' ? ownedAvatars : ownedBgs;
+  const equippedAvatar = equippedCosmetics.avatarId ? cosmeticsMap?.get(equippedCosmetics.avatarId) : undefined;
+  const equippedBg = equippedCosmetics.backgroundId ? cosmeticsMap?.get(equippedCosmetics.backgroundId) : undefined;
+
+  const tunerAvatar = equippedAvatar;
+
+  async function handleEquip(cosmetic: Cosmetic) {
+    if (equipping) return;
+    setEquipping(true);
+    setEquippingId(cosmetic.id);
+    try {
+      const patch: Record<string, string> = {};
+      if (cosmetic.type === 'avatar') patch.avatarId = cosmetic.id;
+      else if (cosmetic.type === 'background') patch.backgroundId = cosmetic.id;
+      else if (cosmetic.type === 'icon') patch.iconId = cosmetic.id;
+      await callChemCityEquipCosmetics(patch);
+    } finally {
+      setEquipping(false);
+      setEquippingId(null);
+    }
+  }
+
+  const isEquipped = (c: Cosmetic) =>
+    c.type === 'avatar' ? equippedCosmetics.avatarId === c.id :
+    c.type === 'background' ? equippedCosmetics.backgroundId === c.id :
+    c.type === 'icon' ? equippedCosmetics.iconId === c.id : false;
+
+  return (
+    <div style={{ width: '100%', minHeight: '100%', background: BRAND.bg, color: '#e6f5e6', display: 'flex', flexDirection: 'column', fontFamily: "'Quicksand', sans-serif" }}>
+
+      {/* Header */}
+      <div style={{ padding: '20px 16px 12px', borderBottom: `1px solid ${BRAND.border}`, flexShrink: 0 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 900, color: BRAND.sage, margin: 0 }}>My Cosmetics</h1>
+        <p style={{ fontSize: 12, color: BRAND.teal, margin: '2px 0 0' }}>{allOwned.length} owned · Tap to equip</p>
+      </div>
+
+      {/* Two-column */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+
+        {/* LEFT — profile card */}
+        <div style={{
+          width: '42%', maxWidth: 260, flexShrink: 0,
+          borderRight: `1px solid ${BRAND.border}`,
+          background: `linear-gradient(180deg, ${BRAND.bgPanel} 0%, ${BRAND.bg} 100%)`,
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 12, padding: 16, overflowY: 'auto',
+        }}>
+          <ProfileCard size="xl" className="w-full rounded-2xl shadow-2xl" />
+          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <InfoRow label="Avatar" value={equippedAvatar?.name ?? 'None'} rarity={equippedAvatar?.rarity} />
+            <InfoRow label="Background" value={equippedBg?.name ?? 'None'} rarity={equippedBg?.rarity} />
+          </div>
+          <button
+            onClick={navigateToGacha}
+            style={{ width: '100%', padding: '10px', borderRadius: 12, fontSize: 13, fontWeight: 700, background: 'rgba(118,168,165,0.12)', border: `1.5px solid ${BRAND.border}`, color: BRAND.teal, cursor: 'pointer' }}
+          >
+            🎟 Get More in Gacha
+          </button>
+          <AvatarTunerButton
+            avatarId={tunerAvatar?.id}
+            avatarImageUrl={tunerAvatar?.imageUrl}
+            avatarImageUrlBoy={(tunerAvatar as any)?.imageUrlBoy}
+            avatarImageUrlGirl={(tunerAvatar as any)?.imageUrlGirl}
+            className="w-full py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95"
+            style={{
+              background: 'rgba(118,168,165,0.06)',
+              border: '1px dashed rgba(118,168,165,0.35)',
+              color: 'rgba(118,168,165,0.6)',
+              cursor: 'pointer',
+              width: '100%',
+            } as any}
+          />
+        </div>
+
+        {/* RIGHT — grid */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: 8, padding: '12px 12px 8px', flexShrink: 0 }}>
+            {(['avatars', 'backgrounds'] as ActiveTab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  padding: '8px 14px', borderRadius: 12, fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s',
+                  background: activeTab === tab ? BRAND.teal : 'rgba(118,168,165,0.1)',
+                  color: activeTab === tab ? '#0a1a18' : BRAND.teal,
+                  border: activeTab === tab ? 'none' : `1px solid ${BRAND.border}`,
+                }}
+              >
+                {tab === 'avatars' ? `👤 Avatars (${ownedAvatars.length})` : `🖼 Backgrounds (${ownedBgs.length})`}
+              </button>
+            ))}
+          </div>
+
+          {/* Rarity chips */}
+          <div style={{ display: 'flex', gap: 6, padding: '0 12px 8px', overflowX: 'auto', flexShrink: 0 }}>
+            {(['all', ...RARITY_ORDER] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => setActiveRarity(r)}
+                style={{
+                  flexShrink: 0, padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, textTransform: 'capitalize', cursor: 'pointer', transition: 'all 0.15s',
+                  background: activeRarity === r ? BRAND.sage : 'rgba(118,168,165,0.08)',
+                  color: activeRarity === r ? '#0a1a18' : 'rgba(197,215,181,0.7)',
+                  border: activeRarity === r ? 'none' : `1px solid ${BRAND.border}`,
+                }}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+
+          {/* Grid */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 24px' }}>
+            {activeList.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 12 }}>
+                <span style={{ fontSize: 40 }}>🎁</span>
+                <p style={{ fontWeight: 700, fontSize: 14, color: BRAND.teal, margin: 0 }}>No {activeTab} yet</p>
+                <p style={{ fontSize: 12, color: 'rgba(118,168,165,0.6)', margin: 0, textAlign: 'center' }}>Pull in the Gacha or browse the Shop!</p>
+                <button onClick={navigateToGacha} style={{ marginTop: 4, padding: '10px 20px', borderRadius: 12, fontSize: 13, fontWeight: 700, background: BRAND.teal, color: '#0a1a18', cursor: 'pointer', border: 'none' }}>
+                  Go to Gacha
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {activeList.map((cosmetic) => {
+                  const equipped = isEquipped(cosmetic);
+                  const loading = equippingId === cosmetic.id;
+                  return (
+                    <div key={cosmetic.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ position: 'relative' }}>
+                        {activeTab === 'avatars' ? (
+                          <AvatarFaceSquare cosmetic={cosmetic} gender={userGender} isEquipped={equipped} onClick={() => handleEquip(cosmetic)} disabled={equipping || equipped} />
+                        ) : (
+                          <BackgroundSquare cosmetic={cosmetic} isEquipped={equipped} onClick={() => handleEquip(cosmetic)} disabled={equipping || equipped} />
+                        )}
+                        {loading && (
+                          <div style={{ position: 'absolute', inset: 0, borderRadius: 12, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <span style={{ fontSize: 20, color: BRAND.teal, animation: 'spin 0.8s linear infinite' }}>⟳</span>
+                          </div>
+                        )}
+                      </div>
+                      <p style={{ margin: 0, textAlign: 'center', fontSize: 10, lineHeight: 1.3, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', color: 'rgba(197,215,181,0.75)', padding: '0 2px' }}>
+                        {cosmetic.name}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+==================== FILE: src/pages/ProfilePage.jsx ====================
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import { updateProfile } from 'firebase/auth';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
+import {
+  User, GraduationCap, Mail, Calendar, Save, ArrowLeft,
+  Trophy, Target, BookOpen, Lock, Unlock, Palette,
+} from 'lucide-react';
+import { useQuizData } from '../hooks/useQuizData';
+import { ProfileCard } from '../components/chemcity/gacha/ProfileCard';
+import { getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
+import { AvatarTunerButton } from '../components/chemcity/gacha/AvatarTuner';
+import { useChemCityStore } from '../store/chemcityStore';
+
+const SHEET_URL =
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
+
+export default function ProfilePage() {
+  const { currentUser, userProfile, loadUserProfile } = useAuth();
+  const { t, isEnglish } = useLanguage();
+  const navigate = useNavigate();
+  const { questions, loading: questionsLoading } = useQuizData(SHEET_URL);
+
+  const navigateToCosmetics = useChemCityStore((s) => s.navigateToCosmetics);
+
+  const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
+  const [level, setLevel] = useState(userProfile?.level || 'S5');
+  const [learnedUpTo, setLearnedUpTo] = useState(userProfile?.learnedUpTo || '');
+  const [gender, setGender] = useState(userProfile?.gender || 'boy');
+  const [topicExceptions, setTopicExceptions] = useState(userProfile?.topicExceptions || []);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
+
+  const [cosmeticsMap, setCosmeticsMap] = useState(null);
+
+  const equippedAvatarId = userProfile?.chemcity?.equippedCosmetics?.avatarId;
+  const equippedBackgroundId = userProfile?.chemcity?.equippedCosmetics?.backgroundId;
+
+  const fallbackIds = useMemo(() => {
+    if (!cosmeticsMap) return { avatarId: undefined, backgroundId: undefined };
+    if (equippedAvatarId && equippedBackgroundId) {
+      return { avatarId: equippedAvatarId, backgroundId: equippedBackgroundId };
+    }
+    const all = Array.from(cosmeticsMap.values());
+    const firstAvatar = all.find((c) => c?.type === 'avatar');
+    const firstBg = all.find((c) => c?.type === 'background');
+    return {
+      avatarId: equippedAvatarId || firstAvatar?.id,
+      backgroundId: equippedBackgroundId || firstBg?.id,
+    };
+  }, [cosmeticsMap, equippedAvatarId, equippedBackgroundId]);
+
+  const previewAvatar = useMemo(() => {
+    if (!cosmeticsMap) return null;
+    const id = fallbackIds.avatarId;
+    if (!id) return null;
+    try {
+      return cosmeticsMap.get(id) || null;
+    } catch {
+      return null;
+    }
+  }, [cosmeticsMap, fallbackIds.avatarId]);
+
+  useEffect(() => {
+    setGender(userProfile?.gender || 'boy');
+  }, [userProfile]);
+
+  useEffect(() => {
+    let mounted = true;
+    getCosmeticsMap()
+      .then((m) => {
+        if (!mounted) return;
+        setCosmeticsMap(m);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCosmeticsMap(new Map());
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const allTopics = useMemo(() => {
+    if (!questions || questions.length === 0) return [];
+    return [...new Set(questions.map((q) => q.Topic))]
+      .filter((t) => t && t !== 'Uncategorized')
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [questions]);
+
+  const availableTopics = useMemo(() => {
+    if (!learnedUpTo) return [];
+    const available = [];
+    for (const topic of allTopics) {
+      const topicNum = topic.match(/^\d+/)?.[0];
+      if (topicNum && topicNum <= learnedUpTo && !topicExceptions.includes(topic)) {
+        available.push(topic);
+      }
+    }
+    return available;
+  }, [allTopics, learnedUpTo, topicExceptions]);
+
+  const learnedRangeTopics = useMemo(() => {
+    if (!learnedUpTo) return [];
+    return allTopics.filter((topic) => {
+      const topicNum = topic.match(/^\d+/)?.[0];
+      return topicNum && topicNum <= learnedUpTo;
+    });
+  }, [allTopics, learnedUpTo]);
+
+  const toggleTopicException = (topic) => {
+    setTopicExceptions((prev) =>
+      prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic],
+    );
+  };
+
+  // Navigate to ChemCity cosmetics screen
+  function handleChangeAvatar() {
+    // Navigate to ChemCity and open cosmetics view
+    // The ChemCity page should read this state to open the cosmetics panel directly
+    navigate('/chemcity', { state: { openView: 'cosmetics' } });
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage({ type: '', text: '' });
+    try {
+      await updateProfile(currentUser, { displayName });
+      const userRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userRef, {
+        displayName,
+        gender,
+        level,
+        learnedUpTo,
+        topicExceptions,
+        updatedAt: new Date().toISOString(),
+      });
+      await loadUserProfile(currentUser.uid);
+      setMessage({ type: 'success', text: t('profile.profileUpdated') });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      setMessage({ type: 'error', text: t('profile.failedUpdate') });
+    }
+    setSaving(false);
+  }
+
+  const formatDate = (isoString) => {
+    if (!isoString) return t('common.notAvailable');
+    const date = new Date(isoString);
+    return date.toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const overallAccuracy =
+    userProfile?.totalQuestions > 0
+      ? Math.round((userProfile.totalCorrect / userProfile.totalQuestions) * 100)
+      : 0;
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="p-3 bg-white rounded-lg border-2 border-slate-200 hover:border-lab-blue transition-all"
+        >
+          <ArrowLeft size={20} />
+        </button>
+
+        <div className="flex-1 flex justify-center">
+          <div className="paper-island paper-island-md paper-amber">
+            <div className="paper-island-content">
+              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-emerald">
+                <User size={32} className="text-emerald-700" />
+                {t('profile.profileSettings')}
+              </h1>
+              <p className="text-slate-700 mt-1 font-semibold">{t('profile.manageAccount')}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Summary */}
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div className="bg-slate-50 p-4 border-b">
+          <h2 className="text-lg font-bold text-slate-800">{t('profile.yourStatistics')}</h2>
+        </div>
+        <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
+            <div className="flex items-center gap-2 mb-2">
+              <Trophy className="text-lab-blue" size={20} />
+              <span className="text-sm font-semibold text-slate-600">{t('profile.totalAttempts')}</span>
+            </div>
+            <div className="text-3xl font-black text-lab-blue">{userProfile?.totalAttempts || 0}</div>
+          </div>
+          <div className="bg-green-50 rounded-xl p-4 border-2 border-green-200">
+            <div className="flex items-center gap-2 mb-2">
+              <Target className="text-chemistry-green" size={20} />
+              <span className="text-sm font-semibold text-slate-600">{t('profile.overallAccuracy')}</span>
+            </div>
+            <div className="text-3xl font-black text-chemistry-green">{overallAccuracy}%</div>
+          </div>
+          <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
+            <div className="flex items-center gap-2 mb-2">
+              <GraduationCap className="text-purple-600" size={20} />
+              <span className="text-sm font-semibold text-slate-600">{t('profile.questionsSolved')}</span>
+            </div>
+            <div className="text-3xl font-black text-purple-600">{userProfile?.totalQuestions || 0}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Profile Form */}
+      <form
+        onSubmit={handleSave}
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden"
+      >
+        <div className="bg-slate-50 p-4 border-b">
+          <h2 className="text-lg font-bold text-slate-800">{t('profile.accountInformation')}</h2>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Message */}
+          {message.text && (
+            <div
+              className={`p-4 rounded-lg border-2 ${
+                message.type === 'success'
+                  ? 'bg-green-50 border-green-200 text-green-800'
+                  : 'bg-red-50 border-red-200 text-red-800'
+              }`}
+            >
+              <p className="font-semibold">{message.text}</p>
+            </div>
+          )}
+
+          {/* Display Name */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <User size={16} />
+              {t('profile.displayName')}
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              required
+              className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-lab-blue focus:ring-2 focus:ring-blue-100 outline-none transition-all"
+              placeholder={t('profile.enterYourName')}
+            />
+          </div>
+
+          {/* Gender */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <User size={16} />
+              Gender
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {['boy', 'girl'].map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGender(g)}
+                  className={`py-3 rounded-xl border-2 font-bold capitalize transition-all ${
+                    gender === g
+                      ? 'border-lab-blue bg-blue-50 text-lab-blue'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Profile Card Preview (enlarged) ── */}
+          <div className="border-t-2 border-slate-100 pt-6">
+            <label className="block text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+              <Palette size={16} />
+              Profile Card
+            </label>
+
+            {/* Two-column: large card left, info + buttons right */}
+            <div className="flex gap-5 items-start">
+              {/* Large card — half the content width */}
+              <div className="shrink-0" style={{ width: 'min(50%, 220px)' }}>
+                <ProfileCard
+                  size="xl"
+                  displayName={displayName}
+                  gender={gender}
+                  cosmeticsMap={cosmeticsMap || undefined}
+                  avatarId={fallbackIds.avatarId}
+                  backgroundId={fallbackIds.backgroundId}
+                  className="w-full shadow-lg"
+                  style={{ height: 'auto', aspectRatio: '4 / 5.5' }}
+                />
+              </div>
+
+              {/* Right side: info + change button */}
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-black text-slate-800 mb-0.5">{t('profile.preview')}</p>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Your avatar and background are set inside ChemCity. Tap below to change them.
+                  </p>
+                </div>
+
+                {/* Equipped names */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 py-1.5 px-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <span className="text-xs text-slate-500 font-semibold w-20 shrink-0">Avatar</span>
+                    <span className="text-xs text-slate-700 font-bold truncate">
+                      {equippedAvatarId
+                        ? (cosmeticsMap?.get(equippedAvatarId)?.name ?? equippedAvatarId)
+                        : 'None'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 py-1.5 px-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <span className="text-xs text-slate-500 font-semibold w-20 shrink-0">Background</span>
+                    <span className="text-xs text-slate-700 font-bold truncate">
+                      {equippedBackgroundId
+                        ? (cosmeticsMap?.get(equippedBackgroundId)?.name ?? equippedBackgroundId)
+                        : 'None'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Change Avatar button */}
+                <button
+                  type="button"
+                  onClick={handleChangeAvatar}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-lab-blue bg-blue-50 text-lab-blue font-bold text-sm transition-all hover:bg-blue-100 active:scale-95"
+                >
+                  <Palette size={16} />
+                  Change Avatar &amp; Background
+                </button>
+
+                {/* Dev tuner button */}
+                <AvatarTunerButton
+                  avatarId={fallbackIds.avatarId}
+                  avatarImageUrl={previewAvatar?.imageUrl}
+                  avatarImageUrlBoy={previewAvatar?.imageUrlBoy}
+                  avatarImageUrlGirl={previewAvatar?.imageUrlGirl}
+                  className="w-full py-2.5 rounded-xl border-2 border-slate-200 text-slate-600 font-bold text-sm hover:border-slate-300 transition-all"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Email (Read-only) */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <Mail size={16} />
+              {t('profile.email')}
+            </label>
+            <input
+              type="email"
+              value={currentUser?.email || ''}
+              disabled
+              className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg bg-slate-50 text-slate-500 cursor-not-allowed"
+            />
+            <p className="text-xs text-slate-500 mt-1">{t('profile.emailCannotChange')}</p>
+          </div>
+
+          {/* School Level */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <GraduationCap size={16} />
+              {t('profile.schoolLevel')}
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              {['S4', 'S5', 'S6'].map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  onClick={() => setLevel(lvl)}
+                  className={`py-3 rounded-xl border-2 font-bold transition-all ${
+                    level === lvl
+                      ? 'border-lab-blue bg-blue-50 text-lab-blue'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mt-2">{t('profile.selectCurrentForm')}</p>
+          </div>
+
+          {/* Topics learned up to */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <BookOpen size={16} />
+              {t('profile.topicsLearnedUpTo')}
+            </label>
+            <p className="text-xs text-slate-500 mb-3">{t('profile.selectHighestTopic')}</p>
+            <div className="grid grid-cols-6 md:grid-cols-8 gap-2">
+              {allTopics.map((topic) => {
+                const topicNum = topic.match(/^\d+/)?.[0];
+                return (
+                  <button
+                    key={topic}
+                    type="button"
+                    onClick={() => setLearnedUpTo(topicNum)}
+                    className={`py-2 rounded-lg border-2 font-bold transition-all text-sm ${
+                      learnedUpTo === topicNum
+                        ? 'border-chemistry-green bg-green-50 text-chemistry-green'
+                        : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                    }`}
+                    title={topic}
+                  >
+                    {topicNum}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Topic exceptions */}
+          {learnedUpTo && learnedRangeTopics.length > 0 && (
+            <div className="border-t-2 border-slate-100 pt-6">
+              <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                <Lock size={16} />
+                {t('profile.topicExceptionsLabel')}
+              </label>
+              <p className="text-xs text-slate-500 mb-3">{t('profile.clickToExclude')}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {learnedRangeTopics.map((topic) => {
+                  const isException = topicExceptions.includes(topic);
+                  return (
+                    <button
+                      key={topic}
+                      type="button"
+                      onClick={() => toggleTopicException(topic)}
+                      className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all ${
+                        isException
+                          ? 'border-red-300 bg-red-50 text-red-700'
+                          : 'border-green-200 bg-green-50 text-green-700'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">{topic}</span>
+                      {isException ? (
+                        <Lock size={16} className="text-red-600" />
+                      ) : (
+                        <Unlock size={16} className="text-green-600" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Available Topics Preview */}
+          {availableTopics.length > 0 && (
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+              <h3 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
+                <BookOpen size={16} />
+                {t('profile.yourAvailableTopicsCount')} ({availableTopics.length})
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {availableTopics.map((topic) => (
+                  <span key={topic} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">
+                    {topic}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-blue-700 mt-2">{t('profile.theseTopicsWillAppear')}</p>
+            </div>
+          )}
+
+          {/* Account Created */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <Calendar size={16} />
+              {t('profile.memberSince')}
+            </label>
+            <div className="px-4 py-3 border-2 border-slate-200 rounded-lg bg-slate-50 text-slate-700 font-semibold">
+              {formatDate(userProfile?.createdAt)}
+            </div>
+          </div>
+
+          {/* Save Button */}
+          <button
+            type="submit"
+            disabled={saving || questionsLoading}
+            className="w-full py-4 bg-lab-blue text-white rounded-xl font-bold text-lg shadow-lg hover:bg-blue-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 active:scale-95"
+          >
+            {saving ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+                {t('profile.saving')}
+              </>
+            ) : (
+              <>
+                <Save size={20} />
+                {t('profile.saveChanges')}
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+==================== FILE: src/lib/chemcity/types.ts ====================
+
+// ============================================================
+// ChemCity — TypeScript Types
+// Single source of truth for all data shapes.
+// DO NOT change field names once users have data in Firestore.
+// ============================================================
+
+// ─── Item Documents ──────────────────────────────────────────
+
+/**
+ * Slim fields only — what is cached in localStorage.
+ * ~170 bytes per card. Never includes educational content.
+ */
+export interface SlimItemDocument {
+  id: string;                  // e.g. "item_nacl"
+  baseId?: string;              // optional grouping key for item variants, e.g. "chem_h2o"
+  name: string;                // e.g. "Salt"
+  chemicalFormula: string;     // e.g. "NaCl" (Unicode subscripts)
+  emoji: string;               // e.g. "🧂"
+  imageUrl?: string;
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+  rarityValue: 1 | 2 | 3 | 4;
+  placeId: PlaceId;            // which city location this belongs to
+  validSlots: string[];        // slot IDs within that place
+  shopData: {
+    coinCost?: number;         // undefined = not coin-purchasable
+    diamondCost?: number;      // undefined = not diamond-purchasable
+  };
+  skillContribution: number;   // this card's bonus value added to its place's skill total
+  collections: string[];       // collection group IDs only — not full objects
+  deprecated: boolean;         // true = hidden from UI, never delete the row
+}
+
+/**
+ * Full fields — fetched from Firestore on card detail tap only.
+ * ~800 bytes per card. NEVER stored in localStorage.
+ */
+export interface FullItemDocument extends SlimItemDocument {
+  displayName: string;         // e.g. "The Seasoning of Life"
+  description: string;
+  cardBackground?: string;     // CSS gradient or colour token
+  imageUrl?: string;
+  topicConnections: string[];  // topic IDs this card relates to
+  educational: {
+    funFact: string;
+    everydayUses: string[];
+    category: 'element' | 'compound' | 'mixture' | 'process';
+  };
+  albumMetadata: {
+    flavorText: string;
+    sortOrder: number;
+    tags: string[];
+  };
+}
+
+// ─── Places ──────────────────────────────────────────────────
+
+export type PlaceId =
+  | 'lab'
+  | 'kitchen'
+  | 'toilet'
+  | 'garden'
+  | 'gas_station'
+  | 'lifestyle_boutique'
+  | 'beach'
+  | 'school';
+
+export interface SlotDocument {
+  slotId: string;
+  unlockCost?: number;         // undefined = free by default
+  unlockCurrency?: 'coins' | 'diamonds';
+  budgetOnly?: boolean;        // if true, can only be unlocked via extraSlotsBudget
+  equippedItemId?: string;     // null = empty
+}
+
+export interface PlaceDocument {
+  id: PlaceId;
+  displayName: string;
+  emoji: string;
+  unlockCost: number;          // coin cost to unlock the place itself
+  slots: SlotDocument[];
+  skill: {
+    description: string;
+    formula: string;           // human-readable formula string for display
+  };
+}
+
+// ─── User Documents ──────────────────────────────────────────
+
+/**
+ * Main user document — users/{userId}
+ * Kept lean: only IDs and numbers, never full objects.
+ */
+export interface UserChemCityData {
+  userId: string;
+  currencies: {
+    coins: number;
+    diamonds: number;
+    tickets?: number;
+  };
+  storeSlotCount: number;
+  ownedItems: string[];        // array of item IDs only
+  ownedCosmetics?: string[];
+  equipped: {
+    [slotId: string]: string;  // slotId → itemId
+  };
+  equippedCosmetics?: {
+    avatarId?: string;
+    backgroundId?: string;
+    iconId?: string;
+  };
+  gachaState?: {
+    [bannerId: string]: {
+      sinceEpic: number;
+      sinceLegendary: number;
+      lifetimePulls: number;
+      updatedAt?: unknown;
+    };
+  };
+  activeBonuses: ActiveBonuses;
+  unlockedPlaces: PlaceId[];
+  unlockedSlots: string[];     // slot IDs unlocked by the user
+  extraSlotsBudget: number;    // remaining Gas Station bonus slots to distribute
+  passiveIncome: {
+    lastCollected: Date | null; // Firestore Timestamp — set by server
+  };
+  streaks: {
+    currentStreak: number;
+    longestStreak: number;
+    lastLoginDate: string;     // ISO date string YYYY-MM-DD
+    streakFreezeCount: number;
+  };
+  cacheVersion: number;        // last known version when user doc was written
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Progress sub-document — users/{userId}/progress/data
+ * Separated to protect the 1MB Firestore doc limit.
+ */
+export interface UserProgressData {
+  collections: {
+    [collectionId: string]: {
+      collected: number;
+      total: number;
+      completed: boolean;
+      rewardClaimed: boolean;
+    };
+  };
+  topicMastery: {
+    [topicId: string]: {
+      quizzesCompleted: number;
+      correctAnswers: number;
+      totalQuestions: number;
+    };
+  };
+}
+
+// ─── Bonus Engine ─────────────────────────────────────────────
+
+/**
+ * Computed bonuses — recalculated after every equip/unequip.
+ * Persisted to user doc so they're available instantly on load.
+ */
+export interface ActiveBonuses {
+  passiveBaseCoinsPerHour: number;      // Garden: total_bonus × 10
+  passiveMultiplier: number;            // Lab:    1 + (total_bonus × 0.1)
+  quizFlatDiamondBonus: number;         // Kitchen: total_bonus × random(1,3) — stored as max
+  quizDiamondMultiplier: number;        // School: 1 + (total_bonus × 0.1)
+  quizDoubleChancePercent: number;      // Beach:  min(total_bonus × 5, 100)
+  dailyLoginDiamonds: number;           // Toilet: 5 + (total_bonus × 2)
+  extraSlotsTotal: number;              // Gas Station: total_bonus
+  shopDiscountPercent: number;          // Boutique: min(total_bonus × 2, 50) — capped at 50%
+}
+
+// ─── Cache ────────────────────────────────────────────────────
+
+export interface CacheManifest {
+  version: number;
+  fetchedAt: number;           // Date.now() timestamp
+  itemIds: string[];           // IDs of what's cached
+}
+
+// ─── Collections ─────────────────────────────────────────────
+
+export interface CollectionDocument {
+  id: string;
+  displayName: string;
+  description: string;
+  itemIds: string[];
+  rewardCoins?: number;
+  rewardDiamonds?: number;
+}
+
+// ─── Topics ──────────────────────────────────────────────────
+
+export interface TopicDocument {
+  id: string;
+  name: string;
+  dseUnit: string;
+  description?: string;
+}
+
+// ─── Cosmetics + Gacha ───────────────────────────────────────
+
+export type CosmeticType = 'avatar' | 'background' | 'icon';
+
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+export interface FaceCropMeta {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface CosmeticAvailability {
+  channels: {
+    gacha: boolean;
+    shop: boolean;
+  };
+  eventKey?: string;
+  startAt?: unknown;
+  endAt?: unknown;
+}
+
+export interface CosmeticShopData {
+  coinCost?: number;
+  diamondCost?: number;
+  ticketCost?: number;
+}
+
+export interface Cosmetic {
+  id: string;
+  type: CosmeticType;
+  name: string;
+  rarity: Rarity;
+  imageUrl: string;
+  imageUrlBoy?: string;
+  imageUrlGirl?: string;
+  availability: CosmeticAvailability;
+  shopData?: CosmeticShopData;
+  faceCrop?: FaceCropMeta;
+  tags?: string[];
+  deprecated?: boolean;
+}
+
+export type RarityRates = Record<Rarity, number>;
+
+export type DuplicateRefunds = Record<Rarity, number>;
+
+export interface PityRules {
+  epicEvery: number;
+  legendaryEvery: number;
+}
+
+export interface GachaBanner {
+  id: string;
+  name: string;
+  description?: string;
+  bannerImageUrl?: string;
+  active: boolean;
+  startAt?: unknown;
+  endAt?: unknown;
+  eventKey?: string;
+  rarityRates: RarityRates;
+  duplicateRefundCoinsByRarity: DuplicateRefunds;
+  pityRules: PityRules;
+  cacheVersion: number;
+}
+
+export interface GachaDrawRequest {
+  bannerId: string;
+  count: 1 | 10;
+  payWith: 'tickets' | 'coins';
+}
+
+export interface GachaDrawResult {
+  cosmeticId: string;
+  rarity: Rarity;
+  isNew: boolean;
+  refundCoins: number;
+  pitied: boolean;
+}
+
+export interface GachaDrawResponse {
+  success: true;
+  results: GachaDrawResult[];
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
+  newGachaState: {
+    sinceEpic: number;
+    sinceLegendary: number;
+    lifetimePulls: number;
+    updatedAt?: unknown;
+  };
+}
+
+export interface PurchaseCosmeticRequest {
+  cosmeticId: string;
+  currency: 'coins' | 'diamonds' | 'tickets';
+}
+
+export interface PurchaseCosmeticResponse {
+  success: true;
+  cosmeticId: string;
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
+}
+
+export interface EquipCosmeticsRequest {
+  avatarId?: string;
+  backgroundId?: string;
+  iconId?: string;
+}
+
+export interface EquipCosmeticsResponse {
+  success: true;
+  equippedCosmetics: {
+    avatarId?: string;
+    backgroundId?: string;
+    iconId?: string;
+  };
+}
+
+export interface BuyTicketsRequest {
+  count: number;
+}
+
+export interface BuyTicketsResponse {
+  success: true;
+  count: number;
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
+}
+
+// ─── Cloud Function Request/Response Types ────────────────────
+
+export interface EquipCardRequest {
+  slotId: string;
+  itemId: string;
+}
+
+export interface UnequipCardRequest {
+  slotId: string;
+}
+
+export interface PurchaseCardRequest {
+  itemId: string;
+  currency: 'coins' | 'diamonds';
+}
+
+export interface UnlockPlaceRequest {
+  placeId: string;
+}
+
+export interface UnlockSlotRequest {
+  placeId: string;
+  slotId: string;
+  useExtraSlotBudget?: boolean;
+}
+
+export interface QuizRewardRequest {
+  baseCoins: number;
+  baseDiamonds: number;
+  topicId?: string;
+  correctAnswers?: number;
+  totalQuestions?: number;
+}
+
+export interface QuizRewardResult {
+  coinsAwarded: number;
+  diamondsAwarded: number;
+  didDouble?: boolean;
+  breakdown?: {
+    flatBonus: number;
+    afterSchool: number;
+    afterBeach: number;
+  };
+  ok?: boolean;
+}
+
+
+==================== FILE: scripts/seed-firestore.ts ====================
+
+// ============================================================
+// ChemCity — Firestore Seeder
+// Usage: npx ts-node scripts/seed-firestore.ts
+//
+// Uploads all items + places to Firestore, then auto-increments
+// meta/cacheVersion so all clients get fresh data next open.
+//
+// IMPORTANT:
+//   - Run AFTER excel-to-json.ts
+//   - NEVER delete existing item documents — set deprecated:true
+//   - After each run, a cacheVersion bump is printed. All clients
+//     will refetch static data on next app open.
+// ============================================================
+
+import { applicationDefault, cert, initializeApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
+import sharp from 'sharp';
+
+// ─── Firebase Admin Init ─────────────────────────────────────
+// Expects GOOGLE_APPLICATION_CREDENTIALS env var pointing to
+// your service account JSON, OR running in a GCP environment.
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const serviceAccountPath = path.resolve(__dirname, '../service-account.json');
+
+const envCredPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const envProjectId =
+  process.env.CHEMCITY_FIREBASE_PROJECT_ID ||
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.GCLOUD_PROJECT ||
+  process.env.GOOGLE_CLOUD_PROJECT;
+
+const envStorageBucket =
+  process.env.CHEMCITY_STORAGE_BUCKET ||
+  process.env.FIREBASE_STORAGE_BUCKET ||
+  process.env.GCLOUD_STORAGE_BUCKET;
+
+type ServiceAccountJson = {
+  project_id?: string;
+  client_email?: string;
+  private_key?: string;
+};
+
+function resolveStorageBucket(projectId?: string): string | undefined {
+  const raw = (envStorageBucket || '').trim();
+  if (raw) return raw;
+  if (!projectId) return undefined;
+  return `${projectId}.appspot.com`;
+}
+
+function storageDownloadUrl(bucketName: string, objectPath: string, token: string): string {
+  const encoded = encodeURIComponent(objectPath);
+  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encoded}?alt=media&token=${token}`;
+}
+
+function extensionFromContentType(contentType: string | null): string {
+  const ct = (contentType || '').toLowerCase();
+  if (ct.includes('image/png')) return 'png';
+  if (ct.includes('image/webp')) return 'webp';
+  if (ct.includes('image/jpeg')) return 'jpg';
+  if (ct.includes('image/jpg')) return 'jpg';
+  if (ct.includes('image/gif')) return 'gif';
+  return 'png';
+}
+
+function isFirebaseStorageUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname.includes('firebasestorage');
+  } catch {
+    return false;
+  }
+}
+
+async function fetchImageBuffer(url: string): Promise<{ buf: Buffer; contentType: string | null }> {
+  const res = await fetch(url, {
+    redirect: 'follow',
+    headers: {
+      // Helps some hosts that behave differently on unknown UA
+      'user-agent': 'ChemCitySeeder/1.0',
+      // Avoid referrer restrictions
+      'referer': '',
+    },
+  } as any);
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} when fetching image`);
+  }
+  const contentType = res.headers.get('content-type');
+  const arr = await res.arrayBuffer();
+  return { buf: Buffer.from(arr), contentType };
+}
+
+if (fs.existsSync(serviceAccountPath)) {
+  const serviceAccount = JSON.parse(
+    fs.readFileSync(serviceAccountPath, 'utf-8'),
+  ) as ServiceAccountJson;
+  console.log(
+    `[Seeder Auth] Using service-account.json (projectId=${serviceAccount.project_id ?? 'unknown'}, email=${serviceAccount.client_email ?? 'unknown'})`,
+  );
+  const bucket = resolveStorageBucket(serviceAccount.project_id);
+  if (bucket) console.log(`[Seeder Storage] bucket=${bucket}`);
+  initializeApp({
+    credential: cert(serviceAccount as unknown as Record<string, unknown>),
+    projectId: serviceAccount.project_id,
+    ...(bucket ? { storageBucket: bucket } : {}),
+  });
+} else if (envCredPath && fs.existsSync(envCredPath)) {
+  const serviceAccount = JSON.parse(
+    fs.readFileSync(envCredPath, 'utf-8'),
+  ) as ServiceAccountJson;
+  console.log(
+    `[Seeder Auth] Using GOOGLE_APPLICATION_CREDENTIALS (projectId=${serviceAccount.project_id ?? 'unknown'}, email=${serviceAccount.client_email ?? 'unknown'})`,
+  );
+  const bucket = resolveStorageBucket(serviceAccount.project_id);
+  if (bucket) console.log(`[Seeder Storage] bucket=${bucket}`);
+  initializeApp({
+    credential: cert(serviceAccount as unknown as Record<string, unknown>),
+    projectId: serviceAccount.project_id,
+    ...(bucket ? { storageBucket: bucket } : {}),
+  });
+} else {
+  // Fall back to Application Default Credentials (CI/cloud)
+  console.log('[Seeder Auth] Using applicationDefault()');
+  if (!envProjectId) {
+    throw new Error(
+      'Seeder is using applicationDefault(), but no project id was detected. ' +
+        'Set CHEMCITY_FIREBASE_PROJECT_ID (recommended) or GCLOUD_PROJECT / GOOGLE_CLOUD_PROJECT.',
+    );
+  }
+  console.log(`[Seeder Auth] Using projectId=${envProjectId}`);
+  const bucket = resolveStorageBucket(envProjectId);
+  if (bucket) console.log(`[Seeder Storage] bucket=${bucket}`);
+  initializeApp({
+    credential: applicationDefault(),
+    projectId: envProjectId,
+    ...(bucket ? { storageBucket: bucket } : {}),
+  });
+}
+
+const db = getFirestore();
+const storage = getStorage();
+
+// ─── Config ──────────────────────────────────────────────────
+
+const DATA_DIR = path.resolve(__dirname, '../data/items');
+const PLACES_FILE = path.resolve(__dirname, '../data/places.json');
+const COLLECTIONS_FILE = path.resolve(__dirname, '../data/collections.json');
+const TOPICS_FILE = path.resolve(__dirname, '../data/topics.json');
+
+const BATCH_SIZE = 400; // Firestore batch limit is 500 ops
+
+const SHOULD_SEED_GACHA_FLAG = '--seed-gacha';
+const SHOULD_UPLOAD_COSMETICS_FLAG = '--upload-cosmetics';
+const SHOULD_UPLOAD_RAW_AVATARS_FLAG = '--upload-raw-avatars';
+
+// ─── Helpers ─────────────────────────────────────────────────
+
+async function batchWrite(
+  collectionName: string,
+  docs: Array<{ id: string; [key: string]: unknown }>,
+): Promise<void> {
+  console.log(`   Uploading ${docs.length} docs to "${collectionName}"...`);
+  let batch = db.batch();
+  let opCount = 0;
+  let totalDocs = 0;
+
+  for (const docData of docs) {
+    const { id, ...data } = docData;
+    const ref = db.collection(collectionName).doc(id);
+    batch.set(ref, data, { merge: true }); // merge:true preserves unlocked fields on user docs
+    opCount++;
+    totalDocs++;
+
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`   ✅ ${totalDocs} docs written to "${collectionName}"`);
+}
+
+function readJsonFile<T>(filePath: string, label: string): T[] {
+  if (!fs.existsSync(filePath)) {
+    console.warn(`   ⚠️  ${label} file not found at ${filePath} — skipping`);
+    return [];
+  }
+  return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T[];
+}
+
+function titleCaseFromId(id: string): string {
+  return id
+    .replace(/^col_/, '')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function cosmeticIdFromFilename(prefix: 'avatar' | 'bg', filename: string): string {
+  const normalized = filename.replace(/\.png\.png$/i, '.png');
+  const base = normalized
+    .replace(/_bg_removed\.png$/i, '')
+    .replace(/_bg_removed$/i, '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/^avator[_-]?/i, '')
+    .replace(/^avatar[_-]?/i, '')
+    .replace(/^background[_-]?/i, '')
+    .trim();
+
+  const slug = base
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+
+  return `${prefix}_${slug || randomUUID().slice(0, 8)}`;
+}
+
+function contentTypeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.gif') return 'image/gif';
+  return 'application/octet-stream';
+}
+
+async function uploadLocalFileToStorage(bucketName: string, objectPath: string, localPath: string): Promise<string> {
+  const bucket = storage.bucket();
+  const token = randomUUID();
+  const buf = fs.readFileSync(localPath);
+  const file = bucket.file(objectPath);
+
+  await file.save(buf, {
+    resumable: false,
+    metadata: {
+      contentType: contentTypeFromPath(localPath),
+      cacheControl: 'public, max-age=31536000, immutable',
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
+  });
+
+  return storageDownloadUrl(bucketName, objectPath, token);
+}
+
+async function uploadBufferToStorage(
+  bucketName: string,
+  objectPath: string,
+  buf: Buffer,
+  contentType: string,
+): Promise<string> {
+  const bucket = storage.bucket();
+  const token = randomUUID();
+  const file = bucket.file(objectPath);
+
+  await file.save(buf, {
+    resumable: false,
+    metadata: {
+      contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
+  });
+
+  return storageDownloadUrl(bucketName, objectPath, token);
+}
+
+// ─── Seed Gacha (Cosmetics + Banners + Events) ───────────────
+
+type SeedCosmetic = {
+  id: string;
+  [key: string]: unknown;
+};
+
+type SeedBanner = {
+  id: string;
+  entries: Array<{ cosmeticId: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
+
+type SeedEvent = {
+  id: string;
+  [key: string]: unknown;
+};
+
+const GACHA_SEED = {
+  cosmetics: [
+    {
+      id: 'avatar_chemist_01',
+      type: 'avatar',
+      name: 'Lab Chemist',
+      rarity: 'common',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/chemist_01.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 500 },
+      faceCrop: { x: 0.2, y: 0.05, w: 0.6, h: 0.3 },
+      tags: ['lab', 'science'],
+    },
+    {
+      id: 'avatar_alchemist_rare',
+      type: 'avatar',
+      name: 'Dark Alchemist',
+      rarity: 'rare',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/alchemist_rare.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.15, y: 0.03, w: 0.7, h: 0.35 },
+      tags: ['alchemy', 'dark'],
+    },
+    {
+      id: 'avatar_archmage_epic',
+      type: 'avatar',
+      name: 'Archmage of Elements',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/archmage_epic.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.2, y: 0.04, w: 0.6, h: 0.32 },
+      tags: ['magic', 'elements'],
+    },
+    {
+      id: 'avatar_godchemist_legendary',
+      type: 'avatar',
+      name: 'God of Chemistry',
+      rarity: 'legendary',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/godchemist_legendary.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.18, y: 0.02, w: 0.64, h: 0.3 },
+      tags: ['legendary', 'divine'],
+    },
+    {
+      id: 'bg_lab_common',
+      type: 'background',
+      name: 'Chem Lab',
+      rarity: 'common',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/lab_common.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 250, ticketCost: 1 },
+      tags: ['lab', 'indoor'],
+    },
+    {
+      id: 'bg_volcano_uncommon',
+      type: 'background',
+      name: 'Volcano Lab',
+      rarity: 'uncommon',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/volcano_uncommon.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 600, ticketCost: 2 },
+      tags: ['outdoor', 'fire'],
+    },
+    {
+      id: 'bg_crystal_rare',
+      type: 'background',
+      name: 'Crystal Cavern',
+      rarity: 'rare',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/crystal_rare.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['cave', 'magic'],
+    },
+    {
+      id: 'bg_nebula_epic',
+      type: 'background',
+      name: 'Nebula Observatory',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/nebula_epic.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['space', 'epic'],
+    },
+    {
+      id: 'bg_godforge_legendary',
+      type: 'background',
+      name: 'Godforge',
+      rarity: 'legendary',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/godforge_legendary.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['legendary', 'forge'],
+    },
+    {
+      id: 'avatar_neon_event',
+      type: 'avatar',
+      name: 'Neon Scientist',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/neon_event.png',
+      availability: {
+        channels: { gacha: true, shop: false },
+        eventKey: 'event_neon_2025',
+        startAt: '2025-12-01T00:00:00Z',
+        endAt: '2025-12-31T23:59:59Z',
+      },
+      faceCrop: { x: 0.2, y: 0.04, w: 0.6, h: 0.32 },
+      tags: ['neon', 'event', 'limited'],
+    },
+  ] as const satisfies ReadonlyArray<SeedCosmetic>,
+  banners: [
+    {
+      id: 'banner_standard',
+      name: 'Standard Pool',
+      active: true,
+      rarityRates: { common: 0.5, uncommon: 0.28, rare: 0.15, epic: 0.05, legendary: 0.02 },
+      duplicateRefundCoinsByRarity: { common: 24, uncommon: 42, rare: 80, epic: 240, legendary: 600 },
+      pityRules: { epicEvery: 20, legendaryEvery: 40 },
+      cacheVersion: 1,
+      entries: [
+        { cosmeticId: 'avatar_chemist_01', rarity: 'common', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_alchemist_rare', rarity: 'rare', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_archmage_epic', rarity: 'epic', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_godchemist_legendary', rarity: 'legendary', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'bg_lab_common', rarity: 'common', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_volcano_uncommon', rarity: 'uncommon', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_crystal_rare', rarity: 'rare', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_nebula_epic', rarity: 'epic', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_godforge_legendary', rarity: 'legendary', type: 'background', weight: 1, enabled: true },
+      ],
+    },
+  ] as const satisfies ReadonlyArray<SeedBanner>,
+  events: [
+    {
+      id: 'event_neon_2025',
+      name: 'Neon Science Fair',
+      description: 'Limited neon-themed cosmetics for the science fair season!',
+      startAt: '2025-12-01T00:00:00Z',
+      endAt: '2025-12-31T23:59:59Z',
+      isActive: true,
+      bannerIds: ['banner_neon_event'],
+    },
+  ] as const satisfies ReadonlyArray<SeedEvent>,
+};
+
+async function seedGacha(): Promise<void> {
+  console.log('\n🎟️  Seeding gacha (cosmetics, banners, entries, events)...');
+
+  // IMPORTANT:
+  // If you've already uploaded real cosmetics (with Firebase Storage URLs),
+  // do NOT overwrite them with the demo placeholders from GACHA_SEED.
+  // Instead, we build banner entries from whatever cosmetics exist in Firestore.
+  const cosmeticsSnap = await db.collection('cosmetics').get();
+  const existingCosmetics = cosmeticsSnap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as any) }))
+    .filter((c) => c?.deprecated !== true);
+
+  const hasAnyCosmetics = existingCosmetics.length > 0;
+  const hasRealUploadedCosmetics = existingCosmetics.some((c) => typeof c?.imageUrl === 'string' && isFirebaseStorageUrl(c.imageUrl));
+
+  if (!hasAnyCosmetics) {
+    await batchWrite('cosmetics', GACHA_SEED.cosmetics.map((c) => ({ ...c })) as any);
+  } else if (!hasRealUploadedCosmetics) {
+    console.log('   ℹ️  Cosmetics exist but none look like Firebase Storage URLs. Leaving cosmetics unchanged.');
+  } else {
+    console.log(`   ✅ Found ${existingCosmetics.length} existing cosmetics (with Firebase Storage URLs). Skipping demo cosmetics seed.`);
+
+    // Clean up any old demo cosmetics so they don't leak into UI or future pools.
+    const demoCosmetics = existingCosmetics.filter(
+      (c) => typeof c?.imageUrl === 'string' && String(c.imageUrl).includes('storage.example.com'),
+    );
+    if (demoCosmetics.length > 0) {
+      console.log(`   🧹 Deprecating ${demoCosmetics.length} demo cosmetics (storage.example.com)...`);
+      let demoBatch = db.batch();
+      let demoOps = 0;
+      for (const c of demoCosmetics) {
+        const ref = db.collection('cosmetics').doc(String(c.id));
+        demoBatch.set(
+          ref,
+          {
+            deprecated: true,
+            availability: { channels: { gacha: false, shop: false } },
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        );
+        demoOps++;
+        if (demoOps >= BATCH_SIZE) {
+          await demoBatch.commit();
+          demoBatch = db.batch();
+          demoOps = 0;
+        }
+      }
+      if (demoOps > 0) await demoBatch.commit();
+    }
+  }
+
+  // Banners + entries use a nested subcollection; batchWrite() only handles top-level collections.
+  console.log(`   Uploading ${GACHA_SEED.banners.length} docs to "gachaBanners" + entries...`);
+
+  let batch = db.batch();
+  let opCount = 0;
+  let totalOps = 0;
+
+  const bannerDoc = GACHA_SEED.banners[0];
+  const bannerId = bannerDoc?.id || 'banner_standard';
+  const { id: _ignoredId, entries: _ignoredEntries, ...bannerData } = bannerDoc;
+
+  batch.set(db.collection('gachaBanners').doc(bannerId), bannerData, { merge: true });
+  opCount++;
+  totalOps++;
+
+  // Build entries from existing cosmetics when available.
+  const gachaEnabledCosmetics = hasAnyCosmetics
+    ? existingCosmetics.filter((c) => c?.availability?.channels?.gacha === true)
+    : [];
+
+  // Prefer only real uploaded cosmetics (Firebase Storage URLs) to avoid demo placeholders.
+  const realGachaCosmetics = gachaEnabledCosmetics.filter(
+    (c) => typeof c?.imageUrl === 'string' && isFirebaseStorageUrl(String(c.imageUrl)),
+  );
+
+  const cosmeticsForEntries = realGachaCosmetics.length > 0
+    ? realGachaCosmetics
+    : gachaEnabledCosmetics;
+
+  const entrySource = hasAnyCosmetics
+    ? cosmeticsForEntries.map((c) => ({
+      cosmeticId: String(c.id),
+      rarity: String(c.gachaRarity || c.rarity || 'common'),
+      type: String(c.type || 'avatar'),
+      weight: Number.isFinite(Number(c.gachaWeight)) && Number(c.gachaWeight) > 0 ? Number(c.gachaWeight) : 1,
+      enabled: true,
+    }))
+    : bannerDoc.entries;
+
+  // Remove stale entry docs from previous seeds (e.g. demo entries) so they can't be drawn.
+  const desiredEntryIds = new Set(entrySource.map((e) => String((e as any).cosmeticId)));
+  const existingEntriesSnap = await db.collection('gachaBanners').doc(bannerId).collection('entries').get();
+  const staleEntries = existingEntriesSnap.docs.filter((d) => !desiredEntryIds.has(d.id));
+  if (staleEntries.length > 0) {
+    console.log(`   🧹 Deleting ${staleEntries.length} stale banner entries...`);
+    for (const docSnap of staleEntries) {
+      batch.delete(docSnap.ref);
+      opCount++;
+      totalOps++;
+      if (opCount >= BATCH_SIZE) {
+        await batch.commit();
+        batch = db.batch();
+        opCount = 0;
+      }
+    }
+  }
+
+  for (const entry of entrySource) {
+    const { cosmeticId, ...entryData } = entry;
+    batch.set(
+      db.collection('gachaBanners').doc(bannerId).collection('entries').doc(cosmeticId),
+      entryData,
+      { merge: true },
+    );
+    opCount++;
+    totalOps++;
+
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`   ✅ ${totalOps} ops written for banners + entries`);
+
+  await batchWrite('events', GACHA_SEED.events.map((e) => ({ ...e })) as any);
+}
+
+// ─── Seed Items ───────────────────────────────────────────────
+
+async function seedItems(): Promise<number> {
+  if (!fs.existsSync(DATA_DIR)) {
+    console.warn(`   ⚠️  Items data directory not found: ${DATA_DIR} — skipping items seed`);
+    return 0;
+  }
+
+  const jsonFiles = fs.readdirSync(DATA_DIR).filter((f) => f.endsWith('.json'));
+  if (jsonFiles.length === 0) {
+    console.warn(`   ⚠️  No item JSON files found in ${DATA_DIR} — skipping items seed`);
+    return 0;
+  }
+
+  const allItems: Array<{ id: string; [key: string]: unknown }> = [];
+
+  for (const file of jsonFiles) {
+    const items = JSON.parse(
+      fs.readFileSync(path.join(DATA_DIR, file), 'utf-8'),
+    ) as Array<{ id: string }>;
+    allItems.push(...items);
+  }
+
+  await batchWrite('items', allItems);
+  return allItems.length;
+}
+
+// ─── Migrate Item Images to Firebase Storage (optional) ───────
+
+async function migrateItemImagesToStorage(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  console.log(`\n🖼️  Migrating item images to Firebase Storage (bucket=${bucketName})...`);
+
+  const itemsSnap = await db.collection('items').get();
+  const items = itemsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Array<{
+    id: string;
+    imageUrl?: unknown;
+  }>;
+
+  const candidates = items
+    .map((it) => ({ id: it.id, imageUrl: typeof it.imageUrl === 'string' ? it.imageUrl.trim() : '' }))
+    .filter((it) => !!it.imageUrl && !isFirebaseStorageUrl(it.imageUrl));
+
+  console.log(`   Found ${candidates.length} items with non-Storage imageUrl.`);
+  if (candidates.length === 0) return;
+
+  let batch = db.batch();
+  let opCount = 0;
+  let migrated = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const it of candidates) {
+    const itemId = it.id;
+    const srcUrl = it.imageUrl;
+    const docRef = db.collection('items').doc(itemId);
+
+    try {
+      const { buf, contentType } = await fetchImageBuffer(srcUrl);
+      const ext = extensionFromContentType(contentType);
+      const objectPath = `chemcity/items/${itemId}.${ext}`;
+
+      const token = randomUUID();
+      const file = bucket.file(objectPath);
+
+      await file.save(buf, {
+        resumable: false,
+        metadata: {
+          contentType: contentType || undefined,
+          cacheControl: 'public, max-age=31536000, immutable',
+          metadata: {
+            firebaseStorageDownloadTokens: token,
+          },
+        },
+      });
+
+      const nextUrl = storageDownloadUrl(bucketName, objectPath, token);
+
+      batch.set(docRef, { imageUrl: nextUrl }, { merge: true });
+      opCount++;
+      migrated++;
+
+      if (opCount >= BATCH_SIZE) {
+        await batch.commit();
+        batch = db.batch();
+        opCount = 0;
+      }
+    } catch (err: any) {
+      failed++;
+      console.warn(`   ⚠️  Failed to migrate image for item=${itemId}: ${err?.message ?? String(err)}`);
+      // Keep going
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`   ✅ Image migration complete. migrated=${migrated}, skipped=${skipped}, failed=${failed}`);
+}
+
+// ─── Upload Cosmetics Assets to Firebase Storage (optional) ───
+
+async function uploadCosmeticsAssets(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  const avatarsDir =
+    process.env.CHEMCITY_AVATARS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem custome_renamed');
+  const backgroundsDir =
+    process.env.CHEMCITY_BACKGROUNDS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem background');
+
+  console.log(`\n🧑🖼️  Uploading cosmetics assets to Firebase Storage (bucket=${bucketName})...`);
+  console.log(`   Avatars dir: ${avatarsDir}`);
+  console.log(`   Backgrounds dir: ${backgroundsDir}`);
+
+  if (!fs.existsSync(avatarsDir)) {
+    throw new Error(`Avatars directory not found: ${avatarsDir}`);
+  }
+  if (!fs.existsSync(backgroundsDir)) {
+    throw new Error(`Backgrounds directory not found: ${backgroundsDir}`);
+  }
+
+  const allAvatarFilenames = fs.readdirSync(avatarsDir);
+
+  const avatarFiles = allAvatarFilenames
+    .filter((f) => /_bg_removed\.png(\.png)?$/i.test(f))
+    .map((f) => path.join(avatarsDir, f));
+
+  const avatarBgRemovedNums = new Set<string>();
+  for (const f of allAvatarFilenames) {
+    if (!/_bg_removed\.png(\.png)?$/i.test(f)) continue;
+    const m = f.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    if (m?.[1]) avatarBgRemovedNums.add(m[1]);
+  }
+
+  const rawAvatarFilesByNum = new Map<string, string>();
+  for (const raw of allAvatarFilenames) {
+    const normalized = raw.replace(/\.png\.png$/i, '.png');
+    if (!/\.(png|webp|jpg|jpeg)$/i.test(normalized)) continue;
+    if (/_bg_removed(\.[^.]+)?$/i.test(normalized)) continue;
+    if (/_mask(\.[^.]+)?$/i.test(normalized)) continue;
+
+    const m = normalized.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    if (!m?.[1]) continue;
+    const num = m[1];
+    if (!rawAvatarFilesByNum.has(num)) {
+      rawAvatarFilesByNum.set(num, path.join(avatarsDir, raw));
+    }
+  }
+
+  const avatarBaseByNumber = new Map<string, string>();
+  for (const raw of allAvatarFilenames) {
+    const normalized = raw.replace(/\.png\.png$/i, '.png');
+    if (!/\.(png|webp|jpg|jpeg)$/i.test(normalized)) continue;
+    if (/_bg_removed(\.[^.]+)?$/i.test(normalized)) continue;
+
+    const noExt = normalized.replace(/\.[^.]+$/, '');
+    const base = noExt.replace(/^avator[_-]?/i, '').trim();
+    const m = base.match(/^(\d+)(?:[_-].+)?$/);
+    if (!m) continue;
+    const num = m[1];
+    if (!avatarBaseByNumber.has(num)) {
+      avatarBaseByNumber.set(num, base.replace(/\s+/g, '_'));
+    }
+  }
+
+  const backgroundFiles = fs
+    .readdirSync(backgroundsDir)
+    .filter((f) => /\.(jpg|jpeg|png|webp)$/i.test(f))
+    .map((f) => path.join(backgroundsDir, f));
+
+  console.log(`   Found ${avatarFiles.length} avatar files (*_bg_removed.png)`);
+  console.log(`   Found ${backgroundFiles.length} background files`);
+
+  if (avatarFiles.length === 0 && backgroundFiles.length === 0) {
+    console.log('   Nothing to upload.');
+    return;
+  }
+
+  const ops: Array<{ id: string; patch: Record<string, unknown> }> = [];
+
+  function avatarRarityFromNumber(numStr?: string): { rarity: string; gachaEnabled: boolean } {
+    const n = Number(numStr);
+    if (!Number.isFinite(n) || n <= 0) return { rarity: 'common', gachaEnabled: true };
+    if (n === 1) return { rarity: 'common', gachaEnabled: false };
+
+    // Rotation of 7 starting from #2:
+    // 1-2 common, 3-4 uncommon, 5 rare, 6 epic, 7 legendary
+    const offset = (n - 2) % 7;
+    if (offset === 0 || offset === 1) return { rarity: 'common', gachaEnabled: true };
+    if (offset === 2 || offset === 3) return { rarity: 'uncommon', gachaEnabled: true };
+    if (offset === 4) return { rarity: 'rare', gachaEnabled: true };
+    if (offset === 5) return { rarity: 'epic', gachaEnabled: true };
+    return { rarity: 'legendary', gachaEnabled: true };
+  }
+
+  for (const filePath of avatarFiles) {
+    const filename = path.basename(filePath);
+    const numMatch = filename.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    const num = numMatch?.[1];
+    const mappedBase = num ? avatarBaseByNumber.get(num) : undefined;
+    const id = mappedBase
+      ? cosmeticIdFromFilename('avatar', `avatar_${mappedBase}.png`)
+      : cosmeticIdFromFilename('avatar', filename);
+
+    const { rarity, gachaEnabled } = avatarRarityFromNumber(num);
+    const objectPath = `chemcity/cosmetics/avatars/${id}.png`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+
+    let imageUrlBoy: string | undefined;
+    let imageUrlGirl: string | undefined;
+    try {
+      const base = sharp(fs.readFileSync(filePath)).ensureAlpha();
+      const meta = await base.metadata();
+      const w = Number(meta.width);
+      const h = Number(meta.height);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 2 && h > 2) {
+        const halfW = Math.floor(w / 2);
+        const boyHalf = base.clone().extract({ left: 0, top: 0, width: halfW, height: h });
+        const girlHalf = base.clone().extract({ left: w - halfW, top: 0, width: halfW, height: h });
+
+        let boyBuf: Buffer;
+        let girlBuf: Buffer;
+        try {
+          boyBuf = await boyHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+          girlBuf = await girlHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+        } catch {
+          boyBuf = await boyHalf.clone().png().toBuffer();
+          girlBuf = await girlHalf.clone().png().toBuffer();
+        }
+
+        imageUrlBoy = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_boy.png`,
+          boyBuf,
+          'image/png',
+        );
+        imageUrlGirl = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_girl.png`,
+          girlBuf,
+          'image/png',
+        );
+      }
+    } catch (err: any) {
+      console.warn(`   ⚠️  Failed to generate gendered avatar images for ${id}: ${err?.message ?? String(err)}`);
+    }
+
+    ops.push({
+      id,
+      patch: {
+        type: 'avatar',
+        name: titleCaseFromId(id),
+        rarity,
+        imageUrl,
+        ...(imageUrlBoy ? { imageUrlBoy } : {}),
+        ...(imageUrlGirl ? { imageUrlGirl } : {}),
+        availability: { channels: { gacha: gachaEnabled, shop: true } },
+        shopData: { coinCost: 500 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  // Also upload avatars that have NO bg-removed version (by number)
+  for (const [num, filePath] of rawAvatarFilesByNum.entries()) {
+    if (avatarBgRemovedNums.has(num)) continue;
+
+    const filename = path.basename(filePath);
+    const mappedBase = avatarBaseByNumber.get(num);
+    const id = mappedBase
+      ? cosmeticIdFromFilename('avatar', `avatar_${mappedBase}.png`)
+      : cosmeticIdFromFilename('avatar', filename);
+
+    const { rarity, gachaEnabled } = avatarRarityFromNumber(num);
+    const objectPath = `chemcity/cosmetics/avatars/${id}.png`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+
+    let imageUrlBoy: string | undefined;
+    let imageUrlGirl: string | undefined;
+    try {
+      const base = sharp(fs.readFileSync(filePath)).ensureAlpha();
+      const meta = await base.metadata();
+      const w = Number(meta.width);
+      const h = Number(meta.height);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 2 && h > 2) {
+        const halfW = Math.floor(w / 2);
+        const boyHalf = base.clone().extract({ left: 0, top: 0, width: halfW, height: h });
+        const girlHalf = base.clone().extract({ left: w - halfW, top: 0, width: halfW, height: h });
+
+        let boyBuf: Buffer;
+        let girlBuf: Buffer;
+        try {
+          boyBuf = await boyHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+          girlBuf = await girlHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+        } catch {
+          boyBuf = await boyHalf.clone().png().toBuffer();
+          girlBuf = await girlHalf.clone().png().toBuffer();
+        }
+
+        imageUrlBoy = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_boy.png`,
+          boyBuf,
+          'image/png',
+        );
+        imageUrlGirl = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_girl.png`,
+          girlBuf,
+          'image/png',
+        );
+      }
+    } catch (err: any) {
+      console.warn(`   ⚠️  Failed to generate gendered avatar images for ${id}: ${err?.message ?? String(err)}`);
+    }
+
+    ops.push({
+      id,
+      patch: {
+        type: 'avatar',
+        name: titleCaseFromId(id),
+        rarity,
+        imageUrl,
+        ...(imageUrlBoy ? { imageUrlBoy } : {}),
+        ...(imageUrlGirl ? { imageUrlGirl } : {}),
+        availability: { channels: { gacha: gachaEnabled, shop: true } },
+        shopData: { coinCost: 500 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  for (const filePath of backgroundFiles) {
+    const filename = path.basename(filePath);
+    const id = cosmeticIdFromFilename('bg', filename);
+    const ext = path.extname(filename).toLowerCase().replace('.', '') || 'jpg';
+    const objectPath = `chemcity/cosmetics/backgrounds/${id}.${ext}`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+    ops.push({
+      id,
+      patch: {
+        type: 'background',
+        name: titleCaseFromId(id),
+        rarity: 'common',
+        imageUrl,
+        availability: { channels: { gacha: true, shop: true } },
+        shopData: { coinCost: 250 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  console.log(`   Upserting ${ops.length} cosmetics docs to Firestore...`);
+
+  let batch = db.batch();
+  let opCount = 0;
+
+  for (const op of ops) {
+    const ref = db.collection('cosmetics').doc(op.id);
+    batch.set(ref, op.patch, { merge: true });
+    opCount++;
+
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log('   ✅ Cosmetics upload complete.');
+}
+
+async function uploadRawAvatarsAssets(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  const avatarsDir =
+    process.env.CHEMCITY_AVATARS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem custome_renamed');
+
+  console.log(`\n🧑  Uploading RAW avatars to Firebase Storage (bucket=${bucketName})...`);
+  console.log(`   Avatars dir: ${avatarsDir}`);
+
+  if (!fs.existsSync(avatarsDir)) {
+    throw new Error(`Avatars directory not found: ${avatarsDir}`);
+  }
+
+  const rawFilenames = fs.readdirSync(avatarsDir);
+  const rawFiles = rawFilenames
+    .filter((f) => /\.(png|webp|jpg|jpeg)$/i.test(f))
+    .filter((f) => !/_bg_removed\.(png|webp|jpg|jpeg)(\.png)?$/i.test(f) && !/_bg_removed\b/i.test(f))
+    .filter((f) => !/_mask\.(png|webp|jpg|jpeg)$/i.test(f) && !/_mask\b/i.test(f))
+    .map((f) => path.join(avatarsDir, f));
+
+  console.log(`   Found ${rawFiles.length} raw avatar files (excluding _bg_removed)`);
+  if (rawFiles.length === 0) {
+    console.log('   Nothing to upload.');
+    return;
+  }
+
+  let uploaded = 0;
+  for (const filePath of rawFiles) {
+    const filename = path.basename(filePath);
+    const id = cosmeticIdFromFilename('avatar', filename);
+    const objectPath = `chemcity/cosmetics/avatars_raw/${id}${path.extname(filename).toLowerCase() || '.png'}`;
+    await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+    uploaded++;
+  }
+
+  console.log(`   ✅ Raw avatars upload complete. uploaded=${uploaded}`);
+}
+
+// ─── Seed Places ──────────────────────────────────────────────
+
+async function seedPlaces(): Promise<void> {
+  const places = readJsonFile<{ id: string }>(PLACES_FILE, 'places');
+  if (places.length > 0) {
+    await batchWrite('places', places);
+  }
+}
+
+// ─── Seed Collections ─────────────────────────────────────────
+
+async function seedCollections(): Promise<void> {
+  let cols = readJsonFile<{ id: string; [key: string]: unknown }>(COLLECTIONS_FILE, 'collections');
+
+  if (cols.length === 0) {
+    // Auto-generate collections from item docs if collections.json is missing.
+    // This ensures the Collections Album UI can function without a separate file.
+    const jsonFiles = fs.existsSync(DATA_DIR)
+      ? fs.readdirSync(DATA_DIR).filter((f) => f.endsWith('.json'))
+      : [];
+
+    const collectionToItemIds: Record<string, string[]> = {};
+
+    for (const file of jsonFiles) {
+      const filePath = path.join(DATA_DIR, file);
+      const rows = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Array<{
+        id?: string;
+        collections?: unknown;
+      }>;
+
+      for (const row of rows) {
+        const itemId = typeof row?.id === 'string' ? row.id : '';
+        if (!itemId) continue;
+        const cids = Array.isArray(row.collections)
+          ? row.collections.map(String).map((s) => s.trim()).filter(Boolean)
+          : [];
+        for (const cid of cids) {
+          if (!collectionToItemIds[cid]) collectionToItemIds[cid] = [];
+          collectionToItemIds[cid].push(itemId);
+        }
+      }
+    }
+
+    cols = Object.entries(collectionToItemIds)
+      .map(([id, itemIds]) => ({
+        id,
+        displayName: titleCaseFromId(id),
+        description: `Collection: ${titleCaseFromId(id)}`,
+        itemIds: Array.from(new Set(itemIds)).sort(),
+      }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }
+
+  if (cols.length > 0) {
+    await batchWrite('collections', cols);
+  }
+}
+
+// ─── Seed Topics ──────────────────────────────────────────────
+
+async function seedTopics(): Promise<void> {
+  const topics = readJsonFile<{ id: string }>(TOPICS_FILE, 'topics');
+  if (topics.length > 0) {
+    await batchWrite('topics', topics);
+  }
+}
+
+// ─── Bump cacheVersion ────────────────────────────────────────
+
+/**
+ * Reads the current version, increments by 1, writes back.
+ * All clients compare this on every app open — if it differs
+ * from their local manifest, they re-fetch all static data.
+ *
+ * This is called AUTOMATICALLY by this script.
+ * You only need to manually bump if you edit Firestore directly.
+ */
+async function bumpCacheVersion(): Promise<number> {
+  const ref = db.collection('meta').doc('cacheVersion');
+  const snap = await ref.get();
+
+  const currentVersion: number = snap.exists ? (snap.data()!.version as number) : 0;
+  const newVersion = currentVersion + 1;
+
+  await ref.set({ version: newVersion }, { merge: true });
+  return newVersion;
+}
+
+// ─── Main ─────────────────────────────────────────────────────
+
+async function run() {
+  console.log('🌱 ChemCity Firestore Seeder\n');
+
+  const shouldMigrateImages = process.argv.includes('--migrate-images');
+  const shouldSeedGacha = process.argv.includes(SHOULD_SEED_GACHA_FLAG);
+  const shouldUploadCosmetics = process.argv.includes(SHOULD_UPLOAD_COSMETICS_FLAG);
+  const shouldUploadRawAvatars = process.argv.includes(SHOULD_UPLOAD_RAW_AVATARS_FLAG);
+
+  try {
+    // 1. Seed items
+    console.log('📦 Seeding items...');
+    const itemCount = await seedItems();
+
+    if (shouldMigrateImages) {
+      await migrateItemImagesToStorage();
+    } else {
+      console.log('\n🖼️  Image migration skipped (run with --migrate-images to upload images to Firebase Storage).');
+    }
+
+    // 2. Seed places
+    console.log('\n🗺️  Seeding places...');
+    await seedPlaces();
+
+    // 3. Seed collections
+    console.log('\n🏆 Seeding collections...');
+    await seedCollections();
+
+    // 4. Seed topics
+    console.log('\n📚 Seeding topics...');
+    await seedTopics();
+
+    // 4b. Seed gacha (optional)
+    if (shouldSeedGacha) {
+      await seedGacha();
+    } else {
+      console.log(`\n🎟️  Gacha seed skipped (run with ${SHOULD_SEED_GACHA_FLAG} to seed cosmetics + banners).`);
+    }
+
+    // 4c. Upload cosmetics assets (optional)
+    if (shouldUploadCosmetics) {
+      await uploadCosmeticsAssets();
+    } else {
+      console.log(`\n🧑🖼️  Cosmetics upload skipped (run with ${SHOULD_UPLOAD_COSMETICS_FLAG} to upload avatars/backgrounds).`);
+    }
+
+    // 4d. Upload raw (non-bg-removed) avatars to Storage (optional)
+    if (shouldUploadRawAvatars) {
+      await uploadRawAvatarsAssets();
+    } else {
+      console.log(`\n🧑  Raw avatars upload skipped (run with ${SHOULD_UPLOAD_RAW_AVATARS_FLAG} to upload original avatar images).`);
+    }
+
+    // 5. Bump cacheVersion — ALWAYS last step
+    console.log('\n🔢 Bumping cacheVersion...');
+    const newVersion = await bumpCacheVersion();
+
+    // 6. Print cache estimate
+    const estimatedKB = ((itemCount * 170) / 1024).toFixed(1);
+    const pct5MB = ((itemCount * 170) / (5 * 1024 * 1024) * 100).toFixed(2);
+
+    console.log(`
+✅ Seed complete!
+
+   cacheVersion bumped to ${newVersion}
+   → All students get fresh data next time they open the app
+
+📦 Estimated slim cache: ~${estimatedKB} KB (${pct5MB}% of 5MB localStorage budget)
+   → Safe. Copy this into your HANDOFF summary.
+
+⏭️  Verify in Firebase console that new items appear correctly.
+   If you edit Firestore directly after this, manually bump:
+   Firebase Console → Firestore → meta → cacheVersion → version
+`);
+  } catch (err) {
+    console.error('\n❌ Seed failed:', err);
+    process.exit(1);
+  }
+}
+
+run();
+
+

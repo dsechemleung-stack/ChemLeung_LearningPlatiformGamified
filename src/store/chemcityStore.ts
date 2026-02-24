@@ -9,6 +9,8 @@ import type {
   PlaceDocument,
   FullItemDocument,
   CollectionDocument,
+  Cosmetic,
+  GachaBanner,
 } from '../lib/chemcity/types';
 import {
   callChemCityInitUser,
@@ -28,8 +30,13 @@ import {
 import { estimateUnclaimedCoins } from '../lib/chemcity/income';
 import { getDailyStoreItems, STORE_MIN_SLOTS } from '../lib/chemcity/dailyStore';
 import type { QuizRewardRequest, QuizRewardResult } from '../lib/chemcity/types';
+import { getActiveBanners, getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
+import { getServerCacheVersion } from '../lib/cache';
 
 const ONBOARDING_STORAGE_KEY = 'chemcity_onboarding_done_v1';
+const DISABLE_FIRESTORE_LISTENERS =
+  String((import.meta as any).env?.VITE_DISABLE_FIRESTORE_LISTENERS ?? '').trim() === '1';
+const USER_POLL_INTERVAL_MS = 15_000;
 
 function hasSeenOnboarding(): boolean {
   try {
@@ -49,21 +56,31 @@ function markOnboardingDone(): void {
 
 type View = 'map' | 'place' | 'inventory' | 'store' | 'gas_station_distributor' | 'collections';
 
+type GachaView = 'gacha' | 'cosmetics';
+
+type ExtendedView = View | GachaView;
+
 type RootUserDoc = {
   chemcity?: UserChemCityData;
 } & Record<string, unknown>;
 
 interface ChemCityStore {
   user: UserChemCityData | null;
+  userGender: 'boy' | 'girl' | null;
   progress: UserProgressData | null;
   slimItems: SlimItemDocument[];
   places: PlaceDocument[];
   collections: CollectionDocument[];
 
+  cosmeticsMap: Map<string, Cosmetic>;
+  activeBanners: GachaBanner[];
+  gachaStaticLoaded: boolean;
+  gachaStaticVersion: number | null;
+
   isLoading: boolean;
   error: string | null;
 
-  view: View;
+  view: ExtendedView;
   selectedPlaceId: string | null;
 
   cardPickerSlotId: string | null;
@@ -100,6 +117,7 @@ interface ChemCityStore {
   showOnboarding: boolean;
 
   _unsubUser: Unsubscribe | null;
+  _userPollTimer: number | null;
 
   loadAll: (userId: string) => Promise<void>;
   teardown: () => void;
@@ -110,6 +128,8 @@ interface ChemCityStore {
   navigateToStore: () => void;
   navigateToGasStationDistributor: () => void;
   navigateToCollections: () => void;
+  navigateToGacha: () => void;
+  navigateToCosmetics: () => void;
 
   openCardPicker: (slotId: string) => void;
   closeCardPicker: () => void;
@@ -140,6 +160,8 @@ interface ChemCityStore {
   devGrantCoins: (amount: number) => Promise<void>;
   devRerollStore: () => void;
 
+  loadGachaStatic: () => Promise<void>;
+
   openPurchaseConfirm: (itemId: string) => void;
   closePurchaseConfirm: () => void;
   purchaseCard: (itemId: string, currency: 'coins' | 'diamonds') => Promise<void>;
@@ -153,10 +175,16 @@ interface ChemCityStore {
 
 export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   user: null,
+  userGender: null,
   progress: null,
   slimItems: [],
   places: [],
   collections: [],
+
+  cosmeticsMap: new Map(),
+  activeBanners: [],
+  gachaStaticLoaded: false,
+  gachaStaticVersion: null,
 
   isLoading: false,
   error: null,
@@ -197,6 +225,7 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   showOnboarding: false,
 
   _unsubUser: null,
+  _userPollTimer: null,
 
   loadAll: async (userId: string) => {
     set({ isLoading: true, error: null });
@@ -221,27 +250,57 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
 
       const existing = get()._unsubUser;
       if (existing) existing();
+      const existingTimer = get()._userPollTimer;
+      if (existingTimer) window.clearInterval(existingTimer);
 
-      const unsub = onSnapshot(userRef, (snap) => {
-        if (!snap.exists()) return;
-        const freshRoot = (snap.data() || {}) as RootUserDoc;
-        const fresh = (freshRoot.chemcity || null) as UserChemCityData | null;
+      if (!DISABLE_FIRESTORE_LISTENERS) {
+        const unsub = onSnapshot(userRef, (snap) => {
+          if (!snap.exists()) return;
+          const freshRoot = (snap.data() || {}) as RootUserDoc;
+          const fresh = (freshRoot.chemcity || null) as UserChemCityData | null;
+          const genderRaw = (freshRoot as any)?.gender;
+          const userGender: 'boy' | 'girl' | null =
+            genderRaw === 'girl' ? 'girl' : genderRaw === 'boy' ? 'boy' : null;
 
-        // Phase 4: mirror storeSlotCount (default 3) + compute daily store items
-        const slotCount = (fresh as any)?.storeSlotCount ?? STORE_MIN_SLOTS;
-        const pool = get().slimItems;
-        const dailyStoreItems = fresh
-          ? getDailyStoreItems(userId, pool, slotCount)
-          : [];
+          // Phase 4: mirror storeSlotCount (default 3) + compute daily store items
+          const slotCount = (fresh as any)?.storeSlotCount ?? STORE_MIN_SLOTS;
+          const pool = get().slimItems;
+          const dailyStoreItems = fresh ? getDailyStoreItems(userId, pool, slotCount) : [];
 
-        set({ user: fresh, storeSlotCount: slotCount, dailyStoreItems });
-      });
+          set({ user: fresh, userGender, storeSlotCount: slotCount, dailyStoreItems });
+        });
 
-      const progressUnsub = onSnapshot(progressRef, (snap) => {
-        if (!snap.exists()) return;
-        const fresh = snap.data() as UserProgressData;
-        set({ progress: fresh });
-      });
+        const progressUnsub = onSnapshot(progressRef, (snap) => {
+          if (!snap.exists()) return;
+          set({ progress: (snap.data() || null) as any });
+        });
+
+        set({ _unsubUser: () => { unsub(); progressUnsub(); }, _userPollTimer: null });
+      } else {
+        // Fallback: polling to avoid Listen/channel transport issues in some environments.
+        const poll = async () => {
+          try {
+            const snap = await getDoc(userRef);
+            if (!snap.exists()) return;
+            const freshRoot = (snap.data() || {}) as RootUserDoc;
+            const fresh = (freshRoot.chemcity || null) as UserChemCityData | null;
+            const genderRaw = (freshRoot as any)?.gender;
+            const userGender: 'boy' | 'girl' | null =
+              genderRaw === 'girl' ? 'girl' : genderRaw === 'boy' ? 'boy' : null;
+            const slotCount = (fresh as any)?.storeSlotCount ?? STORE_MIN_SLOTS;
+            const pool = get().slimItems;
+            const dailyStoreItems = fresh ? getDailyStoreItems(userId, pool, slotCount) : [];
+            set({ user: fresh, userGender, storeSlotCount: slotCount, dailyStoreItems });
+          } catch {
+            // ignore
+          }
+        };
+
+        // Immediate poll then interval
+        poll();
+        const timer = window.setInterval(poll, USER_POLL_INTERVAL_MS);
+        set({ _unsubUser: null, _userPollTimer: timer });
+      }
 
       const showOnboarding = (() => {
         if (hasSeenOnboarding()) return false;
@@ -269,12 +328,6 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
           ? getDailyStoreItems(userId, slimItems, (chemcity as any)?.storeSlotCount ?? STORE_MIN_SLOTS)
           : [],
         showOnboarding,
-        _unsubUser: (() => {
-          return () => {
-            unsub();
-            progressUnsub();
-          };
-        })(),
       });
 
       // Phase 3: check daily login bonus (non-blocking)
@@ -282,6 +335,9 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
 
       // Phase 4: compute store (non-blocking)
       setTimeout(() => get().computeDailyStore(userId), 200);
+
+      // Gacha: load static catalog (non-blocking)
+      setTimeout(() => get().loadGachaStatic(), 250);
     } catch (err: any) {
       set({ isLoading: false, error: err?.message || 'Failed to load ChemCity' });
     }
@@ -302,10 +358,30 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
     set({ dailyStoreItems });
   },
 
+  loadGachaStatic: async () => {
+    try {
+      const serverVersion = await getServerCacheVersion();
+      const prevVersion = get().gachaStaticVersion;
+      if (get().gachaStaticLoaded && prevVersion === serverVersion) return;
+
+      const [cosmeticsMap, activeBanners] = await Promise.all([
+        getCosmeticsMap(),
+        getActiveBanners(),
+      ]);
+      set({ cosmeticsMap, activeBanners, gachaStaticLoaded: true, gachaStaticVersion: serverVersion });
+    } catch (err: any) {
+      console.error('[Gacha] Failed to load static data:', err);
+      // Still mark as loaded so UI shows (with empty data if needed)
+      set({ gachaStaticLoaded: true });
+    }
+  },
+
   teardown: () => {
     const unsub = get()._unsubUser;
     if (unsub) unsub();
-    set({ _unsubUser: null });
+    const t = get()._userPollTimer;
+    if (t) window.clearInterval(t);
+    set({ _unsubUser: null, _userPollTimer: null, userGender: null });
   },
 
   navigateToMap: () => set({ view: 'map', selectedPlaceId: null }),
@@ -314,6 +390,8 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   navigateToStore: () => set({ view: 'store' }),
   navigateToGasStationDistributor: () => set({ view: 'gas_station_distributor' }),
   navigateToCollections: () => set({ view: 'collections' }),
+  navigateToGacha: () => set({ view: 'gacha' }),
+  navigateToCosmetics: () => set({ view: 'cosmetics' }),
 
   openCardPicker: (slotId) => set({ cardPickerSlotId: slotId }),
   closeCardPicker: () => set({ cardPickerSlotId: null }),
@@ -418,6 +496,8 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
     } catch {
       // ignore
     }
+
+    set({ gachaStaticLoaded: false, gachaStaticVersion: null });
 
     const userId = get().user?.userId;
     if (!userId) return;

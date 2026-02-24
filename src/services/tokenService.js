@@ -282,19 +282,48 @@ export async function cleanupTokenHistory(userId) {
  */
 export function subscribeToTokens(userId, callback) {
   const userRef = doc(db, 'users', userId);
-  
-  return onSnapshot(userRef, (doc) => {
-    if (doc.exists()) {
-      const data = doc.data();
-      callback({
-        tokens: data.tokens || 0,
-        inventory: data.inventory || [],
-        equipped: data.equipped || {}
-      });
-    }
-  }, (error) => {
-    console.error('Error in token subscription:', error);
-  });
+
+  const disableListeners = String(import.meta.env?.VITE_DISABLE_FIRESTORE_LISTENERS ?? '').trim() === '1';
+  if (disableListeners) {
+    let timer = null;
+    const poll = async () => {
+      try {
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          callback({
+            tokens: data.tokens || 0,
+            inventory: data.inventory || [],
+            equipped: data.equipped || {},
+          });
+        }
+      } catch (error) {
+        console.error('Error in token polling:', error);
+      }
+    };
+    poll();
+    timer = window.setInterval(poll, 15000);
+    return () => {
+      if (timer) window.clearInterval(timer);
+    };
+  }
+
+  return onSnapshot(
+    userRef,
+    (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        callback({
+          tokens: data.tokens || 0,
+          inventory: data.inventory || [],
+          equipped: data.equipped || {},
+        });
+      }
+    },
+    (error) => {
+      console.error('Error in token subscription:', error);
+    },
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────

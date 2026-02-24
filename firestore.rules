@@ -155,6 +155,30 @@ service cloud.firestore {
     }
 
     // ============================================
+    // CHEMCITY GACHA STATIC DATA (READ-ONLY)
+    // ============================================
+
+    match /cosmetics/{cosmeticId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /gachaBanners/{bannerId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+
+      match /entries/{cosmeticId} {
+        allow read: if isAuthenticated();
+        allow write: if false;
+      }
+    }
+
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ============================================
     // QUIZ DATA
     // ============================================
 

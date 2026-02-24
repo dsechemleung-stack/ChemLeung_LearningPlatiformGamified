@@ -5,52 +5,94 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { updateProfile } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { User, GraduationCap, Mail, Calendar, Save, ArrowLeft, Trophy, Target, BookOpen, Lock, Unlock } from 'lucide-react';
+import {
+  User, GraduationCap, Mail, Calendar, Save, ArrowLeft,
+  Trophy, Target, BookOpen, Lock, Unlock, Palette,
+} from 'lucide-react';
 import { useQuizData } from '../hooks/useQuizData';
-import Avatar from '../components/Avatar';
-import { STORE_ITEMS } from '../utils/storeItems';
+import { ProfileCard } from '../components/chemcity/gacha/ProfileCard';
+import { getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
+import { AvatarTunerButton } from '../components/chemcity/gacha/AvatarTuner';
+import { useChemCityStore } from '../store/chemcityStore';
 
-const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
+const SHEET_URL =
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
 
 export default function ProfilePage() {
   const { currentUser, userProfile, loadUserProfile } = useAuth();
   const { t, isEnglish } = useLanguage();
   const navigate = useNavigate();
   const { questions, loading: questionsLoading } = useQuizData(SHEET_URL);
-  
+
+  const navigateToCosmetics = useChemCityStore((s) => s.navigateToCosmetics);
+
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [level, setLevel] = useState(userProfile?.level || 'S5');
   const [learnedUpTo, setLearnedUpTo] = useState(userProfile?.learnedUpTo || '');
+  const [gender, setGender] = useState(userProfile?.gender || 'boy');
   const [topicExceptions, setTopicExceptions] = useState(userProfile?.topicExceptions || []);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
-  // Profile picture editor state (ChemStore owned items only)
-  const inventory = userProfile?.inventory || [];
-  const equipped = userProfile?.equipped || {};
-  const ownedProfilePics = STORE_ITEMS.profilePics.filter(item => inventory.includes(item.id) || item.price === 0);
-  const ownedThemes = STORE_ITEMS.themes.filter(item => inventory.includes(item.id) || item.price === 0);
+  const [cosmeticsMap, setCosmeticsMap] = useState(null);
 
-  const [selectedProfilePicId, setSelectedProfilePicId] = useState(equipped.profilePic || 'flask_blue');
-  const [selectedThemeId, setSelectedThemeId] = useState(equipped.theme || 'default');
+  const equippedAvatarId = userProfile?.chemcity?.equippedCosmetics?.avatarId;
+  const equippedBackgroundId = userProfile?.chemcity?.equippedCosmetics?.backgroundId;
+
+  const fallbackIds = useMemo(() => {
+    if (!cosmeticsMap) return { avatarId: undefined, backgroundId: undefined };
+    if (equippedAvatarId && equippedBackgroundId) {
+      return { avatarId: equippedAvatarId, backgroundId: equippedBackgroundId };
+    }
+    const all = Array.from(cosmeticsMap.values());
+    const firstAvatar = all.find((c) => c?.type === 'avatar');
+    const firstBg = all.find((c) => c?.type === 'background');
+    return {
+      avatarId: equippedAvatarId || firstAvatar?.id,
+      backgroundId: equippedBackgroundId || firstBg?.id,
+    };
+  }, [cosmeticsMap, equippedAvatarId, equippedBackgroundId]);
+
+  const previewAvatar = useMemo(() => {
+    if (!cosmeticsMap) return null;
+    const id = fallbackIds.avatarId;
+    if (!id) return null;
+    try {
+      return cosmeticsMap.get(id) || null;
+    } catch {
+      return null;
+    }
+  }, [cosmeticsMap, fallbackIds.avatarId]);
 
   useEffect(() => {
-    setSelectedProfilePicId((userProfile?.equipped || {}).profilePic || 'flask_blue');
-    setSelectedThemeId((userProfile?.equipped || {}).theme || 'default');
+    setGender(userProfile?.gender || 'boy');
   }, [userProfile]);
 
-  // Extract all unique topics from questions
+  useEffect(() => {
+    let mounted = true;
+    getCosmeticsMap()
+      .then((m) => {
+        if (!mounted) return;
+        setCosmeticsMap(m);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCosmeticsMap(new Map());
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const allTopics = useMemo(() => {
     if (!questions || questions.length === 0) return [];
-    return [...new Set(questions.map(q => q.Topic))]
-      .filter(t => t && t !== "Uncategorized")
+    return [...new Set(questions.map((q) => q.Topic))]
+      .filter((t) => t && t !== 'Uncategorized')
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [questions]);
 
-  // Get currently available topics based on learnedUpTo and exceptions
   const availableTopics = useMemo(() => {
     if (!learnedUpTo) return [];
-    
     const available = [];
     for (const topic of allTopics) {
       const topicNum = topic.match(/^\d+/)?.[0];
@@ -61,81 +103,65 @@ export default function ProfilePage() {
     return available;
   }, [allTopics, learnedUpTo, topicExceptions]);
 
-  // Get topics that are within learned range (for exceptions UI)
   const learnedRangeTopics = useMemo(() => {
     if (!learnedUpTo) return [];
-    
-    return allTopics.filter(topic => {
+    return allTopics.filter((topic) => {
       const topicNum = topic.match(/^\d+/)?.[0];
       return topicNum && topicNum <= learnedUpTo;
     });
   }, [allTopics, learnedUpTo]);
 
   const toggleTopicException = (topic) => {
-    setTopicExceptions(prev => 
-      prev.includes(topic) 
-        ? prev.filter(t => t !== topic)
-        : [...prev, topic]
+    setTopicExceptions((prev) =>
+      prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic],
     );
   };
+
+  // Navigate to ChemCity cosmetics screen
+  function handleChangeAvatar() {
+    // Navigate to ChemCity and open cosmetics view
+    // The ChemCity page should read this state to open the cosmetics panel directly
+    navigate('/chemcity', { state: { openView: 'cosmetics' } });
+  }
 
   async function handleSave(e) {
     e.preventDefault();
     setSaving(true);
     setMessage({ type: '', text: '' });
-
     try {
-      // Update Firebase Auth profile
-      await updateProfile(currentUser, {
-        displayName: displayName
-      });
-
-      // Update Firestore user document
+      await updateProfile(currentUser, { displayName });
       const userRef = doc(db, 'users', currentUser.uid);
       await updateDoc(userRef, {
-        displayName: displayName,
-        level: level,
-        learnedUpTo: learnedUpTo,
-        topicExceptions: topicExceptions,
-        equipped: {
-          ...(userProfile?.equipped || {}),
-          profilePic: selectedProfilePicId,
-          theme: selectedThemeId
-        },
-        updatedAt: new Date().toISOString()
+        displayName,
+        gender,
+        level,
+        learnedUpTo,
+        topicExceptions,
+        updatedAt: new Date().toISOString(),
       });
-
-      // Reload user profile
       await loadUserProfile(currentUser.uid);
-
-      setMessage({ 
-        type: 'success', 
-        text: t('profile.profileUpdated')
-      });
+      setMessage({ type: 'success', text: t('profile.profileUpdated') });
     } catch (error) {
       console.error('Error updating profile:', error);
-      setMessage({ 
-        type: 'error', 
-        text: t('profile.failedUpdate')
-      });
+      setMessage({ type: 'error', text: t('profile.failedUpdate') });
     }
-
     setSaving(false);
   }
 
   const formatDate = (isoString) => {
     if (!isoString) return t('common.notAvailable');
     const date = new Date(isoString);
-    return date.toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', { 
-      day: '2-digit', 
-      month: 'short', 
-      year: 'numeric'
+    return date.toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
     });
   };
 
-  const overallAccuracy = userProfile?.totalQuestions > 0
-    ? Math.round((userProfile.totalCorrect / userProfile.totalQuestions) * 100)
-    : 0;
+  const overallAccuracy =
+    userProfile?.totalQuestions > 0
+      ? Math.round((userProfile.totalCorrect / userProfile.totalQuestions) * 100)
+      : 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -147,7 +173,7 @@ export default function ProfilePage() {
         >
           <ArrowLeft size={20} />
         </button>
-        
+
         <div className="flex-1 flex justify-center">
           <div className="paper-island paper-island-md paper-amber">
             <div className="paper-island-content">
@@ -155,9 +181,7 @@ export default function ProfilePage() {
                 <User size={32} className="text-emerald-700" />
                 {t('profile.profileSettings')}
               </h1>
-              <p className="text-slate-700 mt-1 font-semibold">
-                {t('profile.manageAccount')}
-              </p>
+              <p className="text-slate-700 mt-1 font-semibold">{t('profile.manageAccount')}</p>
             </div>
           </div>
         </div>
@@ -166,66 +190,52 @@ export default function ProfilePage() {
       {/* Stats Summary */}
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
         <div className="bg-slate-50 p-4 border-b">
-          <h2 className="text-lg font-bold text-slate-800">
-            {t('profile.yourStatistics')}
-          </h2>
+          <h2 className="text-lg font-bold text-slate-800">{t('profile.yourStatistics')}</h2>
         </div>
-        
         <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
             <div className="flex items-center gap-2 mb-2">
               <Trophy className="text-lab-blue" size={20} />
-              <span className="text-sm font-semibold text-slate-600">
-                {t('profile.totalAttempts')}
-              </span>
+              <span className="text-sm font-semibold text-slate-600">{t('profile.totalAttempts')}</span>
             </div>
-            <div className="text-3xl font-black text-lab-blue">
-              {userProfile?.totalAttempts || 0}
-            </div>
+            <div className="text-3xl font-black text-lab-blue">{userProfile?.totalAttempts || 0}</div>
           </div>
-
           <div className="bg-green-50 rounded-xl p-4 border-2 border-green-200">
             <div className="flex items-center gap-2 mb-2">
               <Target className="text-chemistry-green" size={20} />
-              <span className="text-sm font-semibold text-slate-600">
-                {t('profile.overallAccuracy')}
-              </span>
+              <span className="text-sm font-semibold text-slate-600">{t('profile.overallAccuracy')}</span>
             </div>
-            <div className="text-3xl font-black text-chemistry-green">
-              {overallAccuracy}%
-            </div>
+            <div className="text-3xl font-black text-chemistry-green">{overallAccuracy}%</div>
           </div>
-
           <div className="bg-purple-50 rounded-xl p-4 border-2 border-purple-200">
             <div className="flex items-center gap-2 mb-2">
               <GraduationCap className="text-purple-600" size={20} />
-              <span className="text-sm font-semibold text-slate-600">
-                {t('profile.questionsSolved')}
-              </span>
+              <span className="text-sm font-semibold text-slate-600">{t('profile.questionsSolved')}</span>
             </div>
-            <div className="text-3xl font-black text-purple-600">
-              {userProfile?.totalQuestions || 0}
-            </div>
+            <div className="text-3xl font-black text-purple-600">{userProfile?.totalQuestions || 0}</div>
           </div>
         </div>
       </div>
 
       {/* Profile Form */}
-      <form onSubmit={handleSave} className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+      <form
+        onSubmit={handleSave}
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden"
+      >
         <div className="bg-slate-50 p-4 border-b">
-          <h2 className="text-lg font-bold text-slate-800">
-            {t('profile.accountInformation')}
-          </h2>
+          <h2 className="text-lg font-bold text-slate-800">{t('profile.accountInformation')}</h2>
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Success/Error Message */}
+          {/* Message */}
           {message.text && (
-            <div className={`p-4 rounded-lg border-2 ${
-              message.type === 'success' 
-                ? 'bg-green-50 border-green-200 text-green-800' 
-                : 'bg-red-50 border-red-200 text-red-800'
-            }`}>
+            <div
+              className={`p-4 rounded-lg border-2 ${
+                message.type === 'success'
+                  ? 'bg-green-50 border-green-200 text-green-800'
+                  : 'bg-red-50 border-red-200 text-red-800'
+              }`}
+            >
               <p className="font-semibold">{message.text}</p>
             </div>
           )}
@@ -246,67 +256,100 @@ export default function ProfilePage() {
             />
           </div>
 
-          {/* Profile Picture Editor */}
+          {/* Gender */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+              <User size={16} />
+              Gender
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {['boy', 'girl'].map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGender(g)}
+                  className={`py-3 rounded-xl border-2 font-bold capitalize transition-all ${
+                    gender === g
+                      ? 'border-lab-blue bg-blue-50 text-lab-blue'
+                      : 'border-slate-200 text-slate-600 hover:border-slate-300'
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Profile Card Preview (enlarged) ── */}
           <div className="border-t-2 border-slate-100 pt-6">
             <label className="block text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-              <User size={16} />
-              {t('profile.profilePicture')}
+              <Palette size={16} />
+              Profile Card
             </label>
 
-            <div className="flex items-center gap-4 mb-4">
-              <Avatar
-                userId={currentUser?.uid}
-                displayName={displayName}
-                profilePicId={selectedProfilePicId}
-                themeId={selectedThemeId}
-                fetchUser={false}
-                size="lg"
-              />
-              <div className="text-sm text-slate-600">
-                <div className="font-bold text-slate-800">{t('profile.preview')}</div>
-                <div className="text-xs text-slate-500">{t('profile.onlyOwnedItems')}</div>
+            {/* Two-column: large card left, info + buttons right */}
+            <div className="flex gap-5 items-start">
+              {/* Large card — half the content width */}
+              <div className="shrink-0" style={{ width: 'min(50%, 220px)' }}>
+                <ProfileCard
+                  size="xl"
+                  displayName={displayName}
+                  gender={gender}
+                  cosmeticsMap={cosmeticsMap || undefined}
+                  avatarId={fallbackIds.avatarId}
+                  backgroundId={fallbackIds.backgroundId}
+                  className="w-full shadow-lg"
+                  style={{ height: 'auto', aspectRatio: '4 / 5.5' }}
+                />
               </div>
-            </div>
 
-            <div className="mb-4">
-              <div className="text-xs font-black text-slate-500 uppercase tracking-wide mb-2">{t('profile.icon')}</div>
-              <div className="grid grid-cols-5 sm:grid-cols-8 gap-2">
-                {ownedProfilePics.map(item => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setSelectedProfilePicId(item.id)}
-                    className={`p-2 rounded-xl border-2 transition-all flex items-center justify-center text-xl ${
-                      selectedProfilePicId === item.id
-                        ? 'border-lab-blue bg-blue-50'
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                    title={item.name}
-                  >
-                    {item.icon}
-                  </button>
-                ))}
-              </div>
-            </div>
+              {/* Right side: info + change button */}
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-black text-slate-800 mb-0.5">{t('profile.preview')}</p>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Your avatar and background are set inside ChemCity. Tap below to change them.
+                  </p>
+                </div>
 
-            <div>
-              <div className="text-xs font-black text-slate-500 uppercase tracking-wide mb-2">{t('profile.background')}</div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {ownedThemes.map(theme => (
-                  <button
-                    key={theme.id}
-                    type="button"
-                    onClick={() => setSelectedThemeId(theme.id)}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${
-                      selectedThemeId === theme.id
-                        ? 'border-lab-blue bg-blue-50'
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="w-full h-10 rounded-lg border border-white/50 shadow-inner" style={{ background: theme.preview }} />
-                    <div className="mt-2 text-xs font-bold text-slate-700 truncate">{theme.name}</div>
-                  </button>
-                ))}
+                {/* Equipped names */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 py-1.5 px-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <span className="text-xs text-slate-500 font-semibold w-20 shrink-0">Avatar</span>
+                    <span className="text-xs text-slate-700 font-bold truncate">
+                      {equippedAvatarId
+                        ? (cosmeticsMap?.get(equippedAvatarId)?.name ?? equippedAvatarId)
+                        : 'None'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 py-1.5 px-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <span className="text-xs text-slate-500 font-semibold w-20 shrink-0">Background</span>
+                    <span className="text-xs text-slate-700 font-bold truncate">
+                      {equippedBackgroundId
+                        ? (cosmeticsMap?.get(equippedBackgroundId)?.name ?? equippedBackgroundId)
+                        : 'None'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Change Avatar button */}
+                <button
+                  type="button"
+                  onClick={handleChangeAvatar}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-lab-blue bg-blue-50 text-lab-blue font-bold text-sm transition-all hover:bg-blue-100 active:scale-95"
+                >
+                  <Palette size={16} />
+                  Change Avatar &amp; Background
+                </button>
+
+                {/* Dev tuner button */}
+                <AvatarTunerButton
+                  avatarId={fallbackIds.avatarId}
+                  avatarImageUrl={previewAvatar?.imageUrl}
+                  avatarImageUrlBoy={previewAvatar?.imageUrlBoy}
+                  avatarImageUrlGirl={previewAvatar?.imageUrlGirl}
+                  className="w-full py-2.5 rounded-xl border-2 border-slate-200 text-slate-600 font-bold text-sm hover:border-slate-300 transition-all"
+                />
               </div>
             </div>
           </div>
@@ -323,9 +366,7 @@ export default function ProfilePage() {
               disabled
               className="w-full px-4 py-3 border-2 border-slate-200 rounded-lg bg-slate-50 text-slate-500 cursor-not-allowed"
             />
-            <p className="text-xs text-slate-500 mt-1">
-              {t('profile.emailCannotChange')}
-            </p>
+            <p className="text-xs text-slate-500 mt-1">{t('profile.emailCannotChange')}</p>
           </div>
 
           {/* School Level */}
@@ -350,20 +391,16 @@ export default function ProfilePage() {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-500 mt-2">
-              {t('profile.selectCurrentForm')}
-            </p>
+            <p className="text-xs text-slate-500 mt-2">{t('profile.selectCurrentForm')}</p>
           </div>
 
-          {/* LEARNED UP TO SELECTOR */}
+          {/* Topics learned up to */}
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
               <BookOpen size={16} />
               {t('profile.topicsLearnedUpTo')}
             </label>
-            <p className="text-xs text-slate-500 mb-3">
-              {t('profile.selectHighestTopic')}
-            </p>
+            <p className="text-xs text-slate-500 mb-3">{t('profile.selectHighestTopic')}</p>
             <div className="grid grid-cols-6 md:grid-cols-8 gap-2">
               {allTopics.map((topic) => {
                 const topicNum = topic.match(/^\d+/)?.[0];
@@ -386,16 +423,14 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* TOPIC EXCEPTIONS */}
+          {/* Topic exceptions */}
           {learnedUpTo && learnedRangeTopics.length > 0 && (
             <div className="border-t-2 border-slate-100 pt-6">
               <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
                 <Lock size={16} />
                 {t('profile.topicExceptionsLabel')}
               </label>
-              <p className="text-xs text-slate-500 mb-3">
-                {t('profile.clickToExclude')}
-              </p>
+              <p className="text-xs text-slate-500 mb-3">{t('profile.clickToExclude')}</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {learnedRangeTopics.map((topic) => {
                   const isException = topicExceptions.includes(topic);
@@ -432,21 +467,16 @@ export default function ProfilePage() {
               </h3>
               <div className="flex flex-wrap gap-2">
                 {availableTopics.map((topic) => (
-                  <span
-                    key={topic}
-                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold"
-                  >
+                  <span key={topic} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">
                     {topic}
                   </span>
                 ))}
               </div>
-              <p className="text-xs text-blue-700 mt-2">
-                {t('profile.theseTopicsWillAppear')}
-              </p>
+              <p className="text-xs text-blue-700 mt-2">{t('profile.theseTopicsWillAppear')}</p>
             </div>
           )}
 
-          {/* Account Created Date */}
+          {/* Account Created */}
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
               <Calendar size={16} />
@@ -465,7 +495,7 @@ export default function ProfilePage() {
           >
             {saving ? (
               <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
                 {t('profile.saving')}
               </>
             ) : (

@@ -5,7 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import ChemistryLoading from '../components/ChemistryLoading';
 import { quizService } from '../services/quizService';
 import { Trophy, Medal, Award, Calendar, ArrowLeft, Flame, GraduationCap, Info } from 'lucide-react';
-import Avatar from '../components/Avatar';
+import ChemCityUserProfileIcon from '../components/ChemCityUserProfileIcon';
 import TokenRulesModal from '../components/TokenRulesModal';
 
 // ── Level badge ──────────────────────────────────────────────────────────────
@@ -83,14 +83,11 @@ function CircleAvatar({ entry, rank }) {
           <img src={photoUrl} alt={entry?.displayName || t('common.avatar')} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <Avatar
+            <ChemCityUserProfileIcon
               userId={entry.userId}
               displayName={entry.displayName}
-              profilePicId={entry.equippedProfilePic}
-              themeId={entry.equippedTheme}
-              fetchUser={false}
-              size="md"
-              className="!w-11 !h-11 shadow-none"
+              size={44}
+              className="shadow-none"
             />
           </div>
         )}

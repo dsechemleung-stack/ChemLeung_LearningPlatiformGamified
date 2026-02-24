@@ -15,6 +15,8 @@ import { PlaceUnlockModal } from './PlaceUnlockModal';
 import { GasStationDistributor } from './GasStationDistributor';
 import { CollectionsAlbum } from './CollectionsAlbum';
 import { OnboardingOverlay } from './OnboardingOverlay';
+import { GachaScreen } from './gacha/GachaScreen';
+import { CosmeticsInventory } from './gacha/CosmeticsInventory';
 
 export const ChemCityRoot: React.FC = () => {
   const { currentUser } = useAuth();
@@ -79,6 +81,8 @@ export const ChemCityRoot: React.FC = () => {
         {view === 'store' && <ChemStore />}
         {view === 'gas_station_distributor' && <GasStationDistributor />}
         {view === 'collections' && <CollectionsAlbum />}
+        {view === 'gacha' && <GachaScreen />}
+        {view === 'cosmetics' && <CosmeticsInventory />}
       </main>
 
       <CardPicker />

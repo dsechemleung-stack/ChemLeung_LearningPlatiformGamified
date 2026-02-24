@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
+import sharp from 'sharp';
 
 // ─── Firebase Admin Init ─────────────────────────────────────
 // Expects GOOGLE_APPLICATION_CREDENTIALS env var pointing to
@@ -156,6 +157,15 @@ const TOPICS_FILE = path.resolve(__dirname, '../data/topics.json');
 
 const BATCH_SIZE = 400; // Firestore batch limit is 500 ops
 
+const SHOULD_SEED_GACHA_FLAG = '--seed-gacha';
+const SHOULD_UPLOAD_COSMETICS_FLAG = '--upload-cosmetics';
+const SHOULD_UPLOAD_BACKGROUNDS_ONLY_FLAG = '--upload-backgrounds-only';
+const SHOULD_UPLOAD_RAW_AVATARS_FLAG = '--upload-raw-avatars';
+const SHOULD_UPLOAD_THEMED_AVATARS_FLAG = '--upload-themed-avatars';
+const SHOULD_HARD_REFRESH_FLAG = '--hard-refresh';
+const SHOULD_PURGE_NON_THEMED_V2_FLAG = '--purge-non-themed-v2';
+const SHOULD_PURGE_UNUSED_STORAGE_FLAG = '--purge-unused-storage';
+
 // ─── Helpers ─────────────────────────────────────────────────
 
 async function batchWrite(
@@ -202,6 +212,447 @@ function titleCaseFromId(id: string): string {
     .replace(/[_-]+/g, ' ')
     .trim()
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function safeId(s: string): string {
+  return String(s || '')
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function cosmeticIdFromFilename(prefix: 'avatar' | 'bg', filename: string): string {
+  const normalized = filename.replace(/\.png\.png$/i, '.png');
+  const base = normalized
+    .replace(/_bg_removed\.png$/i, '')
+    .replace(/_bg_removed$/i, '')
+    .replace(/\.[^.]+$/, '')
+    .replace(/^avator[_-]?/i, '')
+    .replace(/^avatar[_-]?/i, '')
+    .replace(/^background[_-]?/i, '')
+    .trim();
+
+  const slug = base
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+
+  return `${prefix}_${slug || randomUUID().slice(0, 8)}`;
+}
+
+function contentTypeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.gif') return 'image/gif';
+  return 'application/octet-stream';
+}
+
+async function uploadLocalFileToStorage(bucketName: string, objectPath: string, localPath: string): Promise<string> {
+  const bucket = storage.bucket();
+  const token = randomUUID();
+  const buf = fs.readFileSync(localPath);
+  const file = bucket.file(objectPath);
+
+  await file.save(buf, {
+    resumable: false,
+    metadata: {
+      contentType: contentTypeFromPath(localPath),
+      cacheControl: 'public, max-age=31536000, immutable',
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
+  });
+
+  return storageDownloadUrl(bucketName, objectPath, token);
+}
+
+async function uploadBufferToStorage(
+  bucketName: string,
+  objectPath: string,
+  buf: Buffer,
+  contentType: string,
+): Promise<string> {
+  const bucket = storage.bucket();
+  const token = randomUUID();
+  const file = bucket.file(objectPath);
+
+  await file.save(buf, {
+    resumable: false,
+    metadata: {
+      contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+      metadata: {
+        firebaseStorageDownloadTokens: token,
+      },
+    },
+  });
+
+  return storageDownloadUrl(bucketName, objectPath, token);
+}
+
+async function padToCanvas(
+  buf: Buffer,
+  targetW: number,
+  targetH: number,
+): Promise<Buffer> {
+  const img = sharp(buf).ensureAlpha();
+  const meta = await img.metadata();
+  const w = Number(meta.width);
+  const h = Number(meta.height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return buf;
+  if (w > targetW || h > targetH) return buf;
+
+  const left = Math.floor((targetW - w) / 2);
+  const right = targetW - w - left;
+  const top = targetH - h;
+  const bottom = 0;
+
+  if (left === 0 && right === 0 && top === 0 && bottom === 0) return buf;
+
+  return img
+    .extend({
+      top,
+      bottom,
+      left,
+      right,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+}
+
+async function addTransparentMargin(buf: Buffer, marginPx: number): Promise<Buffer> {
+  if (!marginPx || marginPx <= 0) return buf;
+  return sharp(buf)
+    .ensureAlpha()
+    .extend({
+      top: marginPx,
+      bottom: marginPx,
+      left: marginPx,
+      right: marginPx,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+}
+
+const AVATAR_BOY_CROP_RIGHT_PX: Record<string, number> = {
+  avatar_26_antman: 18,
+};
+
+async function cropRightPx(buf: Buffer, cropPx: number): Promise<Buffer> {
+  if (!cropPx || cropPx <= 0) return buf;
+  const img = sharp(buf).ensureAlpha();
+  const meta = await img.metadata();
+  const w = Number(meta.width);
+  const h = Number(meta.height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 2 || h <= 2) return buf;
+  if (cropPx >= w - 1) return buf;
+  return img
+    .extract({ left: 0, top: 0, width: w - cropPx, height: h })
+    .png()
+    .toBuffer();
+}
+
+// ─── Seed Gacha (Cosmetics + Banners + Events) ───────────────
+
+type SeedCosmetic = {
+  id: string;
+  [key: string]: unknown;
+};
+
+type SeedBanner = {
+  id: string;
+  entries: Array<{ cosmeticId: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
+
+type SeedEvent = {
+  id: string;
+  [key: string]: unknown;
+};
+
+const GACHA_SEED = {
+  cosmetics: [
+    {
+      id: 'avatar_chemist_01',
+      type: 'avatar',
+      name: 'Lab Chemist',
+      rarity: 'common',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/chemist_01.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 500 },
+      faceCrop: { x: 0.2, y: 0.05, w: 0.6, h: 0.3 },
+      tags: ['lab', 'science'],
+    },
+    {
+      id: 'avatar_alchemist_rare',
+      type: 'avatar',
+      name: 'Dark Alchemist',
+      rarity: 'rare',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/alchemist_rare.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.15, y: 0.03, w: 0.7, h: 0.35 },
+      tags: ['alchemy', 'dark'],
+    },
+    {
+      id: 'avatar_archmage_epic',
+      type: 'avatar',
+      name: 'Archmage of Elements',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/archmage_epic.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.2, y: 0.04, w: 0.6, h: 0.32 },
+      tags: ['magic', 'elements'],
+    },
+    {
+      id: 'avatar_godchemist_legendary',
+      type: 'avatar',
+      name: 'God of Chemistry',
+      rarity: 'legendary',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/godchemist_legendary.png',
+      availability: { channels: { gacha: true, shop: false } },
+      faceCrop: { x: 0.18, y: 0.02, w: 0.64, h: 0.3 },
+      tags: ['legendary', 'divine'],
+    },
+    {
+      id: 'bg_lab_common',
+      type: 'background',
+      name: 'Chem Lab',
+      rarity: 'common',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/lab_common.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 250, ticketCost: 1 },
+      tags: ['lab', 'indoor'],
+    },
+    {
+      id: 'bg_volcano_uncommon',
+      type: 'background',
+      name: 'Volcano Lab',
+      rarity: 'uncommon',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/volcano_uncommon.png',
+      availability: { channels: { gacha: true, shop: true } },
+      shopData: { coinCost: 600, ticketCost: 2 },
+      tags: ['outdoor', 'fire'],
+    },
+    {
+      id: 'bg_crystal_rare',
+      type: 'background',
+      name: 'Crystal Cavern',
+      rarity: 'rare',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/crystal_rare.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['cave', 'magic'],
+    },
+    {
+      id: 'bg_nebula_epic',
+      type: 'background',
+      name: 'Nebula Observatory',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/nebula_epic.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['space', 'epic'],
+    },
+    {
+      id: 'bg_godforge_legendary',
+      type: 'background',
+      name: 'Godforge',
+      rarity: 'legendary',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/backgrounds/godforge_legendary.png',
+      availability: { channels: { gacha: true, shop: false } },
+      tags: ['legendary', 'forge'],
+    },
+    {
+      id: 'avatar_neon_event',
+      type: 'avatar',
+      name: 'Neon Scientist',
+      rarity: 'epic',
+      imageUrl: 'https://storage.example.com/chemcity/cosmetics/avatars/neon_event.png',
+      availability: {
+        channels: { gacha: true, shop: false },
+        eventKey: 'event_neon_2025',
+        startAt: '2025-12-01T00:00:00Z',
+        endAt: '2025-12-31T23:59:59Z',
+      },
+      faceCrop: { x: 0.2, y: 0.04, w: 0.6, h: 0.32 },
+      tags: ['neon', 'event', 'limited'],
+    },
+  ] as const satisfies ReadonlyArray<SeedCosmetic>,
+  banners: [
+    {
+      id: 'banner_standard',
+      name: 'Standard Pool',
+      active: true,
+      rarityRates: { common: 0.5, uncommon: 0.28, rare: 0.15, epic: 0.05, legendary: 0.02 },
+      duplicateRefundCoinsByRarity: { common: 24, uncommon: 42, rare: 80, epic: 240, legendary: 600 },
+      pityRules: { epicEvery: 20, legendaryEvery: 40 },
+      cacheVersion: 1,
+      entries: [
+        { cosmeticId: 'avatar_chemist_01', rarity: 'common', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_alchemist_rare', rarity: 'rare', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_archmage_epic', rarity: 'epic', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'avatar_godchemist_legendary', rarity: 'legendary', type: 'avatar', weight: 1, enabled: true },
+        { cosmeticId: 'bg_lab_common', rarity: 'common', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_volcano_uncommon', rarity: 'uncommon', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_crystal_rare', rarity: 'rare', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_nebula_epic', rarity: 'epic', type: 'background', weight: 1, enabled: true },
+        { cosmeticId: 'bg_godforge_legendary', rarity: 'legendary', type: 'background', weight: 1, enabled: true },
+      ],
+    },
+  ] as const satisfies ReadonlyArray<SeedBanner>,
+  events: [
+    {
+      id: 'event_neon_2025',
+      name: 'Neon Science Fair',
+      description: 'Limited neon-themed cosmetics for the science fair season!',
+      startAt: '2025-12-01T00:00:00Z',
+      endAt: '2025-12-31T23:59:59Z',
+      isActive: true,
+      bannerIds: ['banner_neon_event'],
+    },
+  ] as const satisfies ReadonlyArray<SeedEvent>,
+};
+
+async function seedGacha(): Promise<void> {
+  console.log('\n🎟️  Seeding gacha (cosmetics, banners, entries, events)...');
+
+  // IMPORTANT:
+  // If you've already uploaded real cosmetics (with Firebase Storage URLs),
+  // do NOT overwrite them with the demo placeholders from GACHA_SEED.
+  // Instead, we build banner entries from whatever cosmetics exist in Firestore.
+  const cosmeticsSnap = await db.collection('cosmetics').get();
+  const existingCosmetics = cosmeticsSnap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as any) }))
+    .filter((c) => c?.deprecated !== true);
+
+  const hasAnyCosmetics = existingCosmetics.length > 0;
+  const hasRealUploadedCosmetics = existingCosmetics.some((c) => typeof c?.imageUrl === 'string' && isFirebaseStorageUrl(c.imageUrl));
+
+  if (!hasAnyCosmetics) {
+    await batchWrite('cosmetics', GACHA_SEED.cosmetics.map((c) => ({ ...c })) as any);
+  } else if (!hasRealUploadedCosmetics) {
+    console.log('   ℹ️  Cosmetics exist but none look like Firebase Storage URLs. Leaving cosmetics unchanged.');
+  } else {
+    console.log(`   ✅ Found ${existingCosmetics.length} existing cosmetics (with Firebase Storage URLs). Skipping demo cosmetics seed.`);
+
+    // Clean up any old demo cosmetics so they don't leak into UI or future pools.
+    const demoCosmetics = existingCosmetics.filter(
+      (c) => typeof c?.imageUrl === 'string' && String(c.imageUrl).includes('storage.example.com'),
+    );
+    if (demoCosmetics.length > 0) {
+      console.log(`   🧹 Deprecating ${demoCosmetics.length} demo cosmetics (storage.example.com)...`);
+      let demoBatch = db.batch();
+      let demoOps = 0;
+      for (const c of demoCosmetics) {
+        const ref = db.collection('cosmetics').doc(String(c.id));
+        demoBatch.set(
+          ref,
+          {
+            deprecated: true,
+            availability: { channels: { gacha: false, shop: false } },
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        );
+        demoOps++;
+        if (demoOps >= BATCH_SIZE) {
+          await demoBatch.commit();
+          demoBatch = db.batch();
+          demoOps = 0;
+        }
+      }
+      if (demoOps > 0) await demoBatch.commit();
+    }
+  }
+
+  // Banners + entries use a nested subcollection; batchWrite() only handles top-level collections.
+  console.log(`   Uploading ${GACHA_SEED.banners.length} docs to "gachaBanners" + entries...`);
+
+  let batch = db.batch();
+  let opCount = 0;
+  let totalOps = 0;
+
+  const bannerDoc = GACHA_SEED.banners[0];
+  const bannerId = bannerDoc?.id || 'banner_standard';
+  const { id: _ignoredId, entries: _ignoredEntries, ...bannerData } = bannerDoc;
+
+  batch.set(db.collection('gachaBanners').doc(bannerId), bannerData, { merge: true });
+  opCount++;
+  totalOps++;
+
+  // Build entries from existing cosmetics when available.
+  const gachaEnabledCosmetics = hasAnyCosmetics
+    ? existingCosmetics.filter((c) => c?.availability?.channels?.gacha === true)
+    : [];
+
+  // Prefer only real uploaded cosmetics (Firebase Storage URLs) to avoid demo placeholders.
+  const realGachaCosmetics = gachaEnabledCosmetics.filter(
+    (c) => typeof c?.imageUrl === 'string' && isFirebaseStorageUrl(String(c.imageUrl)),
+  );
+
+  const cosmeticsForEntries = realGachaCosmetics.length > 0
+    ? realGachaCosmetics
+    : gachaEnabledCosmetics;
+
+  const entrySource = hasAnyCosmetics
+    ? cosmeticsForEntries.map((c) => ({
+      cosmeticId: String(c.id),
+      rarity: String(c.gachaRarity || c.rarity || 'common'),
+      type: String(c.type || 'avatar'),
+      weight: Number.isFinite(Number(c.gachaWeight)) && Number(c.gachaWeight) > 0 ? Number(c.gachaWeight) : 1,
+      enabled: true,
+    }))
+    : bannerDoc.entries;
+
+  // Remove stale entry docs from previous seeds (e.g. demo entries) so they can't be drawn.
+  const desiredEntryIds = new Set(entrySource.map((e) => String((e as any).cosmeticId)));
+  const existingEntriesSnap = await db.collection('gachaBanners').doc(bannerId).collection('entries').get();
+  const staleEntries = existingEntriesSnap.docs.filter((d) => !desiredEntryIds.has(d.id));
+  if (staleEntries.length > 0) {
+    console.log(`   🧹 Deleting ${staleEntries.length} stale banner entries...`);
+    for (const docSnap of staleEntries) {
+      batch.delete(docSnap.ref);
+      opCount++;
+      totalOps++;
+      if (opCount >= BATCH_SIZE) {
+        await batch.commit();
+        batch = db.batch();
+        opCount = 0;
+      }
+    }
+  }
+
+  for (const entry of entrySource) {
+    const { cosmeticId, ...entryData } = entry;
+    batch.set(
+      db.collection('gachaBanners').doc(bannerId).collection('entries').doc(cosmeticId),
+      entryData,
+      { merge: true },
+    );
+    opCount++;
+    totalOps++;
+
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`   ✅ ${totalOps} ops written for banners + entries`);
+
+  await batchWrite('events', GACHA_SEED.events.map((e) => ({ ...e })) as any);
 }
 
 // ─── Seed Items ───────────────────────────────────────────────
@@ -312,7 +763,785 @@ async function migrateItemImagesToStorage(): Promise<void> {
   console.log(`   ✅ Image migration complete. migrated=${migrated}, skipped=${skipped}, failed=${failed}`);
 }
 
-// ─── Seed Places ──────────────────────────────────────────────
+// ─── Upload Cosmetics Assets to Firebase Storage (optional) ───
+
+async function uploadCosmeticsAssets(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  const avatarsDir =
+    process.env.CHEMCITY_AVATARS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem custome_renamed');
+  const backgroundsDir =
+    process.env.CHEMCITY_BACKGROUNDS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem background');
+
+  console.log(`\n🧑🖼️  Uploading cosmetics assets to Firebase Storage (bucket=${bucketName})...`);
+  console.log(`   Avatars dir: ${avatarsDir}`);
+  console.log(`   Backgrounds dir: ${backgroundsDir}`);
+
+  if (!fs.existsSync(avatarsDir)) {
+    throw new Error(`Avatars directory not found: ${avatarsDir}`);
+  }
+  if (!fs.existsSync(backgroundsDir)) {
+    throw new Error(`Backgrounds directory not found: ${backgroundsDir}`);
+  }
+
+  const allAvatarFilenames = fs.readdirSync(avatarsDir);
+
+  const avatarFiles = allAvatarFilenames
+    .filter((f) => /_bg_removed\.png(\.png)?$/i.test(f))
+    .map((f) => path.join(avatarsDir, f));
+
+  const avatarBgRemovedNums = new Set<string>();
+  for (const f of allAvatarFilenames) {
+    if (!/_bg_removed\.png(\.png)?$/i.test(f)) continue;
+    const m = f.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    if (m?.[1]) avatarBgRemovedNums.add(m[1]);
+  }
+
+  const rawAvatarFilesByNum = new Map<string, string>();
+  for (const raw of allAvatarFilenames) {
+    const normalized = raw.replace(/\.png\.png$/i, '.png');
+    if (!/\.(png|webp|jpg|jpeg)$/i.test(normalized)) continue;
+    if (/_bg_removed(\.[^.]+)?$/i.test(normalized)) continue;
+    if (/_mask(\.[^.]+)?$/i.test(normalized)) continue;
+
+    const m = normalized.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    if (!m?.[1]) continue;
+    const num = m[1];
+    if (!rawAvatarFilesByNum.has(num)) {
+      rawAvatarFilesByNum.set(num, path.join(avatarsDir, raw));
+    }
+  }
+
+  const avatarBaseByNumber = new Map<string, string>();
+  for (const raw of allAvatarFilenames) {
+    const normalized = raw.replace(/\.png\.png$/i, '.png');
+    if (!/\.(png|webp|jpg|jpeg)$/i.test(normalized)) continue;
+    if (/_bg_removed(\.[^.]+)?$/i.test(normalized)) continue;
+
+    const noExt = normalized.replace(/\.[^.]+$/, '');
+    const base = noExt.replace(/^avator[_-]?/i, '').trim();
+    const m = base.match(/^(\d+)(?:[_-].+)?$/);
+    if (!m) continue;
+    const num = m[1];
+    if (!avatarBaseByNumber.has(num)) {
+      avatarBaseByNumber.set(num, base.replace(/\s+/g, '_'));
+    }
+  }
+
+  const backgroundFiles = fs
+    .readdirSync(backgroundsDir)
+    .filter((f) => /\.(jpg|jpeg|png|webp)$/i.test(f))
+    .map((f) => path.join(backgroundsDir, f));
+
+  console.log(`   Found ${avatarFiles.length} avatar files (*_bg_removed.png)`);
+  console.log(`   Found ${backgroundFiles.length} background files`);
+
+  if (avatarFiles.length === 0 && backgroundFiles.length === 0) {
+    console.log('   Nothing to upload.');
+    return;
+  }
+
+  const ops: Array<{ id: string; patch: Record<string, unknown> }> = [];
+
+  function avatarRarityFromNumber(numStr?: string): { rarity: string; gachaEnabled: boolean } {
+    const n = Number(numStr);
+    if (!Number.isFinite(n) || n <= 0) return { rarity: 'common', gachaEnabled: true };
+    if (n === 1) return { rarity: 'common', gachaEnabled: false };
+
+    // Rotation of 7 starting from #2:
+    // 1-2 common, 3-4 uncommon, 5 rare, 6 epic, 7 legendary
+    const offset = (n - 2) % 7;
+    if (offset === 0 || offset === 1) return { rarity: 'common', gachaEnabled: true };
+    if (offset === 2 || offset === 3) return { rarity: 'uncommon', gachaEnabled: true };
+    if (offset === 4) return { rarity: 'rare', gachaEnabled: true };
+    if (offset === 5) return { rarity: 'epic', gachaEnabled: true };
+    return { rarity: 'legendary', gachaEnabled: true };
+  }
+
+  for (const filePath of avatarFiles) {
+    const filename = path.basename(filePath);
+    const numMatch = filename.match(/^(?:avator|avatar)[_-]?(\d+)/i);
+    const num = numMatch?.[1];
+    const mappedBase = num ? avatarBaseByNumber.get(num) : undefined;
+    const id = mappedBase
+      ? cosmeticIdFromFilename('avatar', `avatar_${mappedBase}.png`)
+      : cosmeticIdFromFilename('avatar', filename);
+
+    const { rarity, gachaEnabled } = avatarRarityFromNumber(num);
+    const objectPath = `chemcity/cosmetics/avatars/${id}.png`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+
+    let imageUrlBoy: string | undefined;
+    let imageUrlGirl: string | undefined;
+    try {
+      const base = sharp(fs.readFileSync(filePath)).ensureAlpha();
+      const meta = await base.metadata();
+      const w = Number(meta.width);
+      const h = Number(meta.height);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 2 && h > 2) {
+        const halfW = Math.floor(w / 2);
+
+        // IMPORTANT:
+        // To make BOY and GIRL halves share the same visual center, we must trim/pad the FULL
+        // avatar first (one bounding box), then split. Trimming each half independently causes
+        // different padding offsets and breaks "same tuning == same placement".
+        let processedFullBuf: Buffer;
+        try {
+          processedFullBuf = await base.clone().trim({ threshold: 0 }).png().toBuffer();
+        } catch {
+          processedFullBuf = await base.clone().png().toBuffer();
+        }
+        try {
+          processedFullBuf = await addTransparentMargin(processedFullBuf, 6);
+        } catch {
+          // ignore
+        }
+        try {
+          processedFullBuf = await padToCanvas(processedFullBuf, w, h);
+        } catch {
+          // ignore
+        }
+
+        const processed = sharp(processedFullBuf).ensureAlpha();
+        let boyBuf = await processed
+          .clone()
+          .extract({ left: 0, top: 0, width: halfW, height: h })
+          .png()
+          .toBuffer();
+        let girlBuf = await processed
+          .clone()
+          .extract({ left: w - halfW, top: 0, width: halfW, height: h })
+          .png()
+          .toBuffer();
+
+        // After splitting, re-center EACH half by trimming transparent padding,
+        // then padding back to the fixed half canvas. This makes boy/girl
+        // halves individually centered so identical tuning values align.
+        try {
+          boyBuf = await sharp(boyBuf).ensureAlpha().trim({ threshold: 0 }).png().toBuffer();
+        } catch {
+          // ignore
+        }
+        try {
+          girlBuf = await sharp(girlBuf).ensureAlpha().trim({ threshold: 0 }).png().toBuffer();
+        } catch {
+          // ignore
+        }
+
+        const cropRight = AVATAR_BOY_CROP_RIGHT_PX[id];
+        if (cropRight) {
+          try {
+            boyBuf = await cropRightPx(boyBuf, cropRight);
+          } catch {
+            // ignore
+          }
+        }
+        try {
+          boyBuf = await addTransparentMargin(boyBuf, 6);
+          girlBuf = await addTransparentMargin(girlBuf, 6);
+        } catch {
+          // ignore
+        }
+        try {
+          boyBuf = await padToCanvas(boyBuf, halfW, h);
+          girlBuf = await padToCanvas(girlBuf, halfW, h);
+        } catch {
+          // ignore
+        }
+
+        imageUrlBoy = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered_v3/${id}_boy.png`,
+          boyBuf,
+          'image/png',
+        );
+        imageUrlGirl = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered_v3/${id}_girl.png`,
+          girlBuf,
+          'image/png',
+        );
+      }
+    } catch (err: any) {
+      console.warn(`   ⚠️  Failed to generate gendered avatar images for ${id}: ${err?.message ?? String(err)}`);
+    }
+
+    ops.push({
+      id,
+      patch: {
+        type: 'avatar',
+        name: titleCaseFromId(id),
+        rarity,
+        imageUrl,
+        ...(imageUrlBoy ? { imageUrlBoy } : {}),
+        ...(imageUrlGirl ? { imageUrlGirl } : {}),
+        availability: { channels: { gacha: gachaEnabled, shop: true } },
+        shopData: { coinCost: 500 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  // Also upload avatars that have NO bg-removed version (by number)
+  for (const [num, filePath] of rawAvatarFilesByNum.entries()) {
+    if (avatarBgRemovedNums.has(num)) continue;
+
+    const filename = path.basename(filePath);
+    const mappedBase = avatarBaseByNumber.get(num);
+    const id = mappedBase
+      ? cosmeticIdFromFilename('avatar', `avatar_${mappedBase}.png`)
+      : cosmeticIdFromFilename('avatar', filename);
+
+    const { rarity, gachaEnabled } = avatarRarityFromNumber(num);
+    const objectPath = `chemcity/cosmetics/avatars/${id}.png`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+
+    let imageUrlBoy: string | undefined;
+    let imageUrlGirl: string | undefined;
+    try {
+      const base = sharp(fs.readFileSync(filePath)).ensureAlpha();
+      const meta = await base.metadata();
+      const w = Number(meta.width);
+      const h = Number(meta.height);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 2 && h > 2) {
+        const halfW = Math.floor(w / 2);
+        const boyHalf = base.clone().extract({ left: 0, top: 0, width: halfW, height: h });
+        const girlHalf = base.clone().extract({ left: w - halfW, top: 0, width: halfW, height: h });
+
+        let boyBuf: Buffer;
+        let girlBuf: Buffer;
+        try {
+          boyBuf = await boyHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+          girlBuf = await girlHalf.clone().trim({ threshold: 1 }).png().toBuffer();
+        } catch {
+          boyBuf = await boyHalf.clone().png().toBuffer();
+          girlBuf = await girlHalf.clone().png().toBuffer();
+        }
+
+        const cropRight = AVATAR_BOY_CROP_RIGHT_PX[id];
+        if (cropRight) {
+          try {
+            boyBuf = await cropRightPx(boyBuf, cropRight);
+          } catch {
+            // ignore
+          }
+        }
+
+        imageUrlBoy = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_boy.png`,
+          boyBuf,
+          'image/png',
+        );
+        imageUrlGirl = await uploadBufferToStorage(
+          bucketName,
+          `chemcity/cosmetics/avatars_gendered/${id}_girl.png`,
+          girlBuf,
+          'image/png',
+        );
+      }
+    } catch (err: any) {
+      console.warn(`   ⚠️  Failed to generate gendered avatar images for ${id}: ${err?.message ?? String(err)}`);
+    }
+
+    ops.push({
+      id,
+      patch: {
+        type: 'avatar',
+        name: titleCaseFromId(id),
+        rarity,
+        imageUrl,
+        ...(imageUrlBoy ? { imageUrlBoy } : {}),
+        ...(imageUrlGirl ? { imageUrlGirl } : {}),
+        availability: { channels: { gacha: gachaEnabled, shop: true } },
+        shopData: { coinCost: 500 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  for (const filePath of backgroundFiles) {
+    const filename = path.basename(filePath);
+    const id = cosmeticIdFromFilename('bg', filename);
+    const ext = path.extname(filename).toLowerCase().replace('.', '') || 'jpg';
+    const objectPath = `chemcity/cosmetics/backgrounds/${id}.${ext}`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+    ops.push({
+      id,
+      patch: {
+        type: 'background',
+        name: titleCaseFromId(id),
+        rarity: 'common',
+        imageUrl,
+        availability: { channels: { gacha: true, shop: true } },
+        shopData: { coinCost: 250 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  console.log(`   Upserting ${ops.length} cosmetics docs to Firestore...`);
+
+  let batch = db.batch();
+  let opCount = 0;
+
+  for (const op of ops) {
+    const ref = db.collection('cosmetics').doc(op.id);
+    batch.set(ref, op.patch, { merge: true });
+    opCount++;
+
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log('   ✅ Cosmetics upload complete.');
+}
+
+async function uploadBackgroundsOnly(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  const backgroundsDir =
+    process.env.CHEMCITY_BACKGROUNDS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem background');
+
+  console.log(`\n🖼️  Uploading BACKGROUNDS ONLY to Firebase Storage (bucket=${bucketName})...`);
+  console.log(`   Backgrounds dir: ${backgroundsDir}`);
+
+  if (!fs.existsSync(backgroundsDir)) {
+    throw new Error(`Backgrounds directory not found: ${backgroundsDir}`);
+  }
+
+  const backgroundFiles = fs
+    .readdirSync(backgroundsDir)
+    .filter((f) => /\.(jpg|jpeg|png|webp)$/i.test(f))
+    .map((f) => path.join(backgroundsDir, f));
+
+  console.log(`   Found ${backgroundFiles.length} background files`);
+  if (backgroundFiles.length === 0) {
+    console.log('   Nothing to upload.');
+    return;
+  }
+
+  const ops: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  for (const filePath of backgroundFiles) {
+    const filename = path.basename(filePath);
+    const id = cosmeticIdFromFilename('bg', filename);
+    const ext = path.extname(filename).toLowerCase().replace('.', '') || 'jpg';
+    const objectPath = `chemcity/cosmetics/backgrounds/${id}.${ext}`;
+    const imageUrl = await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+    ops.push({
+      id,
+      patch: {
+        type: 'background',
+        name: titleCaseFromId(id),
+        rarity: 'common',
+        imageUrl,
+        availability: { channels: { gacha: true, shop: true } },
+        shopData: { coinCost: 250 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  console.log(`   Upserting ${ops.length} background cosmetics docs to Firestore...`);
+  let batch = db.batch();
+  let opCount = 0;
+  for (const op of ops) {
+    const ref = db.collection('cosmetics').doc(op.id);
+    batch.set(ref, op.patch, { merge: true });
+    opCount++;
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log('   ✅ Background cosmetics upsert complete.');
+}
+
+async function uploadRawAvatarsAssets(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  const avatarsDir =
+    process.env.CHEMCITY_AVATARS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem custome_renamed');
+
+  console.log(`\n🧑  Uploading RAW avatars to Firebase Storage (bucket=${bucketName})...`);
+  console.log(`   Avatars dir: ${avatarsDir}`);
+
+  if (!fs.existsSync(avatarsDir)) {
+    throw new Error(`Avatars directory not found: ${avatarsDir}`);
+  }
+
+  const rawFilenames = fs.readdirSync(avatarsDir);
+  const rawFiles = rawFilenames
+    .filter((f) => /\.(png|webp|jpg|jpeg)$/i.test(f))
+    .filter((f) => !/_bg_removed\.(png|webp|jpg|jpeg)(\.png)?$/i.test(f) && !/_bg_removed\b/i.test(f))
+    .filter((f) => !/_mask\.(png|webp|jpg|jpeg)$/i.test(f) && !/_mask\b/i.test(f))
+    .map((f) => path.join(avatarsDir, f));
+
+  console.log(`   Found ${rawFiles.length} raw avatar files (excluding _bg_removed)`);
+  if (rawFiles.length === 0) {
+    console.log('   Nothing to upload.');
+    return;
+  }
+
+  let uploaded = 0;
+  for (const filePath of rawFiles) {
+    const filename = path.basename(filePath);
+    const id = cosmeticIdFromFilename('avatar', filename);
+    const objectPath = `chemcity/cosmetics/avatars_raw/${id}${path.extname(filename).toLowerCase() || '.png'}`;
+    await uploadLocalFileToStorage(bucketName, objectPath, filePath);
+    uploaded++;
+  }
+
+  console.log(`   ✅ Raw avatars upload complete. uploaded=${uploaded}`);
+}
+
+async function uploadThemedAvatarsAssets(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error(
+      'Firebase Storage bucket is not configured. Set CHEMCITY_STORAGE_BUCKET (recommended) or ensure admin app has storageBucket.',
+    );
+  }
+
+  const themedDir =
+    process.env.CHEMCITY_THEMED_AVATARS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem custome_transparent_themed');
+  const manifestPath =
+    process.env.CHEMCITY_THEMED_AVATARS_MANIFEST || path.join(themedDir, 'avatars_theme_manifest.json');
+
+  const objectPrefix =
+    process.env.CHEMCITY_THEMED_AVATARS_PREFIX || 'chemcity/cosmetics/avatars_themed_v2';
+  const genderedPrefix =
+    process.env.CHEMCITY_THEMED_AVATARS_GENDERED_PREFIX || 'chemcity/cosmetics/avatars_themed_gendered_v2';
+
+  console.log(`\n🧑🖼️  Uploading THEMED avatars to Firebase Storage (bucket=${bucketName})...`);
+  console.log(`   Themed avatars dir: ${themedDir}`);
+  console.log(`   Manifest: ${manifestPath}`);
+
+  if (!fs.existsSync(themedDir)) {
+    throw new Error(`Themed avatars directory not found: ${themedDir}`);
+  }
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Themed avatars manifest not found: ${manifestPath}`);
+  }
+
+  type ThemedManifestEntry = {
+    avatarNumber: number;
+    dstFile: string;
+    theme: string;
+    rarity: string;
+    rarityCode: string;
+    collection: string;
+  };
+
+  const entries = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as ThemedManifestEntry[];
+  console.log(`   Found ${entries.length} themed avatar entries in manifest`);
+  if (entries.length === 0) {
+    console.log('   Nothing to upload.');
+    return;
+  }
+
+  const ops: Array<{ id: string; patch: Record<string, unknown> }> = [];
+
+  for (const e of entries) {
+    const n = Number(e.avatarNumber);
+    if (!Number.isFinite(n) || n <= 0) continue;
+
+    const filePath = path.join(themedDir, e.dstFile);
+    if (!fs.existsSync(filePath)) {
+      console.warn(`   ⚠️  Missing themed file: ${filePath}`);
+      continue;
+    }
+
+    const themeKey = safeId(String(e.theme || 'unknown'));
+    const id = `avatar_${n}_${themeKey}`;
+
+    const base = sharp(fs.readFileSync(filePath)).ensureAlpha();
+    const meta = await base.metadata();
+    const w = Number(meta.width);
+    const h = Number(meta.height);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 2 || h <= 2) {
+      console.warn(`   ⚠️  Invalid dimensions for ${e.dstFile} (w=${w}, h=${h})`);
+      continue;
+    }
+
+    const halfW = Math.floor(w / 2);
+
+    let processedFullBuf: Buffer;
+    try {
+      processedFullBuf = await base.clone().trim({ threshold: 0 }).png().toBuffer();
+    } catch {
+      processedFullBuf = await base.clone().png().toBuffer();
+    }
+    try {
+      processedFullBuf = await addTransparentMargin(processedFullBuf, 6);
+    } catch {
+      // ignore
+    }
+    try {
+      processedFullBuf = await padToCanvas(processedFullBuf, w, h);
+    } catch {
+      // ignore
+    }
+
+    const processed = sharp(processedFullBuf).ensureAlpha();
+    let boyBuf = await processed
+      .clone()
+      .extract({ left: 0, top: 0, width: halfW, height: h })
+      .png()
+      .toBuffer();
+    let girlBuf = await processed
+      .clone()
+      .extract({ left: w - halfW, top: 0, width: halfW, height: h })
+      .png()
+      .toBuffer();
+
+    try {
+      boyBuf = await sharp(boyBuf).ensureAlpha().trim({ threshold: 0 }).png().toBuffer();
+    } catch {
+      // ignore
+    }
+    try {
+      girlBuf = await sharp(girlBuf).ensureAlpha().trim({ threshold: 0 }).png().toBuffer();
+    } catch {
+      // ignore
+    }
+    try {
+      boyBuf = await addTransparentMargin(boyBuf, 6);
+      girlBuf = await addTransparentMargin(girlBuf, 6);
+    } catch {
+      // ignore
+    }
+    try {
+      boyBuf = await padToCanvas(boyBuf, halfW, h);
+      girlBuf = await padToCanvas(girlBuf, halfW, h);
+    } catch {
+      // ignore
+    }
+
+    const objectPath = `${objectPrefix}/${id}.png`;
+    const imageUrl = await uploadBufferToStorage(bucketName, objectPath, processedFullBuf, 'image/png');
+
+    const imageUrlBoy = await uploadBufferToStorage(
+      bucketName,
+      `${genderedPrefix}/${id}_boy.png`,
+      boyBuf,
+      'image/png',
+    );
+    const imageUrlGirl = await uploadBufferToStorage(
+      bucketName,
+      `${genderedPrefix}/${id}_girl.png`,
+      girlBuf,
+      'image/png',
+    );
+
+    const rarity = typeof e.rarity === 'string' && e.rarity ? e.rarity : 'common';
+    const collection = typeof e.collection === 'string' && e.collection ? e.collection : 'basic';
+
+    const tags = Array.from(
+      new Set(
+        [String(e.theme || '').trim(), collection, rarity]
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .map((t) => safeId(t)),
+      ),
+    );
+
+    ops.push({
+      id,
+      patch: {
+        type: 'avatar',
+        name: String(e.theme || titleCaseFromId(id)),
+        rarity,
+        imageUrl,
+        imageUrlBoy,
+        imageUrlGirl,
+        tags,
+        collection,
+        availability: { channels: { gacha: true, shop: true } },
+        shopData: { coinCost: 500 },
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  console.log(`   Upserting ${ops.length} themed avatar cosmetics docs to Firestore...`);
+  let batch = db.batch();
+  let opCount = 0;
+  for (const op of ops) {
+    const ref = db.collection('cosmetics').doc(op.id);
+    batch.set(ref, op.patch, { merge: true });
+    opCount++;
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log('   ✅ Themed avatars upload complete.');
+}
+
+async function purgeNonThemedCosmeticsV2(): Promise<void> {
+  const themedDir =
+    process.env.CHEMCITY_THEMED_AVATARS_DIR ||
+    path.resolve(process.env.HOME || '', 'Desktop/Chem Image/Chem custome_transparent_themed');
+  const manifestPath =
+    process.env.CHEMCITY_THEMED_AVATARS_MANIFEST || path.join(themedDir, 'avatars_theme_manifest.json');
+
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(
+      `Cannot purge cosmetics: themed manifest not found at ${manifestPath}. ` +
+        `Set CHEMCITY_THEMED_AVATARS_MANIFEST or CHEMCITY_THEMED_AVATARS_DIR.`,
+    );
+  }
+
+  type ThemedManifestEntry = {
+    avatarNumber: number;
+    dstFile: string;
+    theme: string;
+  };
+
+  const entries = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as ThemedManifestEntry[];
+  const allow = new Set<string>();
+  for (const e of entries) {
+    const n = Number((e as any)?.avatarNumber);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    const themeKey = safeId(String((e as any)?.theme || 'unknown'));
+    allow.add(`avatar_${n}_${themeKey}`);
+  }
+
+  console.log(`\n🧨 Purging cosmetics (hard delete) — keeping themed_v2 set only...`);
+  console.log(`   Manifest: ${manifestPath}`);
+  console.log(`   Allowed themed cosmetics count: ${allow.size}`);
+
+  const snap = await db.collection('cosmetics').get();
+  const toDelete = snap.docs.filter((d) => {
+    const id = d.id;
+    if (allow.has(id)) return false;
+    // Always keep backgrounds (and any non-avatar cosmetics) so gacha background cards don't break.
+    if (id.startsWith('bg_')) return false;
+    const type = (d.data() as any)?.type;
+    if (type && String(type) !== 'avatar') return false;
+    return true;
+  });
+  console.log(`   Total cosmetics docs: ${snap.size}`);
+  console.log(`   Will delete: ${toDelete.length}`);
+
+  if (toDelete.length === 0) {
+    console.log('   Nothing to delete.');
+    return;
+  }
+
+  let batch = db.batch();
+  let opCount = 0;
+  let deleted = 0;
+  for (const d of toDelete) {
+    batch.delete(d.ref);
+    opCount++;
+    deleted++;
+    if (opCount >= BATCH_SIZE) {
+      await batch.commit();
+      batch = db.batch();
+      opCount = 0;
+    }
+  }
+  if (opCount > 0) {
+    await batch.commit();
+  }
+
+  console.log(`   ✅ Purge complete. deleted=${deleted}`);
+}
+
+async function purgeUnusedStorage(): Promise<void> {
+  const bucket = storage.bucket();
+  const bucketName = bucket.name;
+  if (!bucketName) {
+    throw new Error('Firebase Storage bucket is not configured.');
+  }
+
+  // Prefixes to DELETE (old/unused avatar folders)
+  const prefixesToDelete = [
+    'chemcity/cosmetics/avatars/',
+    'chemcity/cosmetics/avatars_gendered/',
+    'chemcity/cosmetics/avatars_gendered_v2/',
+    'chemcity/cosmetics/avatars_gendered_v3/',
+    'chemcity/cosmetics/avatars_themed_gendered_v1/',
+    'chemcity/cosmetics/avatars_themed_v1/',
+  ];
+
+  // Prefixes to KEEP (do not delete)
+  const protectedPrefixes = [
+    'chemcity/cosmetics/avatars_themed_gendered_v2/',
+    'chemcity/cosmetics/avatars_themed_v2/',
+    'chemcity/cosmetics/backgrounds/',
+  ];
+
+  console.log(`\n🗑️  Purging unused Storage objects (bucket=${bucketName})...`);
+  console.log('   Protected (will keep):');
+  protectedPrefixes.forEach((p) => console.log(`     - ${p}`));
+  console.log('   Will delete:');
+  prefixesToDelete.forEach((p) => console.log(`     - ${p}`));
+
+  let totalDeleted = 0;
+
+  for (const prefix of prefixesToDelete) {
+    try {
+      const [files] = await bucket.getFiles({ prefix });
+      if (files.length === 0) {
+        console.log(`   - ${prefix}: no files`);
+        continue;
+      }
+
+      console.log(`   - ${prefix}: deleting ${files.length} files...`);
+      const deletePromises = files.map((f) => f.delete().catch(() => null));
+      await Promise.all(deletePromises);
+      totalDeleted += files.length;
+    } catch (err: any) {
+      console.warn(`   ⚠️  Failed to delete ${prefix}: ${err?.message ?? String(err)}`);
+    }
+  }
+
+  console.log(`   ✅ Storage purge complete. totalDeleted=${totalDeleted}`);
+}
 
 async function seedPlaces(): Promise<void> {
   const places = readJsonFile<{ id: string }>(PLACES_FILE, 'places');
@@ -406,6 +1635,40 @@ async function run() {
   console.log('🌱 ChemCity Firestore Seeder\n');
 
   const shouldMigrateImages = process.argv.includes('--migrate-images');
+  const shouldHardRefresh = process.argv.includes(SHOULD_HARD_REFRESH_FLAG);
+  const shouldPurgeNonThemed = process.argv.includes(SHOULD_PURGE_NON_THEMED_V2_FLAG);
+  const shouldPurgeUnusedStorage = process.argv.includes(SHOULD_PURGE_UNUSED_STORAGE_FLAG);
+  const shouldUploadBackgroundsOnly = process.argv.includes(SHOULD_UPLOAD_BACKGROUNDS_ONLY_FLAG);
+
+  const shouldSeedGacha = shouldHardRefresh || process.argv.includes(SHOULD_SEED_GACHA_FLAG);
+  // NOTE:
+  // Do NOT force base cosmetics upload on hard refresh, because it depends on local folders
+  // (Chem custome_renamed / Chem background) that may not exist on all machines.
+  // Themed avatar upload already overwrites the relevant cosmetics docs.
+  const shouldUploadCosmetics = process.argv.includes(SHOULD_UPLOAD_COSMETICS_FLAG);
+  const shouldUploadRawAvatars = process.argv.includes(SHOULD_UPLOAD_RAW_AVATARS_FLAG);
+  const shouldUploadThemedAvatars = shouldHardRefresh || process.argv.includes(SHOULD_UPLOAD_THEMED_AVATARS_FLAG);
+
+  if (shouldHardRefresh) {
+    console.log(`\n🧹 HARD REFRESH enabled (${SHOULD_HARD_REFRESH_FLAG})`);
+    console.log('   - Forces seeding gacha cosmetics + banners');
+    console.log('   - Forces themed avatar upload + cosmetics doc overwrite (name + imageUrl* fields)');
+    console.log('   - Always bumps meta/cacheVersion so all clients refetch');
+    console.log('   - Base cosmetics upload is NOT forced (use --upload-cosmetics if you want it)');
+  }
+
+  if (shouldPurgeNonThemed) {
+    console.log(`\n🧨 PURGE enabled (${SHOULD_PURGE_NON_THEMED_V2_FLAG})`);
+    console.log('   - HARD deletes Firestore cosmetics docs NOT in themed_v2 manifest set');
+    console.log('   - Dev-only (can break user inventories/equipped cosmetics)');
+  }
+
+  if (shouldPurgeUnusedStorage) {
+    console.log(`\n🗑️  STORAGE PURGE enabled (${SHOULD_PURGE_UNUSED_STORAGE_FLAG})`);
+    console.log('   - HARD deletes old/unused Firebase Storage avatar folders');
+    console.log('   - Keeps: avatars_themed_v2, avatars_themed_gendered_v2, backgrounds');
+    console.log('   - Dev-only and IRREVERSIBLE');
+  }
 
   try {
     // 1. Seed items
@@ -429,6 +1692,51 @@ async function run() {
     // 4. Seed topics
     console.log('\n📚 Seeding topics...');
     await seedTopics();
+
+    // 4b. Seed gacha (optional)
+    if (shouldSeedGacha) {
+      await seedGacha();
+    } else {
+      console.log(`\n🎟️  Gacha seed skipped (run with ${SHOULD_SEED_GACHA_FLAG} to seed cosmetics + banners).`);
+    }
+
+    // 4c. Upload cosmetics assets (optional)
+    if (shouldUploadCosmetics) {
+      await uploadCosmeticsAssets();
+    } else {
+      console.log(`\n🧑🖼️  Cosmetics upload skipped (run with ${SHOULD_UPLOAD_COSMETICS_FLAG} to upload avatars/backgrounds).`);
+    }
+
+    // 4c2. Upload backgrounds only (optional)
+    if (shouldUploadBackgroundsOnly) {
+      await uploadBackgroundsOnly();
+    }
+
+    // 4d. Upload raw (non-bg-removed) avatars to Storage (optional)
+    if (shouldUploadRawAvatars) {
+      await uploadRawAvatarsAssets();
+    } else {
+      console.log(`\n🧑  Raw avatars upload skipped (run with ${SHOULD_UPLOAD_RAW_AVATARS_FLAG} to upload original avatar images).`);
+    }
+
+    // 4e. Upload themed avatars to Storage + upsert cosmetics docs (optional)
+    if (shouldUploadThemedAvatars) {
+      await uploadThemedAvatarsAssets();
+    } else {
+      console.log(
+        `\n🧑🖼️  Themed avatars upload skipped (run with ${SHOULD_UPLOAD_THEMED_AVATARS_FLAG} to upload themed avatars from Chem custome_transparent_themed).`,
+      );
+    }
+
+    // 4f. Purge cosmetics (dev-only)
+    if (shouldPurgeNonThemed) {
+      await purgeNonThemedCosmeticsV2();
+    }
+
+    // 4g. Purge unused Storage folders (dev-only)
+    if (shouldPurgeUnusedStorage) {
+      await purgeUnusedStorage();
+    }
 
     // 5. Bump cacheVersion — ALWAYS last step
     console.log('\n🔢 Bumping cacheVersion...');

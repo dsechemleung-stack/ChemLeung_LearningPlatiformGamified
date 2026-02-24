@@ -95,11 +95,26 @@ export interface UserChemCityData {
   currencies: {
     coins: number;
     diamonds: number;
+    tickets?: number;
   };
   storeSlotCount: number;
   ownedItems: string[];        // array of item IDs only
+  ownedCosmetics?: string[];
   equipped: {
     [slotId: string]: string;  // slotId → itemId
+  };
+  equippedCosmetics?: {
+    avatarId?: string;
+    backgroundId?: string;
+    iconId?: string;
+  };
+  gachaState?: {
+    [bannerId: string]: {
+      sinceEpic: number;
+      sinceLegendary: number;
+      lifetimePulls: number;
+      updatedAt?: unknown;
+    };
   };
   activeBonuses: ActiveBonuses;
   unlockedPlaces: PlaceId[];
@@ -184,6 +199,148 @@ export interface TopicDocument {
   name: string;
   dseUnit: string;
   description?: string;
+}
+
+// ─── Cosmetics + Gacha ───────────────────────────────────────
+
+export type CosmeticType = 'avatar' | 'background' | 'icon';
+
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+export interface FaceCropMeta {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface CosmeticAvailability {
+  channels: {
+    gacha: boolean;
+    shop: boolean;
+  };
+  eventKey?: string;
+  startAt?: unknown;
+  endAt?: unknown;
+}
+
+export interface CosmeticShopData {
+  coinCost?: number;
+  diamondCost?: number;
+  ticketCost?: number;
+}
+
+export interface Cosmetic {
+  id: string;
+  type: CosmeticType;
+  name: string;
+  rarity: Rarity;
+  imageUrl: string;
+  imageUrlBoy?: string;
+  imageUrlGirl?: string;
+  availability: CosmeticAvailability;
+  shopData?: CosmeticShopData;
+  faceCrop?: FaceCropMeta;
+  tags?: string[];
+  deprecated?: boolean;
+}
+
+export type RarityRates = Record<Rarity, number>;
+
+export type DuplicateRefunds = Record<Rarity, number>;
+
+export interface PityRules {
+  epicEvery: number;
+  legendaryEvery: number;
+}
+
+export interface GachaBanner {
+  id: string;
+  name: string;
+  description?: string;
+  bannerImageUrl?: string;
+  active: boolean;
+  startAt?: unknown;
+  endAt?: unknown;
+  eventKey?: string;
+  rarityRates: RarityRates;
+  duplicateRefundCoinsByRarity: DuplicateRefunds;
+  pityRules: PityRules;
+  cacheVersion: number;
+}
+
+export interface GachaDrawRequest {
+  bannerId: string;
+  count: 1 | 10;
+  payWith: 'tickets' | 'coins';
+}
+
+export interface GachaDrawResult {
+  cosmeticId: string;
+  rarity: Rarity;
+  isNew: boolean;
+  refundCoins: number;
+  pitied: boolean;
+}
+
+export interface GachaDrawResponse {
+  success: true;
+  results: GachaDrawResult[];
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
+  newGachaState: {
+    sinceEpic: number;
+    sinceLegendary: number;
+    lifetimePulls: number;
+    updatedAt?: unknown;
+  };
+}
+
+export interface PurchaseCosmeticRequest {
+  cosmeticId: string;
+  currency: 'coins' | 'diamonds' | 'tickets';
+}
+
+export interface PurchaseCosmeticResponse {
+  success: true;
+  cosmeticId: string;
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
+}
+
+export interface EquipCosmeticsRequest {
+  avatarId?: string;
+  backgroundId?: string;
+  iconId?: string;
+}
+
+export interface EquipCosmeticsResponse {
+  success: true;
+  equippedCosmetics: {
+    avatarId?: string;
+    backgroundId?: string;
+    iconId?: string;
+  };
+}
+
+export interface BuyTicketsRequest {
+  count: number;
+}
+
+export interface BuyTicketsResponse {
+  success: true;
+  count: number;
+  newBalance: {
+    coins: number;
+    diamonds: number;
+    tickets: number;
+  };
 }
 
 // ─── Cloud Function Request/Response Types ────────────────────

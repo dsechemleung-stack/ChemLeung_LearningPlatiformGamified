@@ -44,8 +44,14 @@ export async function initChemCityUser(userId: string): Promise<void> {
       coins: 500,
       diamonds: 20,
     },
+    storeSlotCount: 3,
     ownedItems: [],
+    ownedCosmetics: ['avatar_1_plain', 'bg_1'],
     equipped: {},
+    equippedCosmetics: {
+      avatarId: 'avatar_1_plain',
+      backgroundId: 'bg_1',
+    },
     activeBonuses: {
       passiveBaseCoinsPerHour: 0,
       passiveMultiplier: 1,

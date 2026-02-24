@@ -3,6 +3,14 @@ import type {
   EquipCardRequest,
   UnequipCardRequest,
   PurchaseCardRequest,
+  GachaDrawRequest,
+  GachaDrawResponse,
+  PurchaseCosmeticRequest,
+  PurchaseCosmeticResponse,
+  EquipCosmeticsRequest,
+  EquipCosmeticsResponse,
+  BuyTicketsRequest,
+  BuyTicketsResponse,
   UnlockPlaceRequest,
   UnlockSlotRequest,
   QuizRewardRequest,
@@ -65,6 +73,40 @@ export async function callChemCityGetDailyLoginBonus(): Promise<Record<string, u
 export async function callChemCityPurchaseCard(itemId: string, currency: 'coins' | 'diamonds'): Promise<void> {
   const fn = httpsCallable<PurchaseCardRequest, { ok?: boolean }>(getFns(), 'chemcityPurchaseCard');
   await fn({ itemId, currency });
+}
+
+export async function callChemCityGachaDraw(req: GachaDrawRequest): Promise<GachaDrawResponse> {
+  const fn = httpsCallable<GachaDrawRequest, GachaDrawResponse>(getFns(), 'chemcityGachaDraw');
+  const result = await fn(req);
+  return result.data;
+}
+
+export async function callChemCityPurchaseCosmetic(
+  req: PurchaseCosmeticRequest,
+): Promise<PurchaseCosmeticResponse> {
+  const fn = httpsCallable<PurchaseCosmeticRequest, PurchaseCosmeticResponse>(
+    getFns(),
+    'chemcityPurchaseCosmetic',
+  );
+  const result = await fn(req);
+  return result.data;
+}
+
+export async function callChemCityEquipCosmetics(
+  req: EquipCosmeticsRequest,
+): Promise<EquipCosmeticsResponse> {
+  const fn = httpsCallable<EquipCosmeticsRequest, EquipCosmeticsResponse>(
+    getFns(),
+    'chemcityEquipCosmetics',
+  );
+  const result = await fn(req);
+  return result.data;
+}
+
+export async function callChemCityBuyTickets(req: BuyTicketsRequest): Promise<BuyTicketsResponse> {
+  const fn = httpsCallable<BuyTicketsRequest, BuyTicketsResponse>(getFns(), 'chemcityBuyTickets');
+  const result = await fn(req);
+  return result.data;
 }
 
 export async function callChemCityUnlockStoreSlot(): Promise<Record<string, unknown>> {

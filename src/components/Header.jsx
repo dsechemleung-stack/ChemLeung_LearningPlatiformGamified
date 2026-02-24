@@ -5,14 +5,8 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle, Building2 } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 import { forumService } from '../services/forumService';
-import Avatar from './Avatar';
 
-// Icon mapping
-const iconMap = {
-  flask_blue: '🧪', atom_green: '⚛️', molecule: '🔬', fire: '🔥',
-  lightning: '⚡', crystal: '💎', explosion: '💥', star: '⭐',
-  crown: '👑', trophy: '🏆'
-};
+import ChemCityUserProfileIcon from './ChemCityUserProfileIcon';
 
 export default function Header() {
     const { currentUser, logout, userProfile, profileError } = useAuth();
@@ -103,8 +97,6 @@ export default function Header() {
         profileError && (tokens === undefined || tokens === null)
             ? '—'
             : (tokens ?? 0);
-    const equipped = userProfile?.equipped || {};
-    const profileColor = userProfile?.profileColor || '#2563eb'; // Default blue
 
     if (location.pathname === '/login' || location.pathname === '/register') {
         return null;
@@ -157,10 +149,6 @@ export default function Header() {
     };
 
     const isActive = (path) => location.pathname === path;
-
-    // Get equipped profile pic icon
-    const profileIcon = equipped.profilePic || 'flask_blue';
-    const displayIcon = iconMap[profileIcon] || '🧪';
 
     return (
         <>
@@ -349,7 +337,7 @@ export default function Header() {
                                                                 >
                                                                     <div className="flex items-start gap-3">
                                                                         <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${!n.read ? 'bg-lab-blue' : 'bg-transparent'}`} />
-                                                                        <Avatar userId={n.senderId} displayName={n.senderDisplayName || t('common.someone')} size="xs" />
+                                                                        <ChemCityUserProfileIcon userId={n.senderId} displayName={n.senderDisplayName || t('common.someone')} size={28} />
                                                                         <div className="flex-1 min-w-0">
                                                                             <p className="text-sm text-slate-800 font-medium leading-snug">
                                                                                 <span className="font-bold">{n.senderDisplayName || t('common.someone')}</span> {typeLabel(n)}
@@ -396,13 +384,12 @@ export default function Header() {
                                         className="flex items-center gap-3 px-3 py-1.5 rounded-xl hover:bg-white/60 transition-all active:scale-[0.99] border-2 border-transparent hover:border-white/60 max-w-[240px] sm:max-w-[280px]"
                                         title={currentUser.displayName || currentUser.email || t('common.anonymous')}
                                     >
-                                        {/* Profile Icon - with equipped item and custom color */}
-                                        <div 
-                                            className="w-8 h-8 rounded-full flex items-center justify-center shadow-md text-lg flex-shrink-0"
-                                            style={{ background: `linear-gradient(135deg, ${profileColor}, ${profileColor}dd)` }}
-                                        >
-                                            {displayIcon}
-                                        </div>
+                                        <ChemCityUserProfileIcon
+                                            userId={currentUser?.uid}
+                                            displayName={currentUser?.displayName || currentUser?.email || t('common.anonymous')}
+                                            size={32}
+                                            className="shadow-md flex-shrink-0"
+                                        />
                                         <div className="hidden sm:block text-left min-w-0">
                                             <p
                                                 className="text-sm font-bold text-slate-900 truncate max-w-[140px] lg:max-w-[180px]"

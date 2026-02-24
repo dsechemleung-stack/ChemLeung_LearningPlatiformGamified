@@ -7,6 +7,8 @@ const algoliasearch = require('algoliasearch');
 
 admin.initializeApp();
 
+Object.assign(exports, require('./chemcity/gacha'));
+
 function getChemCityDefaults(userId) {
   const now = admin.firestore.FieldValue.serverTimestamp();
   return {
@@ -17,7 +19,12 @@ function getChemCityDefaults(userId) {
     },
     storeSlotCount: 3,
     ownedItems: [],
+    ownedCosmetics: ['avatar_1_plain', 'bg_1'],
     equipped: {},
+    equippedCosmetics: {
+      avatarId: 'avatar_1_plain',
+      backgroundId: 'bg_1',
+    },
     activeBonuses: {
       passiveBaseCoinsPerHour: 0,
       passiveMultiplier: 1,
@@ -54,6 +61,37 @@ async function ensureChemCityInitialized(db, userId) {
   }
   const userData = snap.data() || {};
   if (userData.chemcity && typeof userData.chemcity === 'object') {
+    // Backfill starter cosmetics if missing (non-destructive).
+    const cc = userData.chemcity;
+    const patch = {};
+
+    const owned = Array.isArray(cc.ownedCosmetics) ? cc.ownedCosmetics : null;
+    if (!owned) {
+      patch['chemcity.ownedCosmetics'] = ['avatar_1_plain', 'bg_1'];
+    } else {
+      const nextOwned = owned.slice();
+      if (!nextOwned.includes('avatar_1_plain')) nextOwned.push('avatar_1_plain');
+      if (!nextOwned.includes('bg_1')) nextOwned.push('bg_1');
+      if (nextOwned.length !== owned.length) patch['chemcity.ownedCosmetics'] = nextOwned;
+    }
+
+    const equipped = cc.equippedCosmetics && typeof cc.equippedCosmetics === 'object' ? cc.equippedCosmetics : null;
+    if (!equipped) {
+      patch['chemcity.equippedCosmetics'] = { avatarId: 'avatar_1_plain', backgroundId: 'bg_1' };
+    } else {
+      if (!equipped.avatarId || !equipped.backgroundId) {
+        patch['chemcity.equippedCosmetics'] = {
+          avatarId: equipped.avatarId || 'avatar_1_plain',
+          backgroundId: equipped.backgroundId || 'bg_1',
+          ...(equipped.iconId ? { iconId: equipped.iconId } : {}),
+        };
+      }
+    }
+
+    if (Object.keys(patch).length > 0) {
+      patch['chemcity.updatedAt'] = admin.firestore.FieldValue.serverTimestamp();
+      await userRef.update(patch);
+    }
     return;
   }
 
