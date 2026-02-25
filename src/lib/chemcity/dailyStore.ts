@@ -14,9 +14,10 @@ export const STORE_MAX_SLOTS = 6;
 
 const RARITY_WEIGHT: Record<string, number> = {
   common: 60,
-  rare: 25,
-  epic: 12,
-  legendary: 3,
+  uncommon: 25,
+  rare: 10,
+  epic: 4,
+  legendary: 1,
 };
 
 function rarityWeight(item: SlimItemDocument): number {

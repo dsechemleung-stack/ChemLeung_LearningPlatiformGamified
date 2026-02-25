@@ -13,7 +13,6 @@ import {
 import { useQuizData } from '../hooks/useQuizData';
 import { ProfileCard } from '../components/chemcity/gacha/ProfileCard';
 import { getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
-import { AvatarTunerButton } from '../components/chemcity/gacha/AvatarTuner';
 import { useChemCityStore } from '../store/chemcityStore';
 import { callChemCityEquipCosmetics } from '../lib/chemcity/cloudFunctions';
 
@@ -154,6 +153,7 @@ function MiniBgSquare({ cosmetic, isEquipped, onClick }) {
 function WardrobePanel({ cosmeticsMap, userProfile, gender, displayName, equippedAvatarId, equippedBackgroundId, navigate }) {
   const [equipping, setEquipping] = useState(null);
   const [activeTab, setActiveTab] = useState('avatars');
+  const [preview, setPreview] = useState({ avatarId: null, backgroundId: null });
 
   const ownedCosmetics = Array.isArray(userProfile?.chemcity?.ownedCosmetics)
     ? userProfile.chemcity.ownedCosmetics.map(String)
@@ -172,14 +172,20 @@ function WardrobePanel({ cosmeticsMap, userProfile, gender, displayName, equippe
     [allCosmetics, ownedSet.size],
   );
 
-  async function handleEquip(cosmetic) {
-    if (equipping) return;
-    setEquipping(cosmetic.id);
+  const effectiveAvatarId = preview.avatarId || equippedAvatarId;
+  const effectiveBackgroundId = preview.backgroundId || equippedBackgroundId;
+  const hasPending = (preview.avatarId && preview.avatarId !== equippedAvatarId)
+    || (preview.backgroundId && preview.backgroundId !== equippedBackgroundId);
+
+  async function handleConfirm() {
+    if (equipping || !hasPending) return;
+    setEquipping('confirm');
     try {
       const patch = {};
-      if (cosmetic.type === 'avatar') patch.avatarId = cosmetic.id;
-      else if (cosmetic.type === 'background') patch.backgroundId = cosmetic.id;
+      if (preview.avatarId && preview.avatarId !== equippedAvatarId) patch.avatarId = preview.avatarId;
+      if (preview.backgroundId && preview.backgroundId !== equippedBackgroundId) patch.backgroundId = preview.backgroundId;
       await callChemCityEquipCosmetics(patch);
+      setPreview({ avatarId: null, backgroundId: null });
     } finally {
       setEquipping(null);
     }
@@ -194,10 +200,51 @@ function WardrobePanel({ cosmeticsMap, userProfile, gender, displayName, equippe
           displayName={displayName}
           gender={gender}
           cosmeticsMap={cosmeticsMap || undefined}
-          avatarId={equippedAvatarId}
-          backgroundId={equippedBackgroundId}
+          avatarId={effectiveAvatarId}
+          backgroundId={effectiveBackgroundId}
           style={{ borderRadius: 16, boxShadow: '0 4px 20px rgba(118,168,165,0.2)' }}
         />
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          onClick={() => setPreview({ avatarId: null, backgroundId: null })}
+          disabled={!!equipping}
+          style={{
+            flex: 1,
+            padding: '9px 10px',
+            borderRadius: 10,
+            border: `1.5px solid ${P.border}`,
+            background: 'rgba(245,249,246,0.8)',
+            color: P.text,
+            fontFamily: "'Quicksand',sans-serif",
+            fontWeight: 800,
+            fontSize: 12,
+            cursor: equipping ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={!hasPending || !!equipping}
+          style={{
+            flex: 1,
+            padding: '9px 10px',
+            borderRadius: 10,
+            border: 'none',
+            background: !hasPending || equipping ? 'rgba(118,168,165,0.35)' : `linear-gradient(135deg, ${P.teal}, #5d9794)`,
+            color: '#fff',
+            fontFamily: "'Quicksand',sans-serif",
+            fontWeight: 900,
+            fontSize: 12,
+            cursor: !hasPending || equipping ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Confirm
+        </button>
       </div>
 
       {/* Tabs */}
@@ -241,8 +288,8 @@ function WardrobePanel({ cosmeticsMap, userProfile, gender, displayName, equippe
                   <MiniAvatarSquare
                     cosmetic={c}
                     gender={gender}
-                    isEquipped={equippedAvatarId === c.id}
-                    onClick={() => handleEquip(c)}
+                    isEquipped={effectiveAvatarId === c.id}
+                    onClick={() => setPreview((p) => ({ ...p, avatarId: c.id }))}
                   />
                   {equipping === c.id && (
                     <div style={{
@@ -267,8 +314,8 @@ function WardrobePanel({ cosmeticsMap, userProfile, gender, displayName, equippe
                 <div key={c.id} style={{ position: 'relative' }}>
                   <MiniBgSquare
                     cosmetic={c}
-                    isEquipped={equippedBackgroundId === c.id}
-                    onClick={() => handleEquip(c)}
+                    isEquipped={effectiveBackgroundId === c.id}
+                    onClick={() => setPreview((p) => ({ ...p, backgroundId: c.id }))}
                   />
                   {equipping === c.id && (
                     <div style={{
@@ -287,7 +334,7 @@ function WardrobePanel({ cosmeticsMap, userProfile, gender, displayName, equippe
 
       {/* Open Full Wardrobe */}
       <button
-        onClick={() => navigate('/chemcity', { state: { openView: 'cosmetics' } })}
+        onClick={() => navigate('/inventory', { state: { tab: 'wardrobe' } })}
         style={{
           width: '100%', padding: '10px 0',
           borderRadius: 12,
@@ -306,28 +353,41 @@ function WardrobePanel({ cosmeticsMap, userProfile, gender, displayName, equippe
         <ChevronRight size={14} />
       </button>
     </div>
+
   );
 }
 
-// ── Main Profile Page ─────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const { currentUser, userProfile, loadUserProfile } = useAuth();
   const { t, isEnglish } = useLanguage();
   const navigate = useNavigate();
   const { questions, loading: questionsLoading } = useQuizData(SHEET_URL);
 
-  const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
-  const [level, setLevel] = useState(userProfile?.level || 'S5');
-  const [learnedUpTo, setLearnedUpTo] = useState(userProfile?.learnedUpTo || '');
-  const [gender, setGender] = useState(userProfile?.gender || 'boy');
-  const [topicExceptions, setTopicExceptions] = useState(userProfile?.topicExceptions || []);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
-  const [cosmeticsMap, setCosmeticsMap] = useState(null);
-  const [rightTab, setRightTab] = useState('info'); // 'info' | 'wardrobe'
+  const equippedAvatarId = userProfile?.chemcity?.avatarId || userProfile?.chemcity?.equippedCosmetics?.avatarId || null;
+  const equippedBackgroundId = userProfile?.chemcity?.backgroundId || userProfile?.chemcity?.equippedCosmetics?.backgroundId || null;
 
-  const equippedAvatarId = userProfile?.chemcity?.equippedCosmetics?.avatarId;
-  const equippedBackgroundId = userProfile?.chemcity?.equippedCosmetics?.backgroundId;
+  const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
+  const [gender, setGender] = useState(userProfile?.gender || 'boy');
+  const [level, setLevel] = useState(userProfile?.level || 'S4');
+  const [learnedUpTo, setLearnedUpTo] = useState(userProfile?.learnedUpTo || '');
+  const [topicExceptions, setTopicExceptions] = useState(Array.isArray(userProfile?.topicExceptions) ? userProfile.topicExceptions : []);
+
+  const [rightTab, setRightTab] = useState('info');
+  const [message, setMessage] = useState({ type: '', text: '' });
+  const [saving, setSaving] = useState(false);
+  const [cosmeticsMap, setCosmeticsMap] = useState(null);
+  const [showAllTopicExceptions, setShowAllTopicExceptions] = useState(false);
+
+  useEffect(() => {
+    setDisplayName(currentUser?.displayName || '');
+  }, [currentUser?.displayName]);
+
+  useEffect(() => {
+    setGender(userProfile?.gender || 'boy');
+    setLevel(userProfile?.level || 'S4');
+    setLearnedUpTo(userProfile?.learnedUpTo || '');
+    setTopicExceptions(Array.isArray(userProfile?.topicExceptions) ? userProfile.topicExceptions : []);
+  }, [userProfile]);
 
   const fallbackIds = useMemo(() => {
     if (!cosmeticsMap) return { avatarId: undefined, backgroundId: undefined };
@@ -482,9 +542,135 @@ export default function ProfilePage() {
         </div>
 
         {/* Two-column layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 16, alignItems: 'start' }}>
 
-          {/* LEFT: Form */}
+          {/* LEFT: Profile Card + Info/Wardrobe toggle */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {/* Profile Card preview */}
+            <div style={{
+              background: P.cardBg, borderRadius: '16px 16px 0 0',
+              border: `1.5px solid ${P.border}`,
+              borderBottom: 'none',
+              padding: '20px 20px 16px',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
+            }} className="profile-card-shadow">
+              <ProfileCard
+                size="xl"
+                displayName={displayName}
+                gender={gender}
+                cosmeticsMap={cosmeticsMap || undefined}
+                avatarId={fallbackIds.avatarId}
+                backgroundId={fallbackIds.backgroundId}
+                style={{ borderRadius: 18, boxShadow: '0 6px 28px rgba(118,168,165,0.25)', width: '100%', height: 'auto', aspectRatio: '4/5.5', maxWidth: 220 }}
+              />
+            </div>
+
+            {/* Info/Wardrobe card */}
+            <div style={{
+              background: P.cardBg, borderRadius: '0 0 16px 16px',
+              border: `1.5px solid ${P.border}`, borderTop: `1px solid ${P.border}`,
+              overflow: 'hidden',
+            }} className="profile-card-shadow">
+              {/* Toggle tabs */}
+              <div style={{
+                display: 'flex', padding: '10px 12px 0',
+                gap: 6, background: 'rgba(197,215,181,0.08)',
+              }}>
+                <button className="toggle-btn" onClick={() => setRightTab('info')} style={{
+                  background: rightTab === 'info' ? P.sage : 'transparent',
+                  color: rightTab === 'info' ? '#2d4a3e' : P.textMuted,
+                }}>
+                  <User size={13} style={{ display: 'inline', marginRight: 4 }} />
+                  Info
+                </button>
+                <button className="toggle-btn" onClick={() => setRightTab('wardrobe')} style={{
+                  background: rightTab === 'wardrobe' ? P.sage : 'transparent',
+                  color: rightTab === 'wardrobe' ? '#2d4a3e' : P.textMuted,
+                }}>
+                  <Shirt size={13} style={{ display: 'inline', marginRight: 4 }} />
+                  Wardrobe
+                </button>
+              </div>
+
+              <div style={{ padding: '14px 16px 16px' }}>
+                {rightTab === 'info' ? (
+                  /* INFO MODE */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {[
+                      { label: 'Display Name', value: currentUser?.displayName || '—' },
+                      { label: 'Gender', value: gender === 'boy' ? '👦 Boy' : '👧 Girl' },
+                      { label: 'Email', value: currentUser?.email || '—' },
+                      { label: 'Member Since', value: formatDate(userProfile?.createdAt) },
+                    ].map(row => (
+                      <div key={row.label} style={{
+                        padding: '8px 12px', borderRadius: 10,
+                        background: 'rgba(197,215,181,0.1)',
+                        border: `1px solid ${P.border}`,
+                      }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: P.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>
+                          {row.label}
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: P.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.value}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Equipped info */}
+                    <div style={{ marginTop: 4, paddingTop: 10, borderTop: `1px solid ${P.border}` }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: P.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
+                        Equipped Cosmetics
+                      </div>
+                      {[
+                        { slot: 'Avatar', id: equippedAvatarId },
+                        { slot: 'Background', id: equippedBackgroundId },
+                      ].map(row => (
+                        <div key={row.slot} style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '5px 10px', borderRadius: 8, marginBottom: 4,
+                          background: 'rgba(245,249,246,0.8)',
+                          border: `1px solid ${P.border}`,
+                        }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: P.textMuted, minWidth: 70 }}>{row.slot}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: P.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {row.id ? (cosmeticsMap?.get(row.id)?.name ?? row.id) : 'None'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => setRightTab('wardrobe')}
+                      style={{
+                        width: '100%', padding: '9px', marginTop: 4,
+                        borderRadius: 10, border: `1.5px solid ${P.sage}`,
+                        background: 'rgba(197,215,181,0.15)',
+                        color: '#4a7c4e',
+                        fontFamily: "'Quicksand',sans-serif", fontWeight: 700, fontSize: 12,
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                      }}
+                    >
+                      <Shirt size={13} />
+                      Change Appearance
+                    </button>
+                  </div>
+                ) : (
+                  /* WARDROBE MODE */
+                  <WardrobePanel
+                    cosmeticsMap={cosmeticsMap}
+                    userProfile={userProfile}
+                    gender={gender}
+                    displayName={displayName}
+                    equippedAvatarId={equippedAvatarId}
+                    equippedBackgroundId={equippedBackgroundId}
+                    navigate={navigate}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: Form */}
           <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             <div style={{
               background: P.cardBg, borderRadius: 16, border: `1.5px solid ${P.border}`,
@@ -600,8 +786,28 @@ export default function ProfilePage() {
                       {t('profile.topicExceptionsLabel')}
                     </label>
                     <p style={{ fontSize: 11, color: P.textMuted, margin: '0 0 8px' }}>{t('profile.clickToExclude')}</p>
+                    {learnedRangeTopics.length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllTopicExceptions((v) => !v)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: 10,
+                          border: `1.5px solid ${P.border}`,
+                          background: 'rgba(245,249,246,0.8)',
+                          color: P.text,
+                          fontFamily: "'Quicksand',sans-serif",
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: 'pointer',
+                          marginBottom: 8,
+                        }}
+                      >
+                        {showAllTopicExceptions ? t('common.showLess') : `${t('common.showAll')} (${learnedRangeTopics.length})`}
+                      </button>
+                    )}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {learnedRangeTopics.map(topic => {
+                      {(showAllTopicExceptions ? learnedRangeTopics : learnedRangeTopics.slice(0, 8)).map(topic => {
                         const isExc = topicExceptions.includes(topic);
                         return (
                           <button key={topic} type="button" onClick={() => toggleTopicException(topic)} style={{
@@ -679,146 +885,6 @@ export default function ProfilePage() {
               </div>
             </div>
           </form>
-
-          {/* RIGHT: Profile Card + Info/Wardrobe toggle */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {/* Profile Card preview */}
-            <div style={{
-              background: P.cardBg, borderRadius: '16px 16px 0 0',
-              border: `1.5px solid ${P.border}`,
-              borderBottom: 'none',
-              padding: '20px 20px 16px',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
-            }} className="profile-card-shadow">
-              <ProfileCard
-                size="xl"
-                displayName={displayName}
-                gender={gender}
-                cosmeticsMap={cosmeticsMap || undefined}
-                avatarId={fallbackIds.avatarId}
-                backgroundId={fallbackIds.backgroundId}
-                style={{ borderRadius: 18, boxShadow: '0 6px 28px rgba(118,168,165,0.25)', width: '100%', height: 'auto', aspectRatio: '4/5.5', maxWidth: 220 }}
-              />
-            </div>
-
-            {/* Info/Wardrobe card */}
-            <div style={{
-              background: P.cardBg, borderRadius: '0 0 16px 16px',
-              border: `1.5px solid ${P.border}`, borderTop: `1px solid ${P.border}`,
-              overflow: 'hidden',
-            }} className="profile-card-shadow">
-              {/* Toggle tabs */}
-              <div style={{
-                display: 'flex', padding: '10px 12px 0',
-                gap: 6, background: 'rgba(197,215,181,0.08)',
-              }}>
-                <button className="toggle-btn" onClick={() => setRightTab('info')} style={{
-                  background: rightTab === 'info' ? P.sage : 'transparent',
-                  color: rightTab === 'info' ? '#2d4a3e' : P.textMuted,
-                }}>
-                  <User size={13} style={{ display: 'inline', marginRight: 4 }} />
-                  Info
-                </button>
-                <button className="toggle-btn" onClick={() => setRightTab('wardrobe')} style={{
-                  background: rightTab === 'wardrobe' ? P.sage : 'transparent',
-                  color: rightTab === 'wardrobe' ? '#2d4a3e' : P.textMuted,
-                }}>
-                  <Shirt size={13} style={{ display: 'inline', marginRight: 4 }} />
-                  Wardrobe
-                </button>
-              </div>
-
-              <div style={{ padding: '14px 16px 16px' }}>
-                {rightTab === 'info' ? (
-                  /* INFO MODE */
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {[
-                      { label: 'Display Name', value: currentUser?.displayName || '—' },
-                      { label: 'Gender', value: gender === 'boy' ? '👦 Boy' : '👧 Girl' },
-                      { label: 'Email', value: currentUser?.email || '—' },
-                      { label: 'Member Since', value: formatDate(userProfile?.createdAt) },
-                    ].map(row => (
-                      <div key={row.label} style={{
-                        padding: '8px 12px', borderRadius: 10,
-                        background: 'rgba(197,215,181,0.1)',
-                        border: `1px solid ${P.border}`,
-                      }}>
-                        <div style={{ fontSize: 10, fontWeight: 800, color: P.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>
-                          {row.label}
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: P.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {row.value}
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Equipped info */}
-                    <div style={{ marginTop: 4, paddingTop: 10, borderTop: `1px solid ${P.border}` }}>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: P.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>
-                        Equipped Cosmetics
-                      </div>
-                      {[
-                        { slot: 'Avatar', id: equippedAvatarId },
-                        { slot: 'Background', id: equippedBackgroundId },
-                      ].map(row => (
-                        <div key={row.slot} style={{
-                          display: 'flex', alignItems: 'center', gap: 8,
-                          padding: '5px 10px', borderRadius: 8, marginBottom: 4,
-                          background: 'rgba(245,249,246,0.8)',
-                          border: `1px solid ${P.border}`,
-                        }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: P.textMuted, minWidth: 70 }}>{row.slot}</span>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: P.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {row.id ? (cosmeticsMap?.get(row.id)?.name ?? row.id) : 'None'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={() => setRightTab('wardrobe')}
-                      style={{
-                        width: '100%', padding: '9px', marginTop: 4,
-                        borderRadius: 10, border: `1.5px solid ${P.sage}`,
-                        background: 'rgba(197,215,181,0.15)',
-                        color: '#4a7c4e',
-                        fontFamily: "'Quicksand',sans-serif", fontWeight: 700, fontSize: 12,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      }}
-                    >
-                      <Shirt size={13} />
-                      Change Appearance
-                    </button>
-
-                    <AvatarTunerButton
-                      avatarId={fallbackIds.avatarId}
-                      avatarImageUrl={previewAvatar?.imageUrl}
-                      avatarImageUrlBoy={previewAvatar?.imageUrlBoy}
-                      avatarImageUrlGirl={previewAvatar?.imageUrlGirl}
-                      style={{
-                        width: '100%', padding: '8px',
-                        borderRadius: 10, border: `1px dashed rgba(118,168,165,0.3)`,
-                        background: 'transparent', color: 'rgba(118,168,165,0.5)',
-                        fontFamily: "'Quicksand',sans-serif", fontWeight: 700, fontSize: 11,
-                        cursor: 'pointer',
-                      }}
-                    />
-                  </div>
-                ) : (
-                  /* WARDROBE MODE */
-                  <WardrobePanel
-                    cosmeticsMap={cosmeticsMap}
-                    userProfile={userProfile}
-                    gender={gender}
-                    displayName={displayName}
-                    equippedAvatarId={equippedAvatarId}
-                    equippedBackgroundId={equippedBackgroundId}
-                    navigate={navigate}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 

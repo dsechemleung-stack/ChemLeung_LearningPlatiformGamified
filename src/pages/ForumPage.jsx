@@ -117,7 +117,9 @@ function NotificationPanel({ userId, onClose }) {
 
       <div className="overflow-y-auto flex-1">
         {loading ? (
-          <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-lab-blue" /></div>
+          <div className="flex justify-center py-8">
+            <ChemistryLoading persistKey="forum_notifications" showText={false} />
+          </div>
         ) : notifs.length === 0 ? (
           <div className="text-center py-10 text-slate-400 text-sm">{t('forum.noNotificationsYet')}</div>
         ) : (

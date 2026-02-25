@@ -14,7 +14,7 @@ const LOADERS = [
   { id: 11, text: 'Oxidizing metals...', variant: 'oxidize' },
 ];
 
-export default function ChemistryLoading({ className = '', persistKey = '' }) {
+export default function ChemistryLoading({ className = '', persistKey = '', showText = true, textOverride = '' }) {
   const loader = useMemo(() => {
     if (!persistKey) {
       const idx = Math.floor(Math.random() * LOADERS.length);
@@ -41,8 +41,19 @@ export default function ChemistryLoading({ className = '', persistKey = '' }) {
     }
   }, [persistKey]);
 
+  const displayText = (textOverride || loader.text);
+
   return (
-    <div className={`chem-loading ${className}`.trim()}>
+    <div className={`chem-loading chem-loading--brand ${className}`.trim()}>
+      <div className="chem-loading-logo" aria-hidden="true">
+        <div className="chem-loading-logo-ring" />
+        <img
+          src="/ChemistreeIcon_square.png"
+          alt=""
+          className="chem-loading-logo-img"
+          draggable="false"
+        />
+      </div>
       <div className="chem-loading-visual" aria-hidden="true">
         {loader.variant === 'flame' && (
           <div className="chem-flame-track">
@@ -132,7 +143,7 @@ export default function ChemistryLoading({ className = '', persistKey = '' }) {
         )}
       </div>
 
-      <p className="chem-loading-text">{loader.text}</p>
+      {showText && <p className="chem-loading-text">{displayText}</p>}
     </div>
   );
 }

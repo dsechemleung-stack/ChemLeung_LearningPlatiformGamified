@@ -40,9 +40,11 @@ export async function initChemCityUser(userId: string): Promise<void> {
     passiveIncome: { lastCollected: null };
   } = {
     userId,
+    growthTokens: 0,
     currencies: {
       coins: 500,
-      diamonds: 20,
+      diamonds: 0,
+      tickets: 0,
     },
     storeSlotCount: 3,
     ownedItems: [],

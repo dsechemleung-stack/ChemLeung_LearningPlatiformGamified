@@ -6,7 +6,7 @@ const { randomInt } = require('crypto');
 
 const RARITY_ORDER = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 
-const DRAW_COST = { tickets: 1, coins: 500 };
+const DRAW_COST = { tickets: 1, coins: 250 };
 
 const TICKET_EXCHANGE = { coinsPerTicket: 250 };
 
@@ -269,7 +269,6 @@ exports.chemcityGachaDraw = onCall(
 
       const currencies = chemcity.currencies || {};
       const coins = Number(currencies.coins || 0);
-      const diamonds = Number(currencies.diamonds || 0);
       const tickets = Number(currencies.tickets || 0);
 
       const ownedCosmeticsArr = Array.isArray(chemcity.ownedCosmetics) ? chemcity.ownedCosmetics.map(String) : [];
@@ -362,17 +361,20 @@ exports.chemcityGachaDraw = onCall(
 
       const updatedCurrencies = {
         coins: nextCoins,
-        diamonds,
         tickets: nextTickets,
       };
 
       const updatedOwnedCosmetics = Array.from(ownedCosmetics);
       const updatedGachaState = { ...gachaState, [bannerId]: pity };
 
+      const gachaGrowthDelta = payWith === 'coins' ? totalCost : 0;
       tx.update(userRef, {
         'chemcity.currencies': updatedCurrencies,
         'chemcity.ownedCosmetics': updatedOwnedCosmetics,
         'chemcity.gachaState': updatedGachaState,
+        ...(gachaGrowthDelta > 0
+          ? { 'chemcity.growthTokens': admin.firestore.FieldValue.increment(gachaGrowthDelta) }
+          : {}),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -384,7 +386,7 @@ exports.chemcityGachaDraw = onCall(
         totalCost,
         coinRefundTotal,
         results: rollTrace,
-        currenciesBefore: { coins, diamonds, tickets },
+        currenciesBefore: { coins, tickets },
         currenciesAfter: updatedCurrencies,
         pityBefore,
         pityAfter: pity,
@@ -472,7 +474,7 @@ exports.chemcityPurchaseCosmetic = onCall(
 
       const currencies = chemcity.currencies || {};
       const coins = Number(currencies.coins || 0);
-      const diamonds = Number(currencies.diamonds || 0);
+      const diamonds = Number(userData.tokens || 0);
       const tickets = Number(currencies.tickets || 0);
 
       const owned = Array.isArray(chemcity.ownedCosmetics) ? chemcity.ownedCosmetics.map(String) : [];
@@ -483,13 +485,18 @@ exports.chemcityPurchaseCosmetic = onCall(
 
       const updatedCurrencies = {
         coins: currency === 'coins' ? coins - cost : coins,
-        diamonds: currency === 'diamonds' ? diamonds - cost : diamonds,
         tickets: currency === 'tickets' ? tickets - cost : tickets,
       };
 
       tx.update(userRef, {
         'chemcity.currencies': updatedCurrencies,
+        ...(currency === 'diamonds'
+          ? { tokens: diamonds - cost }
+          : {}),
         'chemcity.ownedCosmetics': admin.firestore.FieldValue.arrayUnion(cosmeticId),
+        ...(currency === 'coins'
+          ? { 'chemcity.growthTokens': admin.firestore.FieldValue.increment(cost) }
+          : {}),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -612,7 +619,7 @@ exports.chemcityBuyTickets = onCall(
       const currencies = chemcity.currencies || {};
 
       const coins = Number(currencies.coins || 0);
-      const diamonds = Number(currencies.diamonds || 0);
+      const diamonds = Number(userData.tokens || 0);
       const tickets = Number(currencies.tickets || 0);
 
       const totalCost = TICKET_EXCHANGE.coinsPerTicket * ticketCount;
@@ -620,12 +627,12 @@ exports.chemcityBuyTickets = onCall(
 
       const updatedCurrencies = {
         coins: coins - totalCost,
-        diamonds,
         tickets: tickets + ticketCount,
       };
 
       tx.update(userRef, {
         'chemcity.currencies': updatedCurrencies,
+        'chemcity.growthTokens': admin.firestore.FieldValue.increment(totalCost),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
 

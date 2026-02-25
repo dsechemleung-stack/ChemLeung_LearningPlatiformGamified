@@ -4,22 +4,19 @@ import { useChemCityStore } from '../../store/chemcityStore';
 import { CurrencyBar } from './CurrencyBar';
 import { ChemCityMap } from './ChemCityMap';
 import { PlaceView } from './PlaceView';
-import { CardInventory } from './CardInventory';
 import { CardPicker } from './CardPicker';
 import { CardDetail } from './CardDetail';
 import { DailyLoginModal } from './DailyLoginModal';
 import { QuizRewardModal } from './QuizRewardModal';
-import { ChemStore } from './ChemStore';
 import { PurchaseConfirmModal } from './PurchaseConfirmModal';
 import { PlaceUnlockModal } from './PlaceUnlockModal';
 import { GasStationDistributor } from './GasStationDistributor';
 import { CollectionsAlbum } from './CollectionsAlbum';
 import { OnboardingOverlay } from './OnboardingOverlay';
-import { GachaScreen } from './gacha/GachaScreen';
-import { CosmeticsInventory } from './gacha/CosmeticsInventory';
+import ChemistryLoading from '../ChemistryLoading';
 
 export const ChemCityRoot: React.FC = () => {
-  const { currentUser } = useAuth();
+  const { currentUser } = useAuth() as any;
 
   const view = useChemCityStore((s) => s.view);
   const isLoading = useChemCityStore((s) => s.isLoading);
@@ -48,9 +45,8 @@ export const ChemCityRoot: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col min-h-screen bg-slate-950 items-center justify-center gap-4">
-        <span className="text-5xl animate-pulse">🧪</span>
-        <p className="text-slate-400 text-sm">Loading ChemCity...</p>
+      <div className="flex flex-col min-h-screen items-center justify-center gap-4" style={{ background: '#f5f9f6' }}>
+        <ChemistryLoading persistKey="chemcity" className="text-center" />
       </div>
     );
   }
@@ -77,12 +73,8 @@ export const ChemCityRoot: React.FC = () => {
       <main className="flex-1 overflow-hidden flex flex-col">
         {view === 'map' && <ChemCityMap />}
         {view === 'place' && <PlaceView />}
-        {view === 'inventory' && <CardInventory />}
-        {view === 'store' && <ChemStore />}
         {view === 'gas_station_distributor' && <GasStationDistributor />}
         {view === 'collections' && <CollectionsAlbum />}
-        {view === 'gacha' && <GachaScreen />}
-        {view === 'cosmetics' && <CosmeticsInventory />}
       </main>
 
       <CardPicker />

@@ -75,7 +75,7 @@ function CircleAvatar({ entry, rank }) {
 
   return (
     <div
-      className={`w-12 h-12 p-[2px] border-2 ${p.border} bg-white/70 shadow-sm rounded-full`}
+      className={`w-14 h-14 p-[2px] border-2 ${p.border} bg-white/70 shadow-sm rounded-full`}
       title={entry?.displayName || ''}
     >
       <div className="w-full h-full overflow-hidden bg-white/80 rounded-full">
@@ -86,7 +86,7 @@ function CircleAvatar({ entry, rank }) {
             <ChemCityUserProfileIcon
               userId={entry.userId}
               displayName={entry.displayName}
-              size={44}
+              size={52}
               className="shadow-none"
             />
           </div>

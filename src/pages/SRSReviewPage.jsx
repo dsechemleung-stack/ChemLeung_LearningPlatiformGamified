@@ -379,7 +379,7 @@ export default function SRSReviewPage({ questions = [] }) {
         </button>
 
         <div className="mt-6 bg-white border-2 border-slate-200 rounded-2xl p-6 shadow-sm">
-          <div className="text-xl font-black text-slate-800">SRS review</div>
+          <div className="text-xl font-black text-slate-800">{t('srs.reviewPageTitle')}</div>
           <div className="mt-2 text-sm text-slate-600 font-semibold">
             {t('calendar.noReviewSessionsFoundForDay')}
           </div>
@@ -400,7 +400,7 @@ export default function SRSReviewPage({ questions = [] }) {
         </button>
 
         <div className="min-w-0 flex-1">
-          <div className="text-2xl font-black text-slate-800 truncate">SRS review ({formatDM(selectedDate)})</div>
+          <div className="text-2xl font-black text-slate-800 truncate">{t('srs.reviewPageTitle')} ({formatDM(selectedDate)})</div>
           {overdueDays > 0 && Number(selectedSummary?.dueTotal || 0) > 0 && (
             <div className="text-sm font-black text-red-600 mt-1">
               {tf('calendar.srsOverdueDays', { count: overdueDays })}

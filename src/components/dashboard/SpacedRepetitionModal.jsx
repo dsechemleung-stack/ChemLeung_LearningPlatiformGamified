@@ -2,8 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Play, Eye, CheckSquare, Filter, Tag, Layers, ArrowRight, Timer, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { srsService } from '../../services/srsService';
-import { quizStorage } from '../../utils/quizStorage';
+import ChemistryLoading from '../ChemistryLoading';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { getNow } from '../../utils/timeTravel';
 
@@ -343,8 +342,7 @@ export default function SpacedRepetitionModal({
   const modalContent = isLoading ? (
     <div className={embedded ? "w-full" : "fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4"}>
       <div className={embedded ? "bg-white rounded-2xl p-8 shadow-lg border-2 border-slate-100" : "bg-white rounded-2xl p-8 shadow-2xl"}>
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
-        <p className="text-center mt-4 text-slate-600">{t('srs.loadingDueCards')}</p>
+        <ChemistryLoading persistKey="srs_due_cards" className="text-center" textOverride={t('srs.loadingDueCards')} />
       </div>
     </div>
   ) : error ? (

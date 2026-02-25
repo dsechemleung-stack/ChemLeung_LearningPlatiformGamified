@@ -1,24 +1,22 @@
 import React, { useMemo, useState } from 'react';
-import { Coins, Gem, ChevronLeft, Sparkles, BookOpen, ShoppingBag, Archive, Fuel, X, Zap, Ticket } from 'lucide-react';
+import { Coins, Gem, ChevronLeft, Sparkles, BookOpen, Fuel, X, Zap, Ticket } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
+import { useAuth } from '../../contexts/AuthContext';
 
 export const CurrencyBar: React.FC = () => {
+  const { userProfile } = useAuth() as any;
   const user               = useChemCityStore(s => s.user);
   const places             = useChemCityStore(s => s.places);
   const view               = useChemCityStore(s => s.view);
   const selectedPlaceId    = useChemCityStore(s => s.selectedPlaceId);
   const navigateToMap      = useChemCityStore(s => s.navigateToMap);
-  const navigateToInventory = useChemCityStore(s => s.navigateToInventory);
-  const navigateToStore    = useChemCityStore(s => s.navigateToStore);
   const navigateToCollections = useChemCityStore(s => s.navigateToCollections);
   const navigateToGasStationDistributor = useChemCityStore(s => s.navigateToGasStationDistributor);
-  const navigateToGacha    = useChemCityStore(s => (s as any).navigateToGacha);
-  const navigateToCosmetics = useChemCityStore(s => (s as any).navigateToCosmetics);
 
   const [skillsOpen, setSkillsOpen] = useState(false);
 
   const coins    = user?.currencies.coins ?? 0;
-  const diamonds = user?.currencies.diamonds ?? 0;
+  const diamonds = Number(userProfile?.tokens ?? 0);
   const tickets  = (user?.currencies as any)?.tickets ?? 0;
 
   const showGasDistributorButton = view === 'place' && selectedPlaceId === 'gas_station' && (user?.extraSlotsBudget ?? 0) > 0;
@@ -140,18 +138,6 @@ export const CurrencyBar: React.FC = () => {
           </NavBtn>
           <NavBtn onClick={navigateToCollections} active={view === 'collections'} label="Collections Album">
             <BookOpen size={15} />
-          </NavBtn>
-          <NavBtn onClick={navigateToStore} active={view === 'store'} label="ChemStore">
-            <ShoppingBag size={15} />
-          </NavBtn>
-          <NavBtn onClick={() => navigateToGacha?.()} active={view === 'gacha'} label="Gacha Machine" accent>
-            <Ticket size={15} />
-          </NavBtn>
-          <NavBtn onClick={() => navigateToCosmetics?.()} active={view === 'cosmetics'} label="Cosmetics" accent>
-            <Sparkles size={15} />
-          </NavBtn>
-          <NavBtn onClick={navigateToInventory} active={view === 'inventory'} label="Card Inventory">
-            <Archive size={15} />
           </NavBtn>
           {showGasDistributorButton && (
             <NavBtn onClick={navigateToGasStationDistributor} active={false} label="Distribute Bonus Slots" accent>

@@ -54,11 +54,7 @@ function markOnboardingDone(): void {
   }
 }
 
-type View = 'map' | 'place' | 'inventory' | 'store' | 'gas_station_distributor' | 'collections';
-
-type GachaView = 'gacha' | 'cosmetics';
-
-type ExtendedView = View | GachaView;
+type View = 'map' | 'place' | 'gas_station_distributor' | 'collections';
 
 type RootUserDoc = {
   chemcity?: UserChemCityData;
@@ -80,7 +76,7 @@ interface ChemCityStore {
   isLoading: boolean;
   error: string | null;
 
-  view: ExtendedView;
+  view: View;
   selectedPlaceId: string | null;
 
   cardPickerSlotId: string | null;
@@ -120,16 +116,13 @@ interface ChemCityStore {
   _userPollTimer: number | null;
 
   loadAll: (userId: string) => Promise<void>;
+  loadGachaOnly: (userId: string) => Promise<void>;
   teardown: () => void;
 
   navigateToMap: () => void;
   navigateToPlace: (placeId: string) => void;
-  navigateToInventory: () => void;
-  navigateToStore: () => void;
   navigateToGasStationDistributor: () => void;
   navigateToCollections: () => void;
-  navigateToGacha: () => void;
-  navigateToCosmetics: () => void;
 
   openCardPicker: (slotId: string) => void;
   closeCardPicker: () => void;
@@ -343,6 +336,73 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
     }
   },
 
+  loadGachaOnly: async (userId: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      await callChemCityInitUser();
+
+      const userRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userRef);
+      const root = (userSnap.data() || {}) as RootUserDoc;
+      const chemcity = (root.chemcity || null) as UserChemCityData | null;
+      const genderRaw = (root as any)?.gender;
+      const userGender: 'boy' | 'girl' | null =
+        genderRaw === 'girl' ? 'girl' : genderRaw === 'boy' ? 'boy' : null;
+
+      const existing = get()._unsubUser;
+      if (existing) existing();
+      const existingTimer = get()._userPollTimer;
+      if (existingTimer) window.clearInterval(existingTimer);
+
+      if (!DISABLE_FIRESTORE_LISTENERS) {
+        const unsub = onSnapshot(userRef, (snap) => {
+          if (!snap.exists()) return;
+          const freshRoot = (snap.data() || {}) as RootUserDoc;
+          const fresh = (freshRoot.chemcity || null) as UserChemCityData | null;
+          const freshGenderRaw = (freshRoot as any)?.gender;
+          const freshUserGender: 'boy' | 'girl' | null =
+            freshGenderRaw === 'girl' ? 'girl' : freshGenderRaw === 'boy' ? 'boy' : null;
+          set({ user: fresh, userGender: freshUserGender });
+        });
+        set({ _unsubUser: unsub, _userPollTimer: null });
+      } else {
+        const poll = async () => {
+          try {
+            const snap = await getDoc(userRef);
+            if (!snap.exists()) return;
+            const freshRoot = (snap.data() || {}) as RootUserDoc;
+            const fresh = (freshRoot.chemcity || null) as UserChemCityData | null;
+            const freshGenderRaw = (freshRoot as any)?.gender;
+            const freshUserGender: 'boy' | 'girl' | null =
+              freshGenderRaw === 'girl' ? 'girl' : freshGenderRaw === 'boy' ? 'boy' : null;
+            set({ user: fresh, userGender: freshUserGender });
+          } catch {
+            // ignore
+          }
+        };
+
+        poll();
+        const timer = window.setInterval(poll, USER_POLL_INTERVAL_MS);
+        set({ _unsubUser: null, _userPollTimer: timer });
+      }
+
+      set({
+        user: chemcity,
+        userGender,
+        progress: null,
+        slimItems: [],
+        places: [],
+        collections: [],
+        selectedPlaceId: null,
+        isLoading: false,
+      });
+
+      setTimeout(() => get().loadGachaStatic(), 0);
+    } catch (err: any) {
+      set({ isLoading: false, error: err?.message || 'Failed to load Gacha' });
+    }
+  },
+
   devGrantCoins: async (amount: number) => {
     if (!Number.isFinite(amount) || amount === 0) return;
     await callChemCityDevGrantCoins(amount);
@@ -386,12 +446,8 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
 
   navigateToMap: () => set({ view: 'map', selectedPlaceId: null }),
   navigateToPlace: (placeId) => set({ view: 'place', selectedPlaceId: placeId }),
-  navigateToInventory: () => set({ view: 'inventory' }),
-  navigateToStore: () => set({ view: 'store' }),
   navigateToGasStationDistributor: () => set({ view: 'gas_station_distributor' }),
   navigateToCollections: () => set({ view: 'collections' }),
-  navigateToGacha: () => set({ view: 'gacha' }),
-  navigateToCosmetics: () => set({ view: 'cosmetics' }),
 
   openCardPicker: (slotId) => set({ cardPickerSlotId: slotId }),
   closeCardPicker: () => set({ cardPickerSlotId: null }),

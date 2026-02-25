@@ -46,6 +46,10 @@ const translations = {
       logoutWarning: "You will be logged out of your account. Any unsaved progress will be lost.",
       confirmLogoutInQuiz: "Are you sure you want to logout?\n\n⚠️ You are in the middle of a quiz. Your progress will be lost!",
       confirmLeaveQuiz: "Are you sure you want to leave the quiz?\n\n⚠️ Your current progress will be lost!",
+      languageMenuLabel: "Language",
+      languageDialogTitle: "Language",
+      languageOptionEnglish: "English",
+      languageOptionTraditionalChinese: "Traditional Chinese",
     },
     
     // Dashboard
@@ -217,6 +221,7 @@ const translations = {
 
     srs: {
       title: "Spaced Repetition Review",
+      reviewPageTitle: "SRS review",
       failedLoadDueCardsTryAgain: "Failed to load due cards. Please try again.",
       loadingDueCards: "Loading due cards...",
       pleaseSelectAtLeastOne: "Please select at least one question to review.",
@@ -1339,6 +1344,10 @@ const translations = {
       logoutWarning: "您將登出帳戶。任何未儲存的進度將會遺失。",
       confirmLogoutInQuiz: "確定要登出嗎？\n\n⚠️ 您正在進行測驗，進度將會丟失！",
       confirmLeaveQuiz: "確定要離開測驗嗎？\n\n⚠️ 您目前的進度將會丟失！",
+      languageMenuLabel: "語言",
+      languageDialogTitle: "語言 / Language",
+      languageOptionEnglish: "English",
+      languageOptionTraditionalChinese: "繁體中文",
     },
 
     // 總覧
@@ -1501,7 +1510,8 @@ const translations = {
     },
 
     srs: {
-      title: "Spaced Repetition Review",
+      title: "間隔重溫",
+      reviewPageTitle: "SRS 重溫",
       failedLoadDueCardsTryAgain: "無法載入待重溫題目，請再試一次。",
       loadingDueCards: "載入中...",
       pleaseSelectAtLeastOne: "請至少選擇一條題目進行重溫。",

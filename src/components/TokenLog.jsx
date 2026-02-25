@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTokenHistory } from '../services/tokenService';
 import { ArrowLeft, TrendingUp, TrendingDown, Clock, Filter, Gem } from 'lucide-react';
+import ChemistryLoading from './ChemistryLoading';
 
 export default function TokenLog() {
   const navigate = useNavigate();
@@ -164,7 +165,7 @@ export default function TokenLog() {
         <div className="divide-y divide-slate-100">
           {loading ? (
             <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lab-blue"></div>
+              <ChemistryLoading persistKey="token_log" className="text-center" showText={false} />
             </div>
           ) : filteredHistory.length === 0 ? (
             <div className="text-center py-12">

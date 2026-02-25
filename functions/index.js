@@ -13,9 +13,11 @@ function getChemCityDefaults(userId) {
   const now = admin.firestore.FieldValue.serverTimestamp();
   return {
     userId,
+    growthTokens: 0,
     currencies: {
       coins: 500,
       diamonds: 20,
+      tickets: 0,
     },
     storeSlotCount: 3,
     ownedItems: [],
@@ -86,6 +88,10 @@ async function ensureChemCityInitialized(db, userId) {
           ...(equipped.iconId ? { iconId: equipped.iconId } : {}),
         };
       }
+    }
+
+    if (typeof (userData.chemcity || {}).growthTokens !== 'number') {
+      patch['chemcity.growthTokens'] = 0;
     }
 
     if (Object.keys(patch).length > 0) {
@@ -478,6 +484,7 @@ exports.chemcityUnlockStoreSlot = onCall(
       tx.update(userRef, {
         'chemcity.currencies.coins': coins - cost,
         'chemcity.storeSlotCount': next,
+        'chemcity.growthTokens': admin.firestore.FieldValue.increment(cost),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -597,7 +604,7 @@ exports.chemcityClaimCollectionReward = onCall(
         update['chemcity.currencies.coins'] = admin.firestore.FieldValue.increment(rewardCoins);
       }
       if (rewardDiamonds > 0) {
-        update['chemcity.currencies.diamonds'] = admin.firestore.FieldValue.increment(rewardDiamonds);
+        update['tokens'] = admin.firestore.FieldValue.increment(rewardDiamonds);
       }
 
       tx.update(userRef, update);
@@ -690,7 +697,7 @@ exports.chemcityPurchaseCard = onCall(
 
       const currencies = chemcity.currencies || {};
       const coins = Number(currencies.coins || 0);
-      const diamonds = Number(currencies.diamonds || 0);
+      const diamonds = Number(userData.tokens || 0);
 
       const effectiveCoinCost = currency === 'coins'
         ? getDiscountedCoinCost(baseCoinCost, discountPercent)
@@ -722,8 +729,9 @@ exports.chemcityPurchaseCard = onCall(
 
       if (currency === 'coins') {
         update['chemcity.currencies.coins'] = coins - effectiveCoinCost;
+        update['chemcity.growthTokens'] = admin.firestore.FieldValue.increment(effectiveCoinCost);
       } else {
-        update['chemcity.currencies.diamonds'] = diamonds - effectiveDiamondCost;
+        update['tokens'] = diamonds - effectiveDiamondCost;
       }
 
       tx.update(userRef, update);
@@ -800,6 +808,7 @@ exports.chemcityUnlockPlace = onCall(
       tx.update(userRef, {
         'chemcity.currencies.coins': coins - unlockCost,
         'chemcity.unlockedPlaces': [...unlockedPlaces, placeId],
+        'chemcity.growthTokens': admin.firestore.FieldValue.increment(unlockCost),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -901,7 +910,7 @@ exports.chemcityUnlockSlot = onCall(
 
       const currencies = chemcity.currencies || {};
       const coins = Number(currencies.coins || 0);
-      const diamonds = Number(currencies.diamonds || 0);
+      const diamonds = Number(userData.tokens || 0);
 
       if (unlockCurrency === 'diamonds') {
         if (!Number.isFinite(unlockCost) || unlockCost <= 0) {
@@ -911,7 +920,7 @@ exports.chemcityUnlockSlot = onCall(
           throw new HttpsError('failed-precondition', 'Insufficient diamonds.');
         }
         tx.update(userRef, {
-          'chemcity.currencies.diamonds': diamonds - unlockCost,
+          tokens: diamonds - unlockCost,
           'chemcity.unlockedSlots': [...unlockedSlots, slotId],
           'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
         });
@@ -927,6 +936,7 @@ exports.chemcityUnlockSlot = onCall(
       tx.update(userRef, {
         'chemcity.currencies.coins': coins - unlockCost,
         'chemcity.unlockedSlots': [...unlockedSlots, slotId],
+        'chemcity.growthTokens': admin.firestore.FieldValue.increment(unlockCost),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
       return { ok: true, slotId, cost: unlockCost, currency: 'coins' };
@@ -982,7 +992,7 @@ exports.chemcityGetDailyLoginBonus = onCall(
       const diamondsAwarded = Math.max(0, Math.floor(Number(bonuses.dailyLoginDiamonds || 5)));
 
       tx.update(userRef, {
-        'chemcity.currencies.diamonds': admin.firestore.FieldValue.increment(diamondsAwarded),
+        tokens: admin.firestore.FieldValue.increment(diamondsAwarded),
         'chemcity.streaks.currentStreak': nextStreak,
         'chemcity.streaks.longestStreak': longestStreak,
         'chemcity.streaks.lastLoginDate': today,
@@ -1060,7 +1070,7 @@ exports.chemcityQuizReward = onCall(
 
       const updates = {
         'chemcity.currencies.coins': admin.firestore.FieldValue.increment(Math.floor(baseCoins)),
-        'chemcity.currencies.diamonds': admin.firestore.FieldValue.increment(diamonds),
+        tokens: admin.firestore.FieldValue.increment(diamonds),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       };
 

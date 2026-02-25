@@ -4,6 +4,7 @@ import { GachaResultsModal } from './GachaResultsModal';
 import { PityBar } from './PityBar';
 import type { GachaBanner } from '../../../lib/chemcity/types';
 import { callChemCityGachaDraw } from '../../../lib/chemcity/cloudFunctions';
+import ChemistryLoading from '../../ChemistryLoading';
 
 export function GachaScreen() {
   const user = useChemCityStore((s) => s.user);
@@ -20,6 +21,9 @@ export function GachaScreen() {
   const [showAnimation, setShowAnimation] = useState(false);
   const [pendingDraw, setPendingDraw] = useState<{ count: 1 | 10 } | null>(null);
   const [animationDone, setAnimationDone] = useState(false);
+  const [pendingPayWith, setPendingPayWith] = useState<'tickets' | 'coins'>('tickets');
+  const [showCoinsConfirm, setShowCoinsConfirm] = useState(false);
+  const [coinsConfirmCount, setCoinsConfirmCount] = useState<1 | 10>(1);
 
   // Fallback default banner if none exist in database
   const defaultBanner: GachaBanner = {
@@ -54,7 +58,7 @@ export function GachaScreen() {
       setAnimationDone(false);
       setError(null);
       setIsDrawing(true);
-      callChemCityGachaDraw({ bannerId: (selectedBanner as any).id, count: pendingDraw.count, payWith: 'tickets' })
+      callChemCityGachaDraw({ bannerId: (selectedBanner as any).id, count: pendingDraw.count, payWith: pendingPayWith })
         .then((res) => {
           setLastResults(res.results);
         })
@@ -65,7 +69,7 @@ export function GachaScreen() {
           setIsDrawing(false);
         });
     }
-  }, [pendingDraw, selectedBanner]);
+  }, [pendingDraw, selectedBanner, pendingPayWith]);
 
   useEffect(() => {
     if (!showAnimation && animationDone && lastResults && !isDrawing) {
@@ -80,13 +84,34 @@ export function GachaScreen() {
 
   const canPayTickets1x = (currencies as any).tickets >= 1;
   const canPayTickets10x = (currencies as any).tickets >= 10;
+  const coinCost1x = 250;
+  const coinCost10x = 2500;
+  const canPayCoins1x = currencies.coins >= coinCost1x;
+  const canPayCoins10x = currencies.coins >= coinCost10x;
 
   function handleStartDraw(count: 1 | 10) {
     if (!selectedBanner) return;
     if (showAnimation || isDrawing) return;
+
+    const hasTickets = count === 1 ? canPayTickets1x : canPayTickets10x;
+    if (!hasTickets) {
+      setCoinsConfirmCount(count);
+      setShowCoinsConfirm(true);
+      return;
+    }
+
     setLastResults(null);
     setShowResults(false);
+    setPendingPayWith('tickets');
     setPendingDraw({ count });
+  }
+
+  function confirmCoinDraw() {
+    setShowCoinsConfirm(false);
+    setLastResults(null);
+    setShowResults(false);
+    setPendingPayWith('coins');
+    setPendingDraw({ count: coinsConfirmCount });
   }
 
   function handleCloseResults() {
@@ -102,8 +127,8 @@ export function GachaScreen() {
 
   if (!user) {
     return (
-      <div className="flex items-center justify-center h-full bg-gray-900 text-white">
-        <span className="animate-pulse text-lg">Loading...</span>
+      <div className="flex flex-col items-center justify-center h-full" style={{ background: '#f5f9f6' }}>
+        <ChemistryLoading persistKey="gacha" className="text-center" />
       </div>
     );
   }
@@ -176,7 +201,7 @@ export function GachaScreen() {
             label="Draw × 1"
             sublabel="1 Ticket"
             emoji="🎟️"
-            disabled={!canPayTickets1x || isDrawing || showAnimation || !hasBanner}
+            disabled={isDrawing || showAnimation || !hasBanner || (!canPayTickets1x && !canPayCoins1x)}
             loading={isDrawing && pendingDraw?.count === 1}
             onClick={() => handleStartDraw(1)}
             variant="primary"
@@ -185,7 +210,7 @@ export function GachaScreen() {
             label="Draw × 10"
             sublabel="10 Tickets (Rare+)"
             emoji="🎟️"
-            disabled={!canPayTickets10x || isDrawing || showAnimation || !hasBanner}
+            disabled={isDrawing || showAnimation || !hasBanner || (!canPayTickets10x && !canPayCoins10x)}
             loading={isDrawing && pendingDraw?.count === 10}
             onClick={() => handleStartDraw(10)}
             variant="secondary"
@@ -206,6 +231,35 @@ export function GachaScreen() {
 
       {showResults && lastResults ? (
         <GachaResultsModal results={lastResults as any} onClose={handleCloseResults} />
+      ) : null}
+
+      {showCoinsConfirm ? (
+        <div className="absolute inset-0 z-40 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setShowCoinsConfirm(false)} />
+          <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-black/80 backdrop-blur px-5 py-5">
+            <div className="text-lg font-black mb-1">Not enough tickets</div>
+            <div className="text-sm text-white/70 mb-4">
+              Spend <span className="font-bold text-amber-200">{coinsConfirmCount === 1 ? coinCost1x : coinCost10x} Coins</span> instead?
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setShowCoinsConfirm(false)}
+                className="rounded-xl py-3 font-bold bg-white/10 hover:bg-white/15"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmCoinDraw}
+                disabled={(coinsConfirmCount === 1 ? !canPayCoins1x : !canPayCoins10x) || isDrawing || showAnimation}
+                className="rounded-xl py-3 font-bold bg-amber-400/90 hover:bg-amber-300 text-black disabled:opacity-40 disabled:cursor-not-allowed"
+                type="button"
+              >
+                Pay Coins
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

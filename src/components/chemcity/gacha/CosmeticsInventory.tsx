@@ -347,7 +347,6 @@ export function CosmeticsInventory() {
   const user = useChemCityStore((s) => s.user);
   const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
   const cosmeticsMap = useChemCityStore((s) => (s as any).cosmeticsMap as Map<string, Cosmetic> | undefined);
-  const navigateToGacha = useChemCityStore((s) => s.navigateToGacha);
 
   const ownedSet = new Set<string>((user as any)?.ownedCosmetics ?? []);
   const equippedCosmetics = (user as any)?.equippedCosmetics ?? {};
@@ -434,12 +433,6 @@ export function CosmeticsInventory() {
             <InfoRow label="Avatar" value={equippedAvatar?.name ?? 'None'} rarity={equippedAvatar?.rarity} />
             <InfoRow label="Background" value={equippedBg?.name ?? 'None'} rarity={equippedBg?.rarity} />
           </div>
-          <button
-            onClick={navigateToGacha}
-            style={{ width: '100%', padding: '10px', borderRadius: 12, fontSize: 13, fontWeight: 700, background: 'rgba(118,168,165,0.12)', border: `1.5px solid ${BRAND.border}`, color: BRAND.teal, cursor: 'pointer' }}
-          >
-            🎟 Get More in Gacha
-          </button>
           <AvatarTunerButton
             avatarId={tunerAvatar?.id}
             avatarImageUrl={tunerAvatar?.imageUrl}
@@ -502,9 +495,6 @@ export function CosmeticsInventory() {
                 <span style={{ fontSize: 40 }}>🎁</span>
                 <p style={{ fontWeight: 700, fontSize: 14, color: BRAND.teal, margin: 0 }}>No {activeTab} yet</p>
                 <p style={{ fontSize: 12, color: 'rgba(118,168,165,0.6)', margin: 0, textAlign: 'center' }}>Pull in the Gacha or browse the Shop!</p>
-                <button onClick={navigateToGacha} style={{ marginTop: 4, padding: '10px 20px', borderRadius: 12, fontSize: 13, fontWeight: 700, background: BRAND.teal, color: '#0a1a18', cursor: 'pointer', border: 'none' }}>
-                  Go to Gacha
-                </button>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8 }}>

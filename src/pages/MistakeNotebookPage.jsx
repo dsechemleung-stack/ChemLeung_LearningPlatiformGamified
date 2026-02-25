@@ -707,7 +707,9 @@ function getSrsBucket(card) {
 }
 
 function matchesSrsPresence(row, srsPresence) {
-  if (srsPresence === 'in_srs')     return row?.srsIsActive === true;
+  if (srsPresence === 'in_srs') {
+    return row?.srsIsActive === true || row?.hasSrsCard === true || !!row?.srsCardId;
+  }
   if (srsPresence === 'not_in_srs') return (row?.srsBucket || 'not_in_srs') === 'not_in_srs';
   return true;
 }
@@ -765,8 +767,9 @@ function buildCountQuery(uid, { datePeriod, selectedTopics, selectedSubtopics, s
   const lvls = selectedMasteryLevels.filter(Boolean);
   if (srsPresence !== 'not_in_srs' && lvls.length === 1) parts.push(where('srsBucket', '==', lvls[0]));
 
-  if (srsPresence === 'in_srs')     parts.push(where('srsIsActive', '==', true));
-  if (srsPresence === 'not_in_srs') parts.push(where('srsBucket', '==', 'not_in_srs'));
+  if (srsPresence === 'in_srs')     parts.push(where('hasSrsCard', '==', true));
+  // NOTE: For 'not_in_srs', legacy docs may not have srsBucket field at all.
+  // Firestore cannot query for missing fields, so we intentionally do NOT add a where() here.
 
   return query(...parts);
 }
@@ -850,8 +853,8 @@ async function fetchMistakesForQuiz(uid, filters, questionCount, questionsBank) 
 
     if (srsPresence !== 'not_in_srs' && lvls.length === 1) parts.push(where('srsBucket', '==', lvls[0]));
 
-    if (srsPresence === 'in_srs')     parts.push(where('srsIsActive', '==', true));
-    if (srsPresence === 'not_in_srs') parts.push(where('srsBucket', '==', 'not_in_srs'));
+    if (srsPresence === 'in_srs')     parts.push(where('hasSrsCard', '==', true));
+    // NOTE: For 'not_in_srs', we filter client-side to include legacy docs missing srsBucket.
   }
 
   const makeFiltered = (inRows) => {
@@ -1501,11 +1504,12 @@ export default function MistakeNotebookPage({ questions = [] }) {
 
   useEffect(() => {
     if (!location?.search) {
+      if (showCustomReview) return;
       setShowHome(true);
       setShowCustomReview(false);
       setActiveTab(null);
     }
-  }, [location?.search]);
+  }, [location?.search, showCustomReview]);
 
   useEffect(() => {
     const nonce = location?.state?.forceNotebookHome;

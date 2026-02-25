@@ -4,6 +4,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { forumService, canEditComment, editTimeRemaining, EDIT_WINDOW_MS } from '../services/forumService';
 import { MessageSquare, Send, Edit2, Trash2, ThumbsUp, X, AlertCircle, Clock, Lock } from 'lucide-react';
 import ChemCityUserProfileIcon from './ChemCityUserProfileIcon';
+import ChemistryLoading from './ChemistryLoading';
 
 function EditTimer({ createdAt, onExpire }) {
   const { t, tf } = useLanguage();
@@ -363,12 +364,12 @@ export default function QuestionForum({ question, onClose }) {
         <div className="p-6">
           {loading ? (
             <div className="flex justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-lab-blue" />
+              <ChemistryLoading persistKey="question_forum_comments" className="text-center" showText={false} />
             </div>
           ) : comments.length === 0 ? (
             <div className="text-center py-12">
               <MessageSquare className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-400 text-lg mb-2">{t('forum.noCommentsYet')}</p>
+              <p className="text-slate-500 font-bold">{t('forum.noCommentsYet')}</p>
               <p className="text-slate-500 text-sm">{t('forum.beFirstToShareThoughts')}</p>
             </div>
           ) : (

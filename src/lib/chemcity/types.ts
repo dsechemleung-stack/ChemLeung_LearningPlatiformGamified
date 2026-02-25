@@ -92,6 +92,7 @@ export interface PlaceDocument {
  */
 export interface UserChemCityData {
   userId: string;
+  growthTokens?: number;
   currencies: {
     coins: number;
     diamonds: number;
@@ -288,8 +289,8 @@ export interface GachaDrawResponse {
   results: GachaDrawResult[];
   newBalance: {
     coins: number;
-    diamonds: number;
     tickets: number;
+    diamonds?: number;
   };
   newGachaState: {
     sinceEpic: number;

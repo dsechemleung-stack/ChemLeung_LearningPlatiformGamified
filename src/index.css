@@ -315,6 +315,11 @@ body {
   position: relative;
   width: 46px;
   height: 46px;
+  min-width: 46px;
+  min-height: 46px;
+  aspect-ratio: 1 / 1;
+  flex: 0 0 46px;
+  box-sizing: border-box;
   border-radius: 9999px;
   display: inline-flex;
   align-items: center;
@@ -433,6 +438,45 @@ body {
   gap: 12px;
 }
 
+.chem-loading--brand {
+  gap: 14px;
+}
+
+.chem-loading-logo {
+  position: relative;
+  width: 192px;
+  height: 192px;
+  display: grid;
+  place-items: center;
+}
+
+.chem-loading-logo-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.0) 55%),
+    conic-gradient(from 10deg, rgba(118, 168, 165, 0.95), rgba(118, 168, 165, 0.25), rgba(118, 168, 165, 0.95));
+  filter: blur(0.2px);
+  opacity: 0.95;
+  animation: chem-loading-ring 1400ms ease-in-out infinite;
+}
+
+.chem-loading-logo-img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 144px;
+  height: 144px;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  object-position: center;
+  border-radius: 36px;
+  box-shadow:
+    0 16px 38px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
 .chem-loading-visual {
   width: min(360px, 92vw);
   height: 56px;
@@ -443,7 +487,22 @@ body {
 
 .chem-loading-text {
   font-weight: 800;
-  color: rgb(51 65 85);
+  color: rgba(7, 94, 84, 0.92);
+}
+
+@keyframes chem-loading-ring {
+  0% {
+    transform: scale(0.98) rotate(0deg);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.03) rotate(180deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.98) rotate(360deg);
+    opacity: 0.75;
+  }
 }
 
 .chem-flame-track {

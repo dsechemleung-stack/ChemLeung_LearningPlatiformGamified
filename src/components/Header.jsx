@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle, Building2 } from 'lucide-react';
+import { Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, Coins, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle, Building2, Archive } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 import { forumService } from '../services/forumService';
 
@@ -20,6 +20,7 @@ export default function Header() {
     const [unreadCount, setUnreadCount] = useState(0);
     const [notifs, setNotifs] = useState([]);
     const [notifLimit, setNotifLimit] = useState(10);
+    const [showLangSubmenu, setShowLangSubmenu] = useState(false);
     const [showDeleteAllNotifsConfirm, setShowDeleteAllNotifsConfirm] = useState(false);
 
     useEffect(() => {
@@ -91,12 +92,15 @@ export default function Header() {
         }
     };
 
-    // Get tokens from userProfile with real-time sync
-    const tokens = userProfile?.tokens;
-    const tokensDisplay =
-        profileError && (tokens === undefined || tokens === null)
+    const diamonds = userProfile?.tokens;
+    const diamondsDisplay =
+        profileError && (diamonds === undefined || diamonds === null)
             ? '—'
-            : (tokens ?? 0);
+            : (diamonds ?? 0);
+
+    const coins = Number(userProfile?.chemcity?.currencies?.coins ?? 0);
+
+    const nameRaw = (currentUser?.displayName || t('common.anonymous') || '').trim();
 
     if (location.pathname === '/login' || location.pathname === '/register') {
         return null;
@@ -154,34 +158,36 @@ export default function Header() {
         <>
             <header className="fixed top-0 left-0 right-0 z-50 py-1">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="floating-island island-amber w-full md:mx-auto px-3 sm:px-3 py-0.5">
-                        <div className="floating-island-content flex justify-between items-center h-14 gap-4 min-w-0">
-                        {/* Logo and Brand */}
-                        <div className="flex-shrink min-w-0">
-                            <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavigation('/dashboard')}>
-                                <div className="transition-transform active:scale-95">
-                                    <img
-                                        src="/ChemistreeIcon_square.png"
-                                        alt="Chemistree"
-                                        className="w-10 h-10"
-                                        draggable="false"
-                                    />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <h1 className="text-xl font-black leading-tight whitespace-nowrap chem-sans" style={{ color: '#76A8A5' }}>
-                                        Chemistree
-                                    </h1>
-                                    <p className="text-[10px] text-slate-500 font-bold -mt-1 hidden sm:block whitespace-nowrap overflow-hidden text-ellipsis chem-sans">
-                                        by ChemLeung
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                    <div className="w-full flex justify-center">
+                        <div className="inline-flex items-center gap-2 w-[min(100%,1000px)]">
+                            <div className="floating-island island-amber flex-1 px-3 sm:px-3 py-0.5">
+                                <div className="floating-island-content flex justify-between items-center h-14 gap-4 min-w-0">
+                                    {/* Logo and Brand */}
+                                    <div className="flex-shrink-0 min-w-0">
+                                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavigation('/dashboard')}>
+                                            <div className="transition-transform active:scale-95">
+                                                <img
+                                                    src="/ChemistreeIcon_square.png"
+                                                    alt="Chemistree"
+                                                    className="w-10 h-10"
+                                                    draggable="false"
+                                                />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <h1 className="text-xl font-black leading-tight whitespace-nowrap chem-sans" style={{ color: '#76A8A5' }}>
+                                                    Chemistree
+                                                </h1>
+                                                <p className="text-[10px] text-slate-500 font-bold -mt-1 hidden sm:block whitespace-nowrap overflow-hidden text-ellipsis chem-sans">
+                                                    by ChemLeung
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
 
                         {/* Desktop Navigation Links */}
                         {currentUser && (
-                            <div className="hidden md:flex flex-1 justify-center">
-                                <nav className="flex items-center gap-4">
+                            <div className="hidden md:flex flex-1 min-w-0 justify-center">
+                                <nav className="flex items-center gap-4 px-1">
                                 <button
                                     onClick={() => handleNavigation('/dashboard')}
                                     className={`nav-orb ${isActive('/dashboard') ? 'bg-lab-blue text-white' : 'bg-white/70 text-slate-800 hover:bg-white/80'}`}
@@ -245,23 +251,12 @@ export default function Header() {
                                 {/* TOKENS */}
                                 <button
                                     onClick={() => handleNavigation('/store')}
-                                    className={`nav-orb ${isActive('/store') ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'bg-gradient-to-r from-amber-400 to-orange-500 text-white'}`}
+                                    className={`nav-orb ${isActive('/store') ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white' : 'bg-white/70 text-slate-800 hover:bg-white/80'}`}
                                     aria-label={t('store.title')}
                                     title={t('store.title')}
                                 >
-                                    <Gem size={20} fill="currentColor" />
-                                    <span className="nav-orb-badge bg-slate-900/90">{tokensDisplay}</span>
+                                    <ShoppingBag size={20} />
                                     <span className="nav-orb-label font-extrabold text-slate-900">{t('store.title')}</span>
-                                </button>
-
-                                <button
-                                    onClick={toggleLanguage}
-                                    className="nav-orb bg-gradient-to-r from-slate-600 to-slate-700 text-white"
-                                    aria-label={isEnglish ? t('auth.switchToChinese') : t('auth.switchToEnglish')}
-                                    title={isEnglish ? t('auth.switchToChinese') : t('auth.switchToEnglish')}
-                                >
-                                    <Languages size={20} strokeWidth={3} />
-                                    <span className="nav-orb-label font-extrabold text-slate-900">{isEnglish ? t('auth.languageNameChinese') : t('auth.languageNameEnglish')}</span>
                                 </button>
                                 </nav>
                             </div>
@@ -269,7 +264,7 @@ export default function Header() {
 
                         {/* Mobile + Desktop User Menu */}
                         {currentUser && (
-                            <div className="flex items-center gap-2 flex-shrink min-w-0 justify-end">
+                            <div className="flex items-center gap-2 flex-shrink-0 min-w-0 justify-end">
                                 <button
                                     onClick={() => setShowMobileNav(!showMobileNav)}
                                     className="md:hidden p-2 rounded-lg hover:bg-slate-100 transition-all active:scale-95"
@@ -278,7 +273,7 @@ export default function Header() {
                                 </button>
 
                                 {/* Notifications (right side) */}
-                                <div className="relative">
+                                <div className="relative flex-shrink-0">
                                     <button
                                         onClick={() => setShowNotifPanel(v => !v)}
                                         className="relative p-2 rounded-lg hover:bg-white/60 transition-all active:scale-[0.99]"
@@ -378,30 +373,33 @@ export default function Header() {
                                     )}
                                 </div>
 
-                                <div className="relative">
+                                <div className="relative flex-shrink-0">
                                     <button
                                         onClick={() => setShowUserMenu(!showUserMenu)}
-                                        className="flex items-center gap-3 px-3 py-1.5 rounded-xl hover:bg-white/60 transition-all active:scale-[0.99] border-2 border-transparent hover:border-white/60 max-w-[240px] sm:max-w-[280px]"
+                                        className="flex items-center gap-3 px-3 py-1.5 rounded-xl hover:bg-white/60 transition-all active:scale-[0.99] border-2 border-transparent hover:border-white/60 w-[180px] lg:w-[200px]"
                                         title={currentUser.displayName || currentUser.email || t('common.anonymous')}
                                     >
                                         <ChemCityUserProfileIcon
                                             userId={currentUser?.uid}
                                             displayName={currentUser?.displayName || currentUser?.email || t('common.anonymous')}
-                                            size={32}
+                                            size={40}
                                             className="shadow-md flex-shrink-0"
                                         />
                                         <div className="hidden sm:block text-left min-w-0">
                                             <p
-                                                className="text-sm font-bold text-slate-900 truncate max-w-[140px] lg:max-w-[180px]"
-                                                title={currentUser.displayName || t('common.anonymous')}
+                                                className="text-[11px] font-bold text-slate-900 leading-[12px]"
+                                                title={nameRaw}
+                                                style={{
+                                                    display: '-webkit-box',
+                                                    WebkitBoxOrient: 'vertical',
+                                                    WebkitLineClamp: 2,
+                                                    overflow: 'hidden',
+                                                    overflowWrap: 'anywhere',
+                                                    wordBreak: 'break-word',
+                                                    maxWidth: '90px',
+                                                }}
                                             >
-                                                {currentUser.displayName || t('common.anonymous')}
-                                            </p>
-                                            <p
-                                                className="text-xs text-slate-700 truncate max-w-[140px] lg:max-w-[180px]"
-                                                title={currentUser.email || ''}
-                                            >
-                                                {currentUser.email}
+                                                {nameRaw}
                                             </p>
                                         </div>
                                         <ChevronDown size={16} className="text-slate-600 hidden sm:block flex-shrink-0" />
@@ -442,6 +440,24 @@ export default function Header() {
                                                     </span>
                                                 </button>
                                                 <button
+                                                    onClick={() => handleNavigation('/inventory')}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left border-t border-slate-100 active:scale-[0.99]"
+                                                >
+                                                    <Archive size={18} className="text-slate-700" />
+                                                    <span className="font-bold text-slate-900">
+                                                        Inventory
+                                                    </span>
+                                                </button>
+                                                <button
+                                                    onClick={() => setShowLangSubmenu(true)}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left border-t border-slate-100 active:scale-[0.99]"
+                                                >
+                                                    <Languages size={18} className="text-slate-700" strokeWidth={3} />
+                                                    <span className="font-bold text-slate-900">
+                                                        {t('header.languageMenuLabel')}
+                                                    </span>
+                                                </button>
+                                                <button
                                                     onClick={handleLogoutClick}
                                                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-red-50 transition-all text-left border-t border-slate-100 active:scale-[0.99]"
                                                 >
@@ -456,9 +472,27 @@ export default function Header() {
                                 </div>
                             </div>
                         )}
+                                </div>
+                            </div>
+
+                            {currentUser && (
+                                <div className="floating-island island-amber px-2 py-1 flex flex-col gap-1 flex-shrink-0">
+                                    <div className="floating-island-content flex flex-col items-start gap-1">
+                                        <div className="flex items-center gap-1 justify-start">
+                                        <Gem size={12} className="text-cyan-500" />
+                                        <span className="text-[11px] font-black text-slate-900 tabular-nums">{Number(diamondsDisplay || 0).toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 justify-start">
+                                        <Coins size={12} className="text-amber-700" />
+                                        <span className="text-[11px] font-black text-slate-900 tabular-nums">{coins.toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
-                </div>
+            </header>
 
                 {/* Mobile Navigation Menu */}
                 {showMobileNav && currentUser && (
@@ -470,12 +504,12 @@ export default function Header() {
                         <div className="md:hidden fixed top-[64px] left-0 right-0 bg-white border-b-2 border-slate-200 shadow-xl z-40 animate-in slide-in-from-top duration-200">
                             <nav className="flex flex-col p-2">
                                 {/* Token Display - Mobile */}
-                                <div className="mb-2 p-3 bg-gradient-to-r from-amber-400 to-orange-500 rounded-lg">
+                                <div className="mb-2 p-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg">
                                     <div className="flex items-center justify-between text-white">
                                         <div className="flex items-center gap-2">
                                         <Gem size={20} fill="currentColor" />
-                                        <span className="font-black text-lg">{tokensDisplay}</span>
-                                        <span className="text-sm opacity-90">{t('header.tokens')}</span>
+                                        <span className="font-black text-lg">{diamondsDisplay}</span>
+                                        <span className="text-sm opacity-90">Diamonds</span>
                                     </div>
                                     <button
                                         onClick={() => handleNavigation('/store')}
@@ -566,23 +600,10 @@ export default function Header() {
                                     <History size={20} />
                                     <span>{t('history.title')}</span>
                                 </button>
-
-                                <button
-                                    onClick={() => {
-                                        toggleLanguage();
-                                        setShowMobileNav(false);
-                                    }}
-                                    className="flex items-center gap-3 px-4 py-3 rounded-lg font-bold transition-all active:scale-[0.99] bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:from-amber-500 hover:to-orange-600 mt-2 shadow-md"
-                                >
-                                    <Languages size={20} strokeWidth={3} />
-                                    <span>{isEnglish ? t('auth.languageNameChinese') : t('auth.languageNameEnglish')}</span>
-                                </button>
                             </nav>
                         </div>
                     </>
                 )}
-            </header>
-
             {/* Logout Confirmation Modal */}
             {showLogoutModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -622,6 +643,51 @@ export default function Header() {
                                     {t('nav.logout')}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showLangSubmenu && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setShowLangSubmenu(false)}>
+                    <div className="absolute inset-0 bg-black/40" />
+                    <div
+                        className="relative w-full max-w-xs bg-white rounded-2xl shadow-2xl border-2 border-slate-200 overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="p-4 border-b bg-slate-50 flex items-center gap-3">
+                            <Languages className="text-slate-700" size={18} strokeWidth={3} />
+                            <h4 className="font-black text-slate-800">{t('header.languageDialogTitle')}</h4>
+                        </div>
+                        <div className="p-2 flex flex-col gap-2">
+                            <button
+                                onClick={() => {
+                                    if (!isEnglish) toggleLanguage();
+                                    setShowLangSubmenu(false);
+                                }}
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold transition-all ${isEnglish ? 'bg-lab-blue text-white' : 'hover:bg-slate-100 text-slate-900'}`}
+                            >
+                                <span>{t('header.languageOptionEnglish')}</span>
+                                {isEnglish && <span className="text-white">✓</span>}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (isEnglish) toggleLanguage();
+                                    setShowLangSubmenu(false);
+                                }}
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl font-bold transition-all ${!isEnglish ? 'bg-lab-blue text-white' : 'hover:bg-slate-100 text-slate-900'}`}
+                            >
+                                <span>{t('header.languageOptionTraditionalChinese')}</span>
+                                {!isEnglish && <span className="text-white">✓</span>}
+                            </button>
+                        </div>
+                        <div className="p-4 border-t bg-white">
+                            <button
+                                onClick={() => setShowLangSubmenu(false)}
+                                className="w-full px-4 py-2 rounded-lg font-bold bg-slate-200 text-slate-700 hover:bg-slate-300 transition-all"
+                            >
+                                {t('common.cancel')}
+                            </button>
                         </div>
                     </div>
                 </div>

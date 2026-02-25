@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Coins, Gem, CheckCircle, FlaskConical, Star, BookOpen, Zap } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { getEffectiveCoinPrice } from '../../lib/chemcity/shop';
+import { useAuth } from '../../contexts/AuthContext';
 
 function needsAnonymousCrossOrigin(url?: string | null): boolean {
   if (!url) return false;
@@ -23,6 +24,7 @@ const RARITY_CONFIG: Record<string, {
 type PurchaseCurrency = 'coins' | 'diamonds';
 
 export const PurchaseConfirmModal: React.FC = () => {
+  const { userProfile } = useAuth() as any;
   const user                  = useChemCityStore(s => s.user);
   const slimItems             = useChemCityStore(s => s.slimItems);
   const storePurchaseItemId   = useChemCityStore(s => s.storePurchaseItemId);
@@ -49,7 +51,7 @@ export const PurchaseConfirmModal: React.FC = () => {
   const rawDiamond = slim?.shopData?.diamondCost;
   const effCoin  = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
   const coins    = user?.currencies.coins ?? 0;
-  const diamonds = user?.currencies.diamonds ?? 0;
+  const diamonds = Number(userProfile?.tokens ?? 0);
   const canAffordCoins    = effCoin != null && coins >= effCoin;
   const canAffordDiamonds = rawDiamond != null && diamonds >= rawDiamond;
 

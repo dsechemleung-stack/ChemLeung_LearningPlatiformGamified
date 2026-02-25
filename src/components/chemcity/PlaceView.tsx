@@ -3,6 +3,7 @@
 // ==============================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
+import { useAuth } from '../../contexts/AuthContext';
 import { ChemCard } from './ChemCard';
 
 function needsAnonymousCrossOrigin(url?: string | null): boolean {
@@ -320,13 +321,15 @@ const StripSlot: React.FC<StripSlotProps> = ({
 
 // ─── Main PlaceView ───────────────────────────────────────────────────────────
 export const PlaceView: React.FC = () => {
+  const { userProfile } = useAuth() as any;
   const user = useChemCityStore((s) => s.user);
-  const places = useChemCityStore((s) => s.places);
   const slimItems = useChemCityStore((s) => s.slimItems);
+  const places = useChemCityStore((s) => s.places);
   const selectedPlaceId = useChemCityStore((s) => s.selectedPlaceId);
+  const navigateToMap = useChemCityStore((s) => s.navigateToMap);
+  const unlockSlot = useChemCityStore((s) => s.unlockSlot);
   const openCardPicker = useChemCityStore((s) => s.openCardPicker);
   const openCardDetail = useChemCityStore((s) => s.openCardDetail);
-  const unlockSlot = useChemCityStore((s) => s.unlockSlot);
   const navigateToGasStationDistributor = useChemCityStore((s) => s.navigateToGasStationDistributor);
 
   const [unlockingSlotId, setUnlockingSlotId] = useState<string | null>(null);
@@ -438,7 +441,7 @@ export const PlaceView: React.FC = () => {
   };
 
   const coins = user.currencies.coins;
-  const diamonds = user.currencies.diamonds;
+  const diamonds = Number(userProfile?.tokens ?? 0);
   const isPlaceUnlocked = place.unlockCost === 0 || user.unlockedPlaces.includes(place.id);
 
   const handleUnlockSlot = async (slotId: string) => {

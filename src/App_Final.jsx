@@ -22,11 +22,13 @@ import DebugDashboard from './pages/DebugDashboard';
 import SRSReviewPage from './pages/SRSReviewPage';
 import { useQuizData } from './hooks/useQuizData';
 import ChemistryLoading from './components/ChemistryLoading';
-import ChemStore from './components/ChemStore';
+import UnifiedChemStore from './components/UnifiedChemStore';
 import TokenLog from './components/TokenLog';
 import { ChemCityRoot } from './components/chemcity/ChemCityRoot';
 import LandingPage from './pages/LandingPage';
 import VisionPage from './pages/VisionPage';
+import GachaPage from './pages/GachaPage';
+import InventoryPage from './pages/InventoryPage';
 
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
 
@@ -35,6 +37,9 @@ function AppContent() {
   const { questions, loading, error } = useQuizData(SHEET_URL);
   const isNotebookRoute = location.pathname === '/notebook';
   const isChemCityRoute = location.pathname === '/chemcity';
+  const isStoreRoute = location.pathname === '/store';
+  const isGachaRoute = location.pathname === '/gacha';
+  const isInventoryRoute = location.pathname === '/inventory';
   const noShellRoutes = new Set(['/', '/vision', '/dashboard', '/login', '/register', '/millionaire']);
   const useNoShell = noShellRoutes.has(location.pathname);
   const hideHeaderRoutes = new Set(['/', '/vision', '/login', '/register', '/millionaire']);
@@ -63,7 +68,7 @@ function AppContent() {
     <>
       {showHeader && <Header />}
       <div
-        className={`${showHeader && !isChemCityRoute ? 'pt-[76px]' : ''} ${isChemCityRoute ? 'bg-slate-950' : ''} ${(useNoShell || isNotebookRoute || isChemCityRoute) ? '' : 'container mx-auto px-4 py-6'}`.trim()}
+        className={`${showHeader && !isChemCityRoute && !isGachaRoute ? 'pt-[76px]' : ''} ${isChemCityRoute || isGachaRoute ? 'bg-slate-950' : ''} ${(useNoShell || isNotebookRoute || isChemCityRoute || isGachaRoute || isStoreRoute || isInventoryRoute) ? '' : 'container mx-auto px-4 py-6'}`.trim()}
       >
         <Routes>
           {/* Public Routes */}
@@ -199,7 +204,25 @@ function AppContent() {
             path="/store"
             element={
               <PrivateRoute>
-                <ChemStore />
+                <UnifiedChemStore />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/gacha"
+            element={
+              <PrivateRoute>
+                <GachaPage />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/inventory"
+            element={
+              <PrivateRoute>
+                <InventoryPage />
               </PrivateRoute>
             }
           />
