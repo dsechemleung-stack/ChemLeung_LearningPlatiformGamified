@@ -26,6 +26,7 @@ const P = {
   sage: '#C5D7B5',
   sageDark: '#a8c494',
   teal: '#76A8A5',
+  tealDark: '#5d9794',
   tealLight: 'rgba(118,168,165,0.12)',
   border: 'rgba(118,168,165,0.25)',
   text: '#2d4a3e',
@@ -234,9 +235,9 @@ function WardrobePanel({ cosmeticsMap, userProfile, gender, displayName, equippe
             flex: 1,
             padding: '9px 10px',
             borderRadius: 10,
-            border: 'none',
-            background: !hasPending || equipping ? 'rgba(118,168,165,0.35)' : `linear-gradient(135deg, ${P.teal}, #5d9794)`,
-            color: '#fff',
+            border: !hasPending || equipping ? `1.5px solid ${P.border}` : 'none',
+            background: !hasPending || equipping ? 'rgba(15,23,42,0.08)' : `linear-gradient(135deg, ${P.teal}, #5d9794)`,
+            color: !hasPending || equipping ? P.text : '#fff',
             fontFamily: "'Quicksand',sans-serif",
             fontWeight: 900,
             fontSize: 12,
@@ -791,36 +792,43 @@ export default function ProfilePage() {
                         type="button"
                         onClick={() => setShowAllTopicExceptions((v) => !v)}
                         style={{
-                          padding: '6px 10px',
-                          borderRadius: 10,
+                          padding: '5px 10px',
+                          borderRadius: 9,
                           border: `1.5px solid ${P.border}`,
                           background: 'rgba(245,249,246,0.8)',
                           color: P.text,
                           fontFamily: "'Quicksand',sans-serif",
                           fontWeight: 700,
-                          fontSize: 12,
+                          fontSize: 11,
                           cursor: 'pointer',
                           marginBottom: 8,
                         }}
                       >
-                        {showAllTopicExceptions ? t('common.showLess') : `${t('common.showAll')} (${learnedRangeTopics.length})`}
+                        {showAllTopicExceptions ? 'Show less' : `Show all (${learnedRangeTopics.length})`}
                       </button>
                     )}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                      gap: 6,
+                      maxHeight: showAllTopicExceptions ? 220 : 188,
+                      overflowY: 'auto',
+                      paddingRight: 2,
+                    }}>
                       {(showAllTopicExceptions ? learnedRangeTopics : learnedRangeTopics.slice(0, 8)).map(topic => {
                         const isExc = topicExceptions.includes(topic);
                         return (
                           <button key={topic} type="button" onClick={() => toggleTopicException(topic)} style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '8px 12px', borderRadius: 10, border: `1.5px solid`,
+                            padding: '6px 10px', borderRadius: 9, border: `1.5px solid`,
                             borderColor: isExc ? 'rgba(239,68,68,0.35)' : 'rgba(134,168,116,0.35)',
                             background: isExc ? 'rgba(239,68,68,0.05)' : 'rgba(134,168,116,0.06)',
                             color: isExc ? '#dc2626' : '#4a7c4e',
-                            fontFamily: "'Quicksand',sans-serif", fontWeight: 600, fontSize: 12,
+                            fontFamily: "'Quicksand',sans-serif", fontWeight: 700, fontSize: 11,
                             cursor: 'pointer', transition: 'all 0.15s', textAlign: 'left',
                           }}>
-                            <span>{topic}</span>
-                            {isExc ? <Lock size={13} /> : <Unlock size={13} />}
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{topic}</span>
+                            {isExc ? <Lock size={12} /> : <Unlock size={12} />}
                           </button>
                         );
                       })}

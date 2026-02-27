@@ -2,10 +2,10 @@
  * Quiz Completion Service - REFACTORED FOR JIT SRS
  * 
  * KEY CHANGES:
- * 1. ✅ Uses new SRS service for spaced repetition
- * 2. ✅ Creates completion events in calendar
- * 3. ✅ Records performance for AI recommendations
- * 4. ✅ No more pre-scheduling multiple reviews
+ * 1. Uses new SRS service for spaced repetition
+ * 2. Creates completion events in calendar
+ * 3. Records performance for AI recommendations
+ * 4. No more pre-scheduling multiple reviews
  */
 
 import { db } from '../firebase/config';
@@ -211,10 +211,7 @@ export async function logDetailedCompletion(userId, attemptId, completionData) {
   console.log('📝 Logging detailed completion to calendar:', completionEvent);
 
   try {
-    await setDoc(
-      doc(db, 'calendar_events', completionEvent.id),
-      completionEvent
-    );
+    await setDoc(doc(db, 'users', userId, 'calendar_events', completionEvent.id), completionEvent);
     console.log('✅ Completion logged to calendar');
   } catch (error) {
     console.error('❌ Error logging completion:', error);

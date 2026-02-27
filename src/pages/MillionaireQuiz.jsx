@@ -34,10 +34,6 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
   const { currentUser } = useAuth();
   const { t, tf } = useLanguage();
 
-  const QUESTION_HEIGHT = 240;
-  const ANSWER_HEIGHT = 66;
-  const ANSWER_GAP_Y = 10;
-
   const [loading, setLoading] = useState(true);
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -121,11 +117,30 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
+    const mq = window.matchMedia('(min-width: 640px)');
+
+    const apply = () => {
+      const short = window.innerHeight < 720;
+      document.body.style.overflow = mq.matches && !short ? 'hidden' : 'auto';
     };
+
+    apply();
+    try {
+      mq.addEventListener('change', apply);
+      return () => {
+        mq.removeEventListener('change', apply);
+        document.body.style.overflow = prev;
+      };
+    } catch {
+      mq.addListener(apply);
+      return () => {
+        mq.removeListener(apply);
+        document.body.style.overflow = prev;
+      };
+    }
   }, []);
 
   useEffect(() => {
@@ -375,6 +390,25 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
   };
 
   const isWide = useMediaQuery('(min-width: 768px)');
+  const isMobile = useMediaQuery('(max-width: 639px)');
+
+  const [viewportH, setViewportH] = useState(() => (typeof window === 'undefined' ? 800 : window.innerHeight));
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => setViewportH(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const isShortViewport = viewportH < 720;
+
+  const QUESTION_HEIGHT = isShortViewport
+    ? Math.max(130, Math.min(210, Math.floor(viewportH * 0.23)))
+    : (isMobile ? 200 : 240);
+  const ANSWER_HEIGHT = isShortViewport
+    ? Math.max(42, Math.min(62, Math.floor(viewportH * 0.07)))
+    : (isMobile ? 58 : 66);
+  const ANSWER_GAP_Y = 10;
 
   const fullQuestionSetText = useMemo(() => {
     if (!currentQuestion) return '';
@@ -590,9 +624,10 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
 
   return (
     <div
-      className="h-screen overflow-hidden text-white"
+      className="min-h-screen sm:h-screen overflow-y-auto text-white"
       style={{
-        background: 'radial-gradient(circle at top, #020230 0%, #000000 70%)'
+        background: 'radial-gradient(circle at top, #020230 0%, #000000 70%)',
+        overflowY: isShortViewport ? 'auto' : (isMobile ? 'auto' : 'hidden'),
       }}
     >
       <div className="max-w-7xl mx-auto px-4 py-4 h-full flex flex-col">
@@ -633,7 +668,7 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6 flex-1 min-h-0 pb-24">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6 flex-1 min-h-0 pb-24 sm:pb-6">
           {!victoryOverlay && (
             <div className="lg:col-span-2 flex items-center justify-between gap-3 flex-none">
               <div className="flex flex-wrap items-center gap-3">
@@ -768,9 +803,10 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
             </div>
 
             {/* Middle Expand Area: Answers OR Decision Card */}
-            <div className="flex-1 min-h-0 flex flex-col justify-center">
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div style={{ flex: 1, minHeight: isShortViewport ? 0 : 8 }} />
               {!victoryOverlay ? (
-                <div className="flex-1 min-h-0">
+                <div className="flex-none">
                   <div
                     className="w-[92%] mx-auto flex justify-end mb-2"
                     style={{ marginRight: 'auto', marginLeft: 'auto' }}
@@ -792,9 +828,10 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
                       width: '92%',
                       marginLeft: 'auto',
                       marginRight: 'auto',
+                      marginBottom: 18,
                       gridTemplateRows: `${ANSWER_HEIGHT}px ${ANSWER_HEIGHT}px`,
                       gridAutoRows: `${ANSWER_HEIGHT}px`,
-                      maxHeight: `${(ANSWER_HEIGHT * 2) + ANSWER_GAP_Y}px`
+                      paddingBottom: 18,
                     }}
                   >
                     {(['A', 'B', 'C', 'D']).map((opt) => (
@@ -863,15 +900,18 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
             {/* Bottom: Lock In + Bank (anchored above dock) */}
             <div className="flex-none">
               {!victoryOverlay && (
-                <button
-                  onClick={handleLockIn}
-                  disabled={!selectedOption || !!lockedOption || savingReward || gameOver}
-                  className={`w-full m-lockin-btn transition-all duration-500 ${
-                    isTimedQuestion ? 'm-lockin-btn-timed' : ''
-                  }`}
-                >
-                  {t('millionaire.lockIn')}
-                </button>
+                <div className="m-lockin-area">
+                  <button
+                    onClick={handleLockIn}
+                    disabled={!selectedOption || !!lockedOption || savingReward || gameOver}
+                    className={`w-full m-lockin-btn transition-all duration-500 ${
+                      isTimedQuestion ? 'm-lockin-btn-timed' : ''
+                    }`}
+                    style={isShortViewport ? { padding: '12px 18px', fontSize: 16 } : undefined}
+                  >
+                    {t('millionaire.lockIn')}
+                  </button>
+                </div>
               )}
 
               <div className="text-sm text-white/70 mt-3">

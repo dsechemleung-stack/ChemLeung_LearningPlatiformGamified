@@ -10,6 +10,31 @@ function needsAnonymousCrossOrigin(url?: string | null): boolean {
   return u.includes('drive.google.com') || u.includes('googleusercontent.com');
 }
 
+function renderBoldMarkdown(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  const re = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(text)) !== null) {
+    const start = match.index;
+    const end = re.lastIndex;
+
+    if (start > lastIndex) {
+      parts.push(text.slice(lastIndex, start));
+    }
+
+    parts.push(<strong key={`b-${start}`}>{match[1]}</strong>);
+    lastIndex = end;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length ? <>{parts}</> : text;
+}
+
 const RARITY_CONFIG: Record<string, {
   borderColor: string; glowColor: string; bgGradient: string; artBg: string;
   badgeColor: string; badgeText: string;
@@ -231,7 +256,7 @@ export const PurchaseConfirmModal: React.FC = () => {
 
                 {full?.description && (
                   <p style={{ color:'rgba(255,255,255,0.6)', fontSize:12, lineHeight:1.7, margin:'0 0 12px', fontFamily:"'Quicksand',sans-serif" }}>
-                    {full.description}
+                    {renderBoldMarkdown(full.description)}
                   </p>
                 )}
 
@@ -241,7 +266,7 @@ export const PurchaseConfirmModal: React.FC = () => {
                       <FlaskConical size={11} color="#60a5fa" />
                       <span style={{ color:'#60a5fa', fontSize:10, fontWeight:800, textTransform:'uppercase', letterSpacing:'0.07em' }}>Fun Fact</span>
                     </div>
-                    <p style={{ color:'rgba(255,255,255,0.65)', fontSize:11, lineHeight:1.6, margin:0 }}>{full.educational.funFact}</p>
+                    <p style={{ color:'rgba(255,255,255,0.65)', fontSize:11, lineHeight:1.6, margin:0 }}>{renderBoldMarkdown(full.educational.funFact)}</p>
                   </div>
                 )}
 

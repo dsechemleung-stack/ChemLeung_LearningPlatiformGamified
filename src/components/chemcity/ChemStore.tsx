@@ -253,6 +253,8 @@ export const ChemStore: React.FC = () => {
                   const rawDiamond = item.shopData?.diamondCost;
                   const effCoin = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
                   const coinSaved = rawCoin != null && effCoin != null ? rawCoin - effCoin : 0;
+                  const formulaText = String(item.chemicalFormula ?? '');
+                  const shouldMarquee = formulaText.length >= 18;
 
                   return (
                     <div key={item.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: '100%', maxWidth: 160 }}>
@@ -312,7 +314,7 @@ export const ChemStore: React.FC = () => {
                             <img
                               src={item.imageUrl}
                               alt={item.name}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center' }}
                               {...(needsAnonymousCrossOrigin(item.imageUrl)
                                 ? { crossOrigin: 'anonymous' as const, referrerPolicy: 'no-referrer' as const }
                                 : {})}
@@ -325,9 +327,52 @@ export const ChemStore: React.FC = () => {
                         </div>
 
                         {/* Name */}
-                        <div style={{ padding: '0 10px 4px', textAlign: 'center', position: 'relative', zIndex: 2 }}>
+                        <div style={{ padding: '0 10px 6px', textAlign: 'center', position: 'relative', zIndex: 2 }}>
                           <div style={{ color: '#f1f5f9', fontSize: 11, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                          <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 9, fontFamily: 'monospace', marginTop: 1 }}>{item.chemicalFormula}</div>
+                          {shouldMarquee ? (
+                            <div className="chemcity-marquee" style={{
+                              marginTop: 2,
+                              height: 12,
+                              overflow: 'hidden',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              <div className="chemcity-marquee__track" style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 18,
+                              }}>
+                                <span className="chemcity-marquee__text" style={{
+                                  color: 'rgba(255,255,255,0.60)',
+                                  fontSize: 8,
+                                  fontWeight: 700,
+                                  fontFamily: "'Quicksand',sans-serif",
+                                  lineHeight: '12px',
+                                  paddingBottom: 1,
+                                }}>{formulaText}</span>
+                                <span className="chemcity-marquee__text" style={{
+                                  color: 'rgba(255,255,255,0.60)',
+                                  fontSize: 8,
+                                  fontWeight: 700,
+                                  fontFamily: "'Quicksand',sans-serif",
+                                  lineHeight: '12px',
+                                  paddingBottom: 1,
+                                }}>{formulaText}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{
+                              color: 'rgba(255,255,255,0.55)',
+                              fontSize: 8,
+                              fontWeight: 700,
+                              fontFamily: "'Quicksand',sans-serif",
+                              marginTop: 2,
+                              lineHeight: '12px',
+                              paddingBottom: 1,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>{formulaText}</div>
+                          )}
                         </div>
 
                         {/* Rarity footer */}
@@ -447,7 +492,15 @@ export const ChemStore: React.FC = () => {
           )}
         </div>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes chemcityMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        .chemcity-marquee__track { animation: chemcityMarquee 10s linear infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .chemcity-marquee__track { animation: none !important; }
+        }
+      `}</style>
     </>
   );
 };

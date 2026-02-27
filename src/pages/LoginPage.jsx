@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Mail, Lock, LogIn, AlertCircle, Languages } from 'lucide-react';
+import { Mail, Lock, LogIn, AlertCircle, Languages, ArrowLeft } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -109,6 +109,15 @@ export default function LoginPage() {
           position: fixed; top: 24px; right: 24px; z-index: 50;
         }
         .lang-btn:hover { background: rgba(118,168,165,0.15); border-color: rgba(118,168,165,0.4); color: #fff; }
+        .back-btn {
+          width: 46px; height: 46px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(255,255,255,0.06); color: #fff; display: flex; align-items: center;
+          justify-content: center; cursor: pointer; transition: transform .12s ease, background .12s ease;
+          position: fixed; top: 24px; left: 24px; z-index: 50; touch-action: manipulation;
+          backdrop-filter: blur(10px);
+        }
+        .back-btn:active { transform: scale(0.98); }
+        .back-btn:hover { background: rgba(255,255,255,0.10); }
       `}</style>
 
       {/* ── Background Video ── */}
@@ -124,6 +133,16 @@ export default function LoginPage() {
       <button className="lang-btn" onClick={toggleLanguage}>
         <Languages size={16} />
         <span>{isEnglish ? t('auth.switchToChinese') : t('auth.switchToEnglish')}</span>
+      </button>
+
+      {/* Back Button */}
+      <button
+        type="button"
+        onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+        className="back-btn"
+        title="Back"
+      >
+        <ArrowLeft size={18} />
       </button>
 
       {/* Card */}

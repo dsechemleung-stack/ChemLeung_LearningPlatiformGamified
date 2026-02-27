@@ -67,3 +67,5 @@ _______
 backup 21: Profilepage UI
 _______
 backup 22: unified chemstore, collection album, inventory
+_______
+backup 23: adding ChemCards (not yet assign topic), removed chemcity collection

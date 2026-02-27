@@ -175,9 +175,10 @@ export const ChemCityMap: React.FC = () => {
     <div className="relative w-full h-full flex-1">
       <PassiveIncomeCollector />
 
-      <div className="absolute inset-0 overflow-auto">
+      <div className="absolute inset-0 overflow-auto bg-[#f5f1e6]">
+        <div className="min-h-full w-full flex items-center justify-center p-4">
         <div
-          className="relative w-full"
+          className="relative inline-block rounded-3xl bg-[#f3ead8] border border-[#e7d8bf] shadow-xl p-3"
           onClick={(e) => {
             if (!isHotspotEditorEnabled) return;
             if (!editMode) return;
@@ -212,7 +213,7 @@ export const ChemCityMap: React.FC = () => {
             ref={mapImgRef}
             src={mapSrc}
             alt={mapLevel === 'world' ? 'ChemCity world map' : 'ChemCity home map'}
-            className="w-full h-auto"
+            className="block w-[min(1100px,92vw)] h-auto rounded-2xl"
             loading="lazy"
             onLoad={(e) => {
               const el = e.currentTarget;
@@ -345,6 +346,7 @@ export const ChemCityMap: React.FC = () => {
             ←
           </button>
         )}
+        </div>
         </div>
       </div>
     </div>

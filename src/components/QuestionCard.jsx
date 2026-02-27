@@ -131,8 +131,8 @@ const QuestionCard = React.memo(function QuestionCard({
       btn.setAttribute('data-image-src', src);
       btn.setAttribute('aria-label', 'Enlarge image');
       btn.setAttribute('title', 'Enlarge');
-      btn.className = 'inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900';
-      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>';
+      btn.className = 'inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900';
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>';
 
       const wrapper = document.createElement('span');
       wrapper.setAttribute('data-image-wrap', 'true');
@@ -226,7 +226,8 @@ const QuestionCard = React.memo(function QuestionCard({
           {/* Question Text - with whitespace-pre-wrap for line breaks */}
           <div className="mb-8">
             <div 
-              className="text-lg md:text-xl font-semibold leading-relaxed text-slate-800 prose prose-slate max-w-none whitespace-pre-wrap"
+              className="text-lg md:text-xl leading-relaxed text-slate-800 prose prose-slate max-w-none whitespace-pre-wrap"
+              style={{ fontFamily: 'Times New Roman, Times, serif' }}
               onClick={handleRichContentClick}
               dangerouslySetInnerHTML={{ __html: questionHtml }}
             />
@@ -259,6 +260,7 @@ const QuestionCard = React.memo(function QuestionCard({
                   className={`text-base md:text-lg whitespace-pre-wrap [&_img]:max-h-[120px] [&_img]:max-w-[calc(100%-3rem)] [&_img]:w-auto [&_img]:object-contain [&_img]:my-2 ${
                     selectedOption === opt.key ? 'text-lab-blue font-medium' : 'text-slate-700'
                   }`}
+                  style={{ fontFamily: 'Times New Roman, Times, serif' }}
                   onClick={handleRichContentClick}
                   dangerouslySetInnerHTML={{ __html: opt.text }}
                 />

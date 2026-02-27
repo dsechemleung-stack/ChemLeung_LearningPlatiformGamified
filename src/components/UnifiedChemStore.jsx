@@ -61,10 +61,12 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
   const effCoin = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
   const coinSaved = rawCoin != null && effCoin != null ? rawCoin - effCoin : 0;
   const isLegendary = rarityKey === 'legendary';
+  const formulaText = String(item?.chemicalFormula ?? '');
+  const shouldMarquee = formulaText.length >= 18;
 
   const CARD_W = 162;
-  const CARD_H = 226;
-  const ART_H = 138;
+  const CARD_H = 242;
+  const ART_H = 132;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, width: '100%', maxWidth: CARD_W + 10 }}>
@@ -110,23 +112,39 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
           lineHeight: 1.1,
         }}>{rarityKey}</div>
         <div style={{
-          height: ART_H, margin: '38px 10px 8px',
+          height: ART_H, margin: '34px 10px 6px',
           background: 'rgba(255,255,255,0.04)',
           border: `1px solid ${cfg.border}`,
           borderRadius: 8,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          overflow: 'hidden', position: 'relative', zIndex: 2,
+          position: 'relative', zIndex: 2,
+          overflow: 'hidden',
         }}>
           {item.imageUrl ? (
             <img
               src={item.imageUrl} alt={item.name}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              style={{ 
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                maxWidth: '90%', 
+                maxHeight: '90%', 
+                width: 'auto', 
+                height: 'auto',
+                display: 'block'
+              }}
               {...(needsAnonymousCrossOrigin(item.imageUrl) ? { crossOrigin: 'anonymous', referrerPolicy: 'no-referrer' } : {})}
               loading="lazy"
               onError={(e) => { e.target.style.display = 'none'; }}
             />
           ) : (
-            <span style={{ fontSize: 48 }}>{item.emoji}</span>
+            <span style={{ 
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              fontSize: 48 
+            }}>{item.emoji}</span>
           )}
         </div>
         <div style={{
@@ -142,25 +160,57 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
             <div style={{ minWidth: 0, textAlign: 'center' }}>
               <div style={{ color: '#f1f5f9', fontSize: 13, fontWeight: 900, fontFamily: "'Quicksand',sans-serif", lineHeight: 1.2, paddingBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-              <div
-                style={{
-                  color: 'rgba(255,255,255,0.70)',
-                  fontSize: 11,
-                  fontWeight: 900,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+              {shouldMarquee ? (
+                <div className="chemcity-marquee" style={{
                   marginTop: 2,
-                  lineHeight: '14px',
-                  minHeight: 14,
+                  height: 28,
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  alignItems: 'flex-end',
+                }}>
+                  <div className="chemcity-marquee__track" style={{
+                    display: 'inline-flex',
+                    alignItems: 'flex-end',
+                    gap: 18,
+                  }}>
+                    <span className="chemcity-marquee__text" style={{
+                      color: 'rgba(255,255,255,0.75)',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      fontFamily: "'Quicksand',sans-serif",
+                      lineHeight: '24px',
+                      paddingBottom: 4,
+                    }}>{formulaText}</span>
+                    <span className="chemcity-marquee__text" style={{
+                      color: 'rgba(255,255,255,0.75)',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      fontFamily: "'Quicksand',sans-serif",
+                      lineHeight: '24px',
+                      paddingBottom: 4,
+                    }}>{formulaText}</span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  color: 'rgba(255,255,255,0.70)',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  fontFamily: "'Quicksand',sans-serif",
+                  marginTop: 2,
+                  lineHeight: '24px',
+                  minHeight: 28,
+                  paddingBottom: 4,
+                  display: 'block',
+                  textAlign: 'center',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                }}
-              >
-                {item.chemicalFormula || '—'}
-              </div>
+                }}>
+                  {formulaText || '—'}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -627,6 +677,11 @@ export default function UnifiedChemStore() {
         @keyframes shimmerSlide { 0%,100%{transform:translateX(-200%)} 50%{transform:translateX(200%)} }
         @keyframes legendGlow { 0%,100%{box-shadow:0 0 20px rgba(251,191,36,0.35),0 4px 12px rgba(0,0,0,0.5)} 50%{box-shadow:0 0 36px rgba(251,191,36,0.65),0 4px 16px rgba(0,0,0,0.6)} }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes chemcityMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        .chemcity-marquee__track { animation: chemcityMarquee 10s linear infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .chemcity-marquee__track { animation: none !important; }
+        }
         @keyframes fadeInDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
       `}</style>

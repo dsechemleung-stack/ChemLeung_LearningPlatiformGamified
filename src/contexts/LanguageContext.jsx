@@ -36,6 +36,8 @@ const translations = {
       leaderboard: "Leaderboard",
       history: "History",
       profile: "Profile",
+      beliefs: "Beliefs",
+      features: "Features",
       logout: "Logout",
     },
 
@@ -1200,6 +1202,7 @@ const translations = {
       backToDashboard: "Back to Dashboard",
       confirm: "Confirm",
       cancel: "Cancel",
+      noThanks: "No thanks",
       clear: "Clear",
       on: "On",
       off: "Off",
@@ -1334,6 +1337,8 @@ const translations = {
       leaderboard: "排行榜",
       history: "歷史記錄",
       profile: "個人資料",
+      beliefs: "信念",
+      features: "功能",
       logout: "登出",
     },
 
@@ -1489,6 +1494,7 @@ const translations = {
       backToDashboard: "返回主頁",
       confirm: "確認",
       cancel: "取消",
+      noThanks: "不了",
       clear: "清除",
       on: "開",
       off: "關",

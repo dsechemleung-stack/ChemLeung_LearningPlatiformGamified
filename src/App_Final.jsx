@@ -27,6 +27,7 @@ import TokenLog from './components/TokenLog';
 import { ChemCityRoot } from './components/chemcity/ChemCityRoot';
 import LandingPage from './pages/LandingPage';
 import VisionPage from './pages/VisionPage';
+import FeaturePage from './pages/FeaturePage';
 import GachaPage from './pages/GachaPage';
 import InventoryPage from './pages/InventoryPage';
 
@@ -40,9 +41,9 @@ function AppContent() {
   const isStoreRoute = location.pathname === '/store';
   const isGachaRoute = location.pathname === '/gacha';
   const isInventoryRoute = location.pathname === '/inventory';
-  const noShellRoutes = new Set(['/', '/vision', '/dashboard', '/login', '/register', '/millionaire']);
+  const noShellRoutes = new Set(['/', '/vision', '/features', '/dashboard', '/login', '/register', '/millionaire']);
   const useNoShell = noShellRoutes.has(location.pathname);
-  const hideHeaderRoutes = new Set(['/', '/vision', '/login', '/register', '/millionaire']);
+  const hideHeaderRoutes = new Set(['/', '/vision', '/features', '/login', '/register', '/millionaire']);
   const showHeader = !hideHeaderRoutes.has(location.pathname);
 
   if (loading) {
@@ -74,6 +75,7 @@ function AppContent() {
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/vision" element={<VisionPage />} />
+          <Route path="/features" element={<FeaturePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 

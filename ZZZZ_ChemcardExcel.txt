@@ -1,0 +1,91 @@
+Identity / keys
+id
+Purpose: The unique item identifier. This becomes Firestore doc id: items/{id} and is what the UI sends to chemcityPurchaseCard.
+Used by: store listing, ownedItems array, purchase, equip.
+Concern if you change: High risk. Changing id will:
+Break existing users’ ownedItems references
+Cause “Item not found” if Firestore doesn’t have the new doc id
+Create duplicates if both old + new exist
+Rule: Treat id as permanent once published.
+chemicalKey
+Purpose: A “topic-ish” key / internal chemical identifier (often same as formula key). Mainly used for grouping/searching or logic you might add later.
+Concern: Medium. Changing it won’t usually break purchases, but may break filters, matching, analytics, or any code relying on it.
+baseId
+Purpose: Uniqueness group for equipping. Backend equip logic enforces: if two equipped items share the same baseId, equipping one may auto-unequip the other.
+Used by: chemcityEquipCard (very important).
+Concern if you change: High gameplay impact.
+If you set many items to same baseId, users can’t equip them together.
+If you blank it out, users can equip duplicates freely.
+Rule: Use baseId for “same chemical family” if you want exclusivity.
+Display fields
+name
+Purpose: Display name in store / UI.
+Concern: Low (safe).
+chemicalFormula
+Purpose: Display text (NH3, NaCl, etc).
+Concern: Low (safe).
+description, funFact
+Purpose: Lore/education text shown in UI.
+Concern: Low (safe). Just watch for very long text / formatting.
+Placement / equipping rules (ChemCity gameplay)
+placeId
+Purpose: Which “place” this item belongs to (e.g. toilet, kitchen, lab).
+Used by: equip validation and UI grouping.
+Concern: High.
+Must match a real place in places collection / data/places.json.
+If you change it, the item may become unequippable or appear in wrong place.
+validSlots
+Purpose: Comma-separated list of slotIds where this item is allowed to be equipped.
+Used by: frontend CardPicker filtering and backend equip validation.
+Concern: Very high.
+Slot IDs must exist under that placeId’s slots.
+Typos mean item cannot be equipped (UI may hide it, backend rejects equip).
+Rule: Only use slotIds that exist in places.json for that place.
+Images / assets
+imageUrl
+Purpose: What the UI loads as the card image (often /chemcard/xxx.jpeg).
+Concern: Medium.
+Must be a valid path accessible from hosting (usually public/chemcard/...).
+Wrong path = broken image, but doesn’t usually break purchase.
+imageKey, imageFile
+Purpose: Internal asset bookkeeping (naming / migrations / uploads). Depending on your tooling, these may be used for storage migration scripts.
+Concern: Medium. Safe if you’re consistent, risky if you have scripts that assume a convention.
+spriteFile
+Purpose: The sprite used when the item is equipped into the scene.
+Concern: Medium-high for gameplay visuals: wrong sprite = invisible/wrong display.
+Rarity / economy
+rarity
+Purpose: Item rarity tier used for UI styling, possibly drop rates (gacha), sorting.
+Concern: Medium. Make sure it matches allowed values in your UI/backend expectations (common, uncommon, rare, epic, legendary).
+Duplicate rarity column (you showed rarity  rarity)
+Purpose: This is likely a CSV/header mistake (two columns with same name) or one is meant to be something else (e.g. rarityLabel vs rarity).
+Concern: High because CSV parsing usually picks one and silently drops/overwrites the other.
+Rule: You should keep only one rarity column in the published CSV.
+rarityValue
+Purpose: Numeric rarity score used for sorting or weighting.
+Concern: Medium. Keep it numeric.
+coinCost, diamondCost
+Purpose: Store price. In Firestore these become shopData.coinCost / shopData.diamondCost (based on your seeder).
+Used by: chemcityPurchaseCard.
+Concern: High for economy/purchase.
+Must be numeric.
+If both blank/0, backend may treat it as “not purchasable”.
+Extremely high values can block purchases or unbalance.
+Progression / learning linkage
+topicId
+Purpose: Links the card to a topic (for curriculum/collection/reward systems).
+Concern: Medium.
+If topicId doesn’t exist, you might lose topic-based grouping/rewards (depends on your code).
+What happens if you “manually change columns”?
+Here are safe vs risky edits:
+
+Safe edits (usually won’t break purchase/equip):
+name, chemicalFormula, description, funFact, (sometimes) imageUrl
+Risky edits (can break gameplay or cause “Item not found”):
+id (highest risk)
+placeId
+validSlots
+baseId
+coinCost / diamondCost (can block purchase)
+CSV-format risk:
+Duplicate headers like rarity twice

@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const BRAND = {
   teal: '#76A8A5',
@@ -12,6 +13,7 @@ const BRAND = {
 export default function LandingPage() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (currentUser) navigate('/dashboard', { replace: true });
@@ -103,9 +105,9 @@ export default function LandingPage() {
       `}</style>
 
       {/* ── Background Video ── */}
-      <div className="absolute inset-0 flex items-center justify-center" style={{ background: '#0a1a18' }}>
+      <div className="absolute inset-0 flex items-center justify-center" style={{ background: '#0a1a18', pointerEvents: 'none' }}>
         <video className="max-w-full max-h-full w-auto h-auto object-contain" src="/ChemistreeIcon.mp4"
-          autoPlay muted loop playsInline preload="auto" style={{ opacity: 0.45 }} />
+          autoPlay muted loop playsInline preload="auto" style={{ opacity: 0.45, pointerEvents: 'none' }} />
         <div className="absolute inset-0 pointer-events-none" style={{
           background: 'radial-gradient(ellipse 80% 80% at 50% 50%, rgba(10,26,24,0.2) 0%, rgba(10,26,24,0.9) 100%)',
         }} />
@@ -152,13 +154,16 @@ export default function LandingPage() {
 
         {/* Right: Login + Get Started */}
         <div className="flex items-center gap-3">
-          <button className="btn-ghost-nav" onClick={() => navigate('/vision')}>
-            Vision
+          <button className="btn-ghost-nav" onClick={() => navigate('/features')} style={{ touchAction: 'manipulation' }}>
+            {t('nav.features')}
           </button>
-          <button className="btn-ghost-nav" onClick={() => navigate('/login')}>
+          <button className="btn-ghost-nav" onClick={() => navigate('/vision')} style={{ touchAction: 'manipulation' }}>
+            {t('nav.beliefs')}
+          </button>
+          <button className="btn-ghost-nav" onClick={() => navigate('/login')} style={{ touchAction: 'manipulation' }}>
             Login
           </button>
-          <button className="btn-primary-nav" onClick={() => navigate('/register')}>
+          <button className="btn-primary-nav" onClick={() => navigate('/register')} style={{ touchAction: 'manipulation' }}>
             Get Started
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>

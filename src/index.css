@@ -1930,8 +1930,16 @@ div[dangerouslySetInnerHTML] {
   border-color: rgba(255, 255, 255, 0.22);
  }
 
+ .m-lockin-area {
+  position: relative;
+  z-index: 1000;
+  margin-top: 10px;
+  transform: translateZ(0);
+ }
+
  .m-lockin-btn {
   position: relative;
+  z-index: 1001;
   overflow: hidden;
   display: inline-flex;
   align-items: center;
@@ -2523,6 +2531,7 @@ div[dangerouslySetInnerHTML] {
 
  .m-hex {
   position: relative;
+  z-index: 0;
   overflow: hidden;
   clip-path: polygon(16% 0%, 84% 0%, 100% 50%, 84% 100%, 16% 100%, 0% 50%);
   transform: translateZ(0);
@@ -3075,6 +3084,7 @@ div[dangerouslySetInnerHTML] {
 
  .m-hex-wrap {
    position: relative;
+   z-index: 0;
    --m-hex-span: 88%;
  }
 

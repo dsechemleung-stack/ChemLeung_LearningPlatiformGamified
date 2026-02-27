@@ -84,6 +84,8 @@ export const ChemCard: React.FC<ChemCardProps> = ({
 }) => {
   const cfg = RARITY_CONFIG[item.rarity] ?? RARITY_CONFIG.common;
   const dim = SIZE_MAP[size];
+  const formulaText = String(item.chemicalFormula ?? '');
+  const shouldMarquee = formulaText.length >= 18;
 
   return (
     <button
@@ -154,7 +156,7 @@ export const ChemCard: React.FC<ChemCardProps> = ({
           <img
             src={item.imageUrl}
             alt={item.name}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center' }}
             {...(needsAnonymousCrossOrigin(item.imageUrl)
               ? { crossOrigin: 'anonymous' as const, referrerPolicy: 'no-referrer' as const }
               : {})}
@@ -181,12 +183,50 @@ export const ChemCard: React.FC<ChemCardProps> = ({
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}>{item.name}</div>
-        <div style={{
-          color: 'rgba(255,255,255,0.5)',
-          fontSize: dim.formulaPx,
-          fontFamily: 'monospace',
-          marginTop: 1,
-        }}>{item.chemicalFormula}</div>
+        {shouldMarquee ? (
+          <div className="chemcity-marquee" style={{
+            marginTop: 2,
+            height: 12,
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+          }}>
+            <div className="chemcity-marquee__track" style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 18,
+            }}>
+              <span className="chemcity-marquee__text" style={{
+                color: 'rgba(255,255,255,0.60)',
+                fontSize: Math.max(7, dim.formulaPx - 1),
+                fontWeight: 700,
+                fontFamily: "'Quicksand', sans-serif",
+                lineHeight: '12px',
+                paddingBottom: 1,
+              }}>{formulaText}</span>
+              <span className="chemcity-marquee__text" style={{
+                color: 'rgba(255,255,255,0.60)',
+                fontSize: Math.max(7, dim.formulaPx - 1),
+                fontWeight: 700,
+                fontFamily: "'Quicksand', sans-serif",
+                lineHeight: '12px',
+                paddingBottom: 1,
+              }}>{formulaText}</span>
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            color: 'rgba(255,255,255,0.5)',
+            fontSize: Math.max(7, dim.formulaPx - 1),
+            fontWeight: 700,
+            fontFamily: "'Quicksand', sans-serif",
+            marginTop: 2,
+            lineHeight: '12px',
+            paddingBottom: 1,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>{formulaText}</div>
+        )}
       </div>
 
       {/* Rarity badge footer */}
@@ -211,6 +251,11 @@ export const ChemCard: React.FC<ChemCardProps> = ({
           0% { transform: translateX(-100%); }
           50% { transform: translateX(100%); }
           100% { transform: translateX(100%); }
+        }
+        @keyframes chemcityMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        .chemcity-marquee__track { animation: chemcityMarquee 10s linear infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .chemcity-marquee__track { animation: none !important; }
         }
         .legendary-card { animation: legendaryPulse 2s ease-in-out infinite; }
         @keyframes legendaryPulse {
