@@ -136,25 +136,32 @@ export function GachaScreen() {
   // Show gacha machine even while loading static data
   const hasBanner = selectedBanner && pity;
 
-  return (
-    <div className="relative min-h-screen bg-black text-white overflow-hidden flex flex-col">
-      {/* Background image */}
-      <img
-        src="/GachaMachine.png"
-        alt=""
-        className="absolute inset-0 w-full h-full object-cover"
-        draggable={false}
-      />
+  const drawVideoSrc = pendingDraw?.count === 10 ? '/10-draw.mp4' : '/1-draw.mp4';
 
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/20 to-black/60 pointer-events-none" />
+  return (
+    <div
+      className="relative min-h-screen text-white overflow-hidden flex flex-col"
+      style={{ background: '#f5f9f6' }}
+    >
+      {/* Solid page background (ensures no white shows through) */}
+      <div className="absolute inset-0" style={{ background: '#f5f9f6' }} />
+
+      {/* Centered background image */}
+      <div className="absolute inset-0 z-10 flex items-center justify-center">
+        <img
+          src="/ChemCard%20Gacha.png"
+          alt=""
+          className="w-full h-full object-contain"
+          draggable={false}
+        />
+      </div>
 
       {/* Animation overlay */}
       {showAnimation ? (
-        <div className="absolute inset-0 z-20 flex items-center justify-center">
+        <div className="absolute inset-0 z-20 flex items-center justify-center" style={{ background: '#f5f9f6' }}>
           <video
-            src="/Gacha animation.mp4"
-            className="w-full h-full object-cover"
+            src={drawVideoSrc}
+            className="w-full h-full object-contain"
             autoPlay
             muted
             playsInline

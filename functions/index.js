@@ -181,8 +181,26 @@ const STORE_SLOT_UNLOCK_COSTS = {
 };
 
 async function computeChemCityActiveBonuses(db, equipped) {
-  const itemIds = Object.values(equipped || {}).filter((x) => typeof x === 'string' && x.length > 0);
+  const equippedMap = equipped && typeof equipped === 'object' ? equipped : {};
+  const equippedEntries = Object.entries(equippedMap).filter(
+    ([slotId, itemId]) => typeof slotId === 'string' && slotId && typeof itemId === 'string' && itemId,
+  );
+  const itemIds = equippedEntries.map(([, itemId]) => itemId);
   const uniqueIds = Array.from(new Set(itemIds));
+
+  // Map each slotId to its placeId so skill bonuses follow where the card is equipped.
+  // This is important when a single item is allowed to be equipped across multiple places.
+  const placesSnap = await db.collection('places').get();
+  const slotToPlaceId = new Map();
+  for (const doc of placesSnap.docs) {
+    const data = doc.data() || {};
+    const slots = Array.isArray(data.slots) ? data.slots : [];
+    for (const s of slots) {
+      const sid = s && typeof s === 'object' ? String(s.slotId || '') : '';
+      if (!sid) continue;
+      slotToPlaceId.set(sid, doc.id);
+    }
+  }
 
   const totals = {};
   if (uniqueIds.length > 0) {
@@ -194,10 +212,11 @@ async function computeChemCityActiveBonuses(db, equipped) {
       if (s.exists) itemMap.set(s.id, s.data() || {});
     });
 
-    for (const id of itemIds) {
-      const item = itemMap.get(id);
+    for (const [slotId, itemId] of equippedEntries) {
+      const item = itemMap.get(itemId);
       if (!item || item.deprecated) continue;
-      const placeId = String(item.placeId || '');
+
+      const placeId = String(slotToPlaceId.get(slotId) || item.placeId || '');
       const contrib = Number(item.skillContribution || 0);
       if (!placeId || !Number.isFinite(contrib)) continue;
       totals[placeId] = (totals[placeId] || 0) + contrib;
@@ -1135,13 +1154,24 @@ exports.chemcityEquipCard = onCall(
       throw new HttpsError('failed-precondition', 'Item is deprecated.');
     }
     const baseId = typeof item.baseId === 'string' && item.baseId.trim() ? item.baseId.trim() : '';
-    const itemPlaceId = String(item.placeId || '');
     const validSlots = Array.isArray(item.validSlots) ? item.validSlots.map(String) : [];
     if (!validSlots.includes(slotId)) {
       throw new HttpsError('failed-precondition', 'Item cannot be equipped in this slot.');
     }
 
-    const placeRef = itemPlaceId ? db.collection('places').doc(itemPlaceId) : null;
+    // Determine which place this slot belongs to (slotId is globally unique but not trivially parseable).
+    // This enables a single item to be equip-able across multiple places by listing cross-place slotIds in validSlots.
+    const placesSnap = await db.collection('places').get();
+    const slotPlaceDoc = placesSnap.docs.find((doc) => {
+      const data = doc.data() || {};
+      const slots = Array.isArray(data.slots) ? data.slots : [];
+      return !!slots.find((s) => s && typeof s === 'object' && String(s.slotId || '') === slotId);
+    });
+    if (!slotPlaceDoc) {
+      throw new HttpsError('failed-precondition', 'Invalid slotId.');
+    }
+    const slotPlaceId = slotPlaceDoc.id;
+    const placeRef = db.collection('places').doc(slotPlaceId);
 
     return db.runTransaction(async (tx) => {
       const userSnap = await tx.get(userRef);
@@ -1157,26 +1187,24 @@ exports.chemcityEquipCard = onCall(
       }
 
       const unlockedPlaces = Array.isArray(chemcity.unlockedPlaces) ? chemcity.unlockedPlaces : [];
-      if (itemPlaceId && !unlockedPlaces.includes(itemPlaceId)) {
+      if (slotPlaceId && !unlockedPlaces.includes(slotPlaceId)) {
         throw new HttpsError('failed-precondition', 'Place is locked.');
       }
 
-      if (placeRef) {
-        const placeSnap = await tx.get(placeRef);
-        if (!placeSnap.exists) {
-          throw new HttpsError('failed-precondition', 'Place config missing.');
-        }
-        const place = placeSnap.data() || {};
-        const slots = Array.isArray(place.slots) ? place.slots : [];
-        const slot = slots.find((s) => s && typeof s === 'object' && String(s.slotId || '') === slotId);
-        if (!slot) {
-          throw new HttpsError('failed-precondition', 'Invalid slotId.');
-        }
-        const unlockedSlots = Array.isArray(chemcity.unlockedSlots) ? chemcity.unlockedSlots : [];
-        const isFree = slot.unlockCost == null;
-        if (!isFree && !unlockedSlots.includes(slotId)) {
-          throw new HttpsError('failed-precondition', 'Slot is locked.');
-        }
+      const placeSnap = await tx.get(placeRef);
+      if (!placeSnap.exists) {
+        throw new HttpsError('failed-precondition', 'Place config missing.');
+      }
+      const place = placeSnap.data() || {};
+      const slots = Array.isArray(place.slots) ? place.slots : [];
+      const slot = slots.find((s) => s && typeof s === 'object' && String(s.slotId || '') === slotId);
+      if (!slot) {
+        throw new HttpsError('failed-precondition', 'Invalid slotId.');
+      }
+      const unlockedSlots = Array.isArray(chemcity.unlockedSlots) ? chemcity.unlockedSlots : [];
+      const isFree = slot.unlockCost == null;
+      if (!isFree && !unlockedSlots.includes(slotId)) {
+        throw new HttpsError('failed-precondition', 'Slot is locked.');
       }
 
       const prevEquipped = chemcity.equipped && typeof chemcity.equipped === 'object' ? chemcity.equipped : {};

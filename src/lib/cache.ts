@@ -15,8 +15,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  query,
-  where,
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import type {
@@ -27,6 +25,10 @@ import type {
   SlimItemDocument,
   TopicDocument,
 } from './chemcity/types';
+
+const SLIM_ITEMS_CSV_URL =
+  String((import.meta as any).env?.VITE_CHEMCITY_SLIM_ITEMS_CSV_URL ?? '').trim() ||
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vT1y1TCVk0zDqeO8V58ZN-Dj3M3rqJZFSLUEjWWTW6f-jlzSpqc8UEl3MGmTw78qOZHJNVEEbJYGojc/pub?gid=0&single=true&output=csv';
 
 function normalizeImageUrl(raw: unknown): string | undefined {
   const s0 = String(raw ?? '').trim();
@@ -43,7 +45,14 @@ function normalizeImageUrl(raw: unknown): string | undefined {
     return v;
   };
 
-  return unwrap(s);
+  const unwrapped = unwrap(s);
+  // Allow filenames with spaces (e.g. "/chemcard/water_greenhouse gas.png")
+  // by encoding the URL. encodeURI keeps "/" intact.
+  try {
+    return encodeURI(unwrapped);
+  } catch {
+    return unwrapped;
+  }
 }
 
 // ─── Constants ───────────────────────────────────────────────
@@ -80,6 +89,233 @@ function safeSet(key: string, value: unknown): void {
 
 function isCacheExpired(manifest: CacheManifest): boolean {
   return Date.now() - manifest.fetchedAt > CACHE_TTL_MS;
+}
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  const pushField = () => {
+    row.push(field);
+    field = '';
+  };
+
+  const pushRow = () => {
+    rows.push(row);
+    row = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        const next = text[i + 1];
+        if (next === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+      continue;
+    }
+
+    if (c === '"') {
+      inQuotes = true;
+      continue;
+    }
+
+    if (c === ',') {
+      pushField();
+      continue;
+    }
+
+    if (c === '\n') {
+      pushField();
+      pushRow();
+      continue;
+    }
+
+    if (c === '\r') {
+      continue;
+    }
+
+    field += c;
+  }
+
+  pushField();
+  if (row.length > 1 || (row.length === 1 && row[0].trim() !== '')) pushRow();
+  return rows;
+}
+
+function normHeaderKey(raw: string): string {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[_\-]+/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function parseBoolish(raw: unknown): boolean {
+  const s = String(raw ?? '').trim().toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes' || s === 'y';
+}
+
+function parseNumberish(raw: unknown): number | undefined {
+  const s0 = String(raw ?? '').trim();
+  if (!s0) return undefined;
+  const s = s0.replace(/,/g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function splitList(raw: unknown): string[] {
+  const s = String(raw ?? '').trim();
+  if (!s) return [];
+  return s
+    .split(/\s*[|,]\s*/g)
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
+function rarityToValue(rarity: SlimItemDocument['rarity']): SlimItemDocument['rarityValue'] {
+  if (rarity === 'legendary') return 4;
+  if (rarity === 'epic') return 3;
+  if (rarity === 'rare') return 2;
+  return 1;
+}
+
+function propagateCollectionsByBaseId(items: SlimItemDocument[]): SlimItemDocument[] {
+  const baseToCollections = new Map<string, Set<string>>();
+
+  for (const it of items) {
+    const baseId = String(it.baseId ?? '').trim();
+    if (!baseId) continue;
+    const set = baseToCollections.get(baseId) ?? new Set<string>();
+    for (const c of Array.isArray(it.collections) ? it.collections : []) {
+      const v = String(c ?? '').trim();
+      if (v) set.add(v);
+    }
+    baseToCollections.set(baseId, set);
+  }
+
+  if (baseToCollections.size === 0) return items;
+
+  return items.map((it) => {
+    const baseId = String(it.baseId ?? '').trim();
+    if (!baseId) return it;
+    const set = baseToCollections.get(baseId);
+    if (!set || set.size === 0) return it;
+    const merged = Array.from(set);
+    const curr = Array.isArray(it.collections) ? it.collections : [];
+    if (curr.length === merged.length && curr.every((v) => set.has(v))) return it;
+    return { ...it, collections: merged };
+  });
+}
+
+async function fetchSlimItemsFromCsv(url: string): Promise<SlimItemDocument[]> {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`[ChemCity Cache] Failed to fetch slim items CSV (${res.status})`);
+  const csvText = await res.text();
+  const head = csvText.slice(0, 120).trim().toLowerCase();
+  if (head.startsWith('<!doctype html') || head.startsWith('<html')) {
+    throw new Error('[ChemCity Cache] Slim items CSV fetch returned HTML. Check the published URL / permissions.');
+  }
+  const rows = parseCsv(csvText);
+  if (rows.length < 2) return [];
+
+  const header = rows[0].map(normHeaderKey);
+  const idx = (k: string) => {
+    const key = normHeaderKey(k);
+    const exact = header.indexOf(key);
+    if (exact >= 0) return exact;
+    return header.findIndex((h) => h.startsWith(key));
+  };
+
+  if (idx('id') < 0 && idx('itemid') < 0) {
+    throw new Error('[ChemCity Cache] Slim items CSV is missing an "id" column.');
+  }
+
+  const get = (r: string[], k: string): string => {
+    const i = idx(k);
+    if (i < 0) return '';
+    return String(r[i] ?? '').trim();
+  };
+
+  const items: SlimItemDocument[] = [];
+  const seenIds = new Set<string>();
+  for (let ri = 1; ri < rows.length; ri++) {
+    const r = rows[ri];
+    const id = get(r, 'id') || get(r, 'itemid');
+    if (!id) continue;
+
+    if (seenIds.has(id)) {
+      console.warn(`[ChemCity Cache] Duplicate slim item id in CSV: "${id}" (row ${ri + 1}). Keeping first occurrence.`);
+      continue;
+    }
+    seenIds.add(id);
+
+    const rarityRaw = (get(r, 'rarity') || 'common').toLowerCase();
+    const rarity =
+      rarityRaw === 'legendary'
+        ? 'legendary'
+        : rarityRaw === 'epic'
+          ? 'epic'
+          : rarityRaw === 'rare'
+            ? 'rare'
+            : rarityRaw === 'uncommon'
+              ? 'uncommon'
+              : 'common';
+
+    const rarityValueRaw = parseNumberish(get(r, 'rarityvalue'));
+    const rarityValue =
+      rarityValueRaw === 4 || rarityValueRaw === 3 || rarityValueRaw === 2 || rarityValueRaw === 1
+        ? (rarityValueRaw as 1 | 2 | 3 | 4)
+        : rarityToValue(rarity);
+
+    const coinCost =
+      parseNumberish(get(r, 'tokencost')) ??
+      parseNumberish(get(r, 'coincost')) ??
+      parseNumberish(get(r, 'shopcoincost'));
+    const diamondCost =
+      parseNumberish(get(r, 'diamondcost')) ?? parseNumberish(get(r, 'shopdiamondcost'));
+
+    const item: SlimItemDocument = {
+      id,
+      baseId: get(r, 'baseid') || undefined,
+      name: get(r, 'name') || id,
+      chemicalFormula: get(r, 'chemicalformula') || get(r, 'formula') || '',
+      emoji: get(r, 'emoji') || '🧪',
+      imageUrl: normalizeImageUrl(get(r, 'imageurl') || get(r, 'imgurl')),
+      rarity,
+      rarityValue,
+      placeId: (get(r, 'primaryplaceid') as any) || (get(r, 'placeid') as any) || 'lab',
+      validSlots: splitList(get(r, 'primarysubplaceid') || get(r, 'validslots')),
+      shopData: {
+        ...(coinCost != null ? { coinCost } : {}),
+        ...(diamondCost != null ? { diamondCost } : {}),
+      },
+      skillContribution: Number(parseNumberish(get(r, 'skillcontribution')) ?? 0),
+      collections: splitList(get(r, 'collectionids') || get(r, 'collections')),
+      deprecated: parseBoolish(get(r, 'deprecated')),
+    };
+
+    if (!item.imageUrl) delete (item as any).imageUrl;
+    items.push(item);
+  }
+
+  if (items.length === 0) {
+    throw new Error(
+      '[ChemCity Cache] Slim items CSV parsed 0 items. Check column headers and that rows contain an id.',
+    );
+  }
+
+  return propagateCollectionsByBaseId(items);
 }
 
 // ─── Version Check ───────────────────────────────────────────
@@ -124,45 +360,26 @@ export async function fetchSlimItems(
   const manifest = safeGet<CacheManifest>(KEYS.MANIFEST);
   const cached = safeGet<SlimItemDocument[]>(KEYS.SLIM_ITEMS);
 
-  const version = serverVersion ?? (await getServerCacheVersion());
+  const version = await (async () => {
+    try {
+      return serverVersion ?? (await getServerCacheVersion());
+    } catch {
+      return 0;
+    }
+  })();
 
   if (
     manifest &&
     cached &&
+    Array.isArray(cached) &&
+    cached.length > 0 &&
     !isCacheExpired(manifest) &&
     manifest.version === version
   ) {
     return cached;
   }
 
-  // Cache miss — fetch from Firestore
-  const snap = await getDocs(
-    query(collection(db, 'items'), where('deprecated', '==', false)),
-  );
-
-  const SLIM_FIELDS: (keyof SlimItemDocument)[] = [
-    'id', 'baseId', 'name', 'chemicalFormula', 'emoji', 'imageUrl', 'rarity', 'rarityValue',
-    'placeId', 'validSlots', 'shopData', 'skillContribution',
-    'collections', 'deprecated',
-  ];
-
-  const items: SlimItemDocument[] = snap.docs.map((d) => {
-    const full = d.data();
-    // Whitelist only slim fields — never cache full item content
-    const slim: Partial<SlimItemDocument> = {};
-    for (const field of SLIM_FIELDS) {
-      if (field in full) {
-        (slim as Record<string, unknown>)[field] = full[field];
-      }
-    }
-    slim.id = d.id;
-    if ('imageUrl' in slim) {
-      const next = normalizeImageUrl((slim as any).imageUrl);
-      if (next) (slim as any).imageUrl = next;
-      else delete (slim as any).imageUrl;
-    }
-    return slim as SlimItemDocument;
-  });
+  const items = await fetchSlimItemsFromCsv(SLIM_ITEMS_CSV_URL);
 
   const newManifest: CacheManifest = {
     version,

@@ -49,15 +49,7 @@ function needsAnonymousCrossOrigin(url) {
   return u.includes('drive.google.com') || u.includes('googleusercontent.com');
 }
 
-function getPrimaryCollectionLabel(item, collectionsById) {
-  const ids = Array.isArray(item?.collections) ? item.collections : [];
-  const first = ids.find(Boolean);
-  if (!first) return '';
-  const doc = collectionsById?.get?.(first);
-  return String(doc?.displayName || first);
-}
-
-function StoreCard({ item, idx, ownedSet, user, onCardClick, collectionsById }) {
+function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
   const isOwned = ownedSet.has(item.id);
   const rarityKey = (() => {
     const r = String(item?.rarity ?? '').toLowerCase();
@@ -69,14 +61,13 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick, collectionsById }) 
   const effCoin = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
   const coinSaved = rawCoin != null && effCoin != null ? rawCoin - effCoin : 0;
   const isLegendary = rarityKey === 'legendary';
-  const collectionLabel = getPrimaryCollectionLabel(item, collectionsById);
 
-  const CARD_W = 150;
-  const CARD_H = 210;
-  const ART_H = 130;
+  const CARD_W = 162;
+  const CARD_H = 226;
+  const ART_H = 138;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: '100%', maxWidth: CARD_W + 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, width: '100%', maxWidth: CARD_W + 10 }}>
       <button
         onClick={() => onCardClick(item.id)}
         style={{
@@ -119,7 +110,7 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick, collectionsById }) 
           lineHeight: 1.1,
         }}>{rarityKey}</div>
         <div style={{
-          height: ART_H, margin: '34px 10px 6px',
+          height: ART_H, margin: '38px 10px 8px',
           background: 'rgba(255,255,255,0.04)',
           border: `1px solid ${cfg.border}`,
           borderRadius: 8,
@@ -149,9 +140,27 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick, collectionsById }) 
           zIndex: 2,
         }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ color: '#f1f5f9', fontSize: 11, fontWeight: 900, fontFamily: "'Quicksand',sans-serif", lineHeight: 1.25, paddingBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-              <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{collectionLabel || 'Collection'}</div>
+            <div style={{ minWidth: 0, textAlign: 'center' }}>
+              <div style={{ color: '#f1f5f9', fontSize: 13, fontWeight: 900, fontFamily: "'Quicksand',sans-serif", lineHeight: 1.2, paddingBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+              <div
+                style={{
+                  color: 'rgba(255,255,255,0.70)',
+                  fontSize: 11,
+                  fontWeight: 900,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  marginTop: 2,
+                  lineHeight: '14px',
+                  minHeight: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {item.chemicalFormula || '—'}
+              </div>
             </div>
           </div>
         </div>
@@ -224,6 +233,7 @@ function ChemCardsTab() {
   const user = useChemCityStore((s) => s.user);
   const dailyStoreItems = useChemCityStore((s) => s.dailyStoreItems);
   const storeSlotCount = useChemCityStore((s) => s.storeSlotCount);
+  const slimItems = useChemCityStore((s) => s.slimItems);
   const openPurchaseConfirm = useChemCityStore((s) => s.openPurchaseConfirm);
   const unlockStoreSlot = useChemCityStore((s) => s.unlockStoreSlot);
   const collections = useChemCityStore((s) => s.collections);
@@ -240,7 +250,9 @@ function ChemCardsTab() {
   const discount = user?.activeBonuses?.shopDiscountPercent ?? 0;
   const coins = user?.currencies?.coins ?? 0;
   const ownedSet = new Set(user?.ownedItems ?? []);
-  const collectionsById = React.useMemo(() => new Map((collections || []).map((c) => [c.id, c])), [collections]);
+  const purchasableCount = React.useMemo(() => {
+    return (slimItems || []).filter((i) => !i?.deprecated && (i?.shopData?.coinCost != null || i?.shopData?.diamondCost != null)).length;
+  }, [slimItems]);
 
   const nextSlotNum = storeSlotCount + 1;
   const nextSlotCost = STORE_SLOT_UNLOCK_COSTS[nextSlotNum] ?? null;
@@ -279,7 +291,20 @@ function ChemCardsTab() {
       {dailyStoreItems.length === 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200, gap: 12 }}>
           <ShoppingBag size={40} color="rgba(45,74,62,0.35)" />
-          <p style={{ color: 'rgba(15,23,42,0.55)', fontSize: 14, fontWeight: 800 }}>Loading store…</p>
+          <p style={{ color: 'rgba(15,23,42,0.55)', fontSize: 14, fontWeight: 800, textAlign: 'center', margin: 0 }}>
+            {slimItems.length === 0
+              ? 'No ChemCard catalog loaded.'
+              : purchasableCount === 0
+                ? 'No purchasable ChemCards found in catalog.'
+                : 'Loading store…'}
+          </p>
+          <p style={{ color: 'rgba(15,23,42,0.45)', fontSize: 12, fontWeight: 700, textAlign: 'center', margin: 0 }}>
+            {slimItems.length === 0
+              ? 'Check the CSV URL / CORS / column headers (open DevTools Console).'
+              : purchasableCount === 0
+                ? 'Ensure your CSV has coinCost/diamondCost (or shopCoinCost/shopDiamondCost) columns.'
+                : 'Please wait…'}
+          </p>
         </div>
       ) : (
         <div style={{
@@ -297,7 +322,6 @@ function ChemCardsTab() {
               ownedSet={ownedSet}
               user={user}
               onCardClick={openPurchaseConfirm}
-              collectionsById={collectionsById}
             />
           ))}
         </div>
@@ -576,6 +600,22 @@ export default function UnifiedChemStore() {
     return (
       <div style={{ minHeight: '100vh', background: '#f5f9f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Quicksand',sans-serif" }}>
         <ChemistryLoading persistKey="chemstore" className="text-center" textOverride="Loading ChemStore…" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f5f9f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Quicksand',sans-serif", padding: 16 }}>
+        <div className="bg-white rounded-2xl shadow-2xl border-2 border-red-200 p-6 text-center max-w-md w-full">
+          <div className="font-black text-red-600">{error}</div>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 rounded-xl font-black bg-slate-900 text-white"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

@@ -11,7 +11,6 @@ import { QuizRewardModal } from './QuizRewardModal';
 import { PurchaseConfirmModal } from './PurchaseConfirmModal';
 import { PlaceUnlockModal } from './PlaceUnlockModal';
 import { GasStationDistributor } from './GasStationDistributor';
-import { CollectionsAlbum } from './CollectionsAlbum';
 import { OnboardingOverlay } from './OnboardingOverlay';
 import ChemistryLoading from '../ChemistryLoading';
 
@@ -74,7 +73,6 @@ export const ChemCityRoot: React.FC = () => {
         {view === 'map' && <ChemCityMap />}
         {view === 'place' && <PlaceView />}
         {view === 'gas_station_distributor' && <GasStationDistributor />}
-        {view === 'collections' && <CollectionsAlbum />}
       </main>
 
       <CardPicker />

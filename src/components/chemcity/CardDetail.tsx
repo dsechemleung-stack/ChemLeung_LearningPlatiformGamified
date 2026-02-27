@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, Zap, BookOpen, FlaskConical, Star } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { X, Zap, BookOpen, FlaskConical, Star, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
 
 function needsAnonymousCrossOrigin(url?: string | null): boolean {
@@ -39,14 +39,47 @@ export const CardDetail: React.FC = () => {
   const cardDetailLoading = useChemCityStore(s => s.cardDetailLoading);
   const slimItems        = useChemCityStore(s => s.slimItems);
   const closeCardDetail  = useChemCityStore(s => s.closeCardDetail);
+  const openCardDetail   = useChemCityStore(s => s.openCardDetail);
 
-  if (!cardDetailItemId) return null;
+  const isOpen = !!cardDetailItemId;
 
-  const slim  = slimItems.find(i => i.id === cardDetailItemId);
-  const full  = cardDetailData;
+  const slim = useMemo(() => {
+    if (!cardDetailItemId) return undefined;
+    return slimItems.find((i) => i.id === cardDetailItemId);
+  }, [cardDetailItemId, slimItems]);
+
+  const full = cardDetailData;
   const rarity = slim?.rarity ?? 'common';
-  const cfg    = RARITY_CONFIG[rarity] ?? RARITY_CONFIG.common;
+  const cfg = RARITY_CONFIG[rarity] ?? RARITY_CONFIG.common;
   const rarityStars = { common: 1, uncommon: 2, rare: 2, epic: 3, legendary: 4 }[rarity] ?? 1;
+
+  const variants = useMemo(() => {
+    if (!cardDetailItemId) return [];
+    const baseId = String((slim as any)?.baseId ?? '').trim();
+    if (!baseId) return slim ? [slim] : [];
+    return (slimItems || [])
+      .filter((it) => String((it as any)?.baseId ?? '').trim() === baseId)
+      .slice()
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }, [cardDetailItemId, slim, slimItems]);
+
+  const variantIdx = useMemo(() => {
+    if (!cardDetailItemId) return 0;
+    const idx = variants.findIndex((v) => v.id === cardDetailItemId);
+    return idx >= 0 ? idx : 0;
+  }, [variants, cardDetailItemId]);
+
+  const canNav = variants.length > 1 && !cardDetailLoading;
+  const goVariant = (delta: number) => {
+    if (!canNav) return;
+    const len = variants.length;
+    if (len <= 1) return;
+    const next = variants[((variantIdx + delta) % len + len) % len];
+    if (!next || next.id === cardDetailItemId) return;
+    void openCardDetail(next.id);
+  };
+
+  if (!isOpen) return null;
 
   return (
     <>
@@ -113,9 +146,54 @@ export const CardDetail: React.FC = () => {
               borderBottom: `1px solid ${cfg.borderColor}`,
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             }}>
+              <button
+                type="button"
+                onClick={() => goVariant(-1)}
+                disabled={!canNav}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  marginRight: 6,
+                  width: 18,
+                  height: 18,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: canNav ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)',
+                  cursor: canNav ? 'pointer' : 'not-allowed',
+                }}
+                aria-label="Previous variant"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
               <div style={{ color: '#f1f5f9', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {full?.displayName || slim?.name || '—'}
               </div>
+
+              <button
+                type="button"
+                onClick={() => goVariant(+1)}
+                disabled={!canNav}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  marginLeft: 6,
+                  width: 18,
+                  height: 18,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: canNav ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)',
+                  cursor: canNav ? 'pointer' : 'not-allowed',
+                }}
+                aria-label="Next variant"
+              >
+                <ChevronRight size={16} />
+              </button>
+
               <div style={{ color: cfg.badgeText, fontSize: 9, letterSpacing: 1, flexShrink: 0, marginLeft: 4 }}>
                 {'✦'.repeat(rarityStars)}
               </div>
@@ -187,6 +265,11 @@ export const CardDetail: React.FC = () => {
                 <div style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', fontSize: 12, marginTop: 2 }}>
                   {slim?.chemicalFormula}
                 </div>
+                {variants.length > 1 && (
+                  <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, marginTop: 6, fontWeight: 700 }}>
+                    Variant {variantIdx + 1}/{variants.length}
+                  </div>
+                )}
               </div>
               <button onClick={closeCardDetail} style={{
                 background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)',

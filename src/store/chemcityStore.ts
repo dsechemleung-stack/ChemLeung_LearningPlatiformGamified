@@ -24,7 +24,6 @@ import {
   callChemCityQuizReward,
   callChemCityPurchaseCard,
   callChemCityUnlockStoreSlot,
-  callChemCityClaimCollectionReward,
   callChemCityDevGrantCoins,
 } from '../lib/chemcity/cloudFunctions';
 import { estimateUnclaimedCoins } from '../lib/chemcity/income';
@@ -54,7 +53,7 @@ function markOnboardingDone(): void {
   }
 }
 
-type View = 'map' | 'place' | 'gas_station_distributor' | 'collections';
+type View = 'map' | 'place' | 'gas_station_distributor';
 
 type RootUserDoc = {
   chemcity?: UserChemCityData;
@@ -122,7 +121,6 @@ interface ChemCityStore {
   navigateToMap: () => void;
   navigateToPlace: (placeId: string) => void;
   navigateToGasStationDistributor: () => void;
-  navigateToCollections: () => void;
 
   openCardPicker: (slotId: string) => void;
   closeCardPicker: () => void;
@@ -162,7 +160,6 @@ interface ChemCityStore {
   openPlaceUnlockModal: (placeId: string) => void;
   closePlaceUnlockModal: () => void;
 
-  claimCollectionReward: (collectionId: string) => Promise<void>;
   dismissOnboarding: () => void;
 }
 
@@ -392,7 +389,6 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
         progress: null,
         slimItems: [],
         places: [],
-        collections: [],
         selectedPlaceId: null,
         isLoading: false,
       });
@@ -447,7 +443,6 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
   navigateToMap: () => set({ view: 'map', selectedPlaceId: null }),
   navigateToPlace: (placeId) => set({ view: 'place', selectedPlaceId: placeId }),
   navigateToGasStationDistributor: () => set({ view: 'gas_station_distributor' }),
-  navigateToCollections: () => set({ view: 'collections' }),
 
   openCardPicker: (slotId) => set({ cardPickerSlotId: slotId }),
   closeCardPicker: () => set({ cardPickerSlotId: null }),
@@ -670,10 +665,6 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
 
   dismissDailyLogin: () => {
     set((s) => ({ dailyLogin: { ...s.dailyLogin, showModal: false } }));
-  },
-
-  claimCollectionReward: async (collectionId: string) => {
-    await callChemCityClaimCollectionReward(collectionId);
   },
 
   dismissOnboarding: () => {

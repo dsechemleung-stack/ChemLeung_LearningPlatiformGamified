@@ -6,6 +6,7 @@ import { useChemCityStore } from '../store/chemcityStore';
 import ChemistryLoading from '../components/ChemistryLoading';
 import { callChemCityEquipCosmetics } from '../lib/chemcity/cloudFunctions';
 import { ProfileCard } from '../components/chemcity/gacha/ProfileCard';
+import { CardDetail } from '../components/chemcity/CardDetail';
 
 const BG = '#f5f9f6';
 
@@ -76,13 +77,13 @@ function ChemCardsPanel({ showAlbum }) {
   const slimItems = useChemCityStore((s) => s.slimItems);
   const places = useChemCityStore((s) => s.places);
   const collections = useChemCityStore((s) => s.collections);
+  const openCardDetail = useChemCityStore((s) => s.openCardDetail);
 
   const [query, setQuery] = useState('');
   const [placeId, setPlaceId] = useState('all');
   const [expandedAlbum, setExpandedAlbum] = useState(() => new Set());
-
-  const collectionsById = useMemo(() => new Map((collections || []).map((c) => [c.id, c])), [collections]);
-
+  const [skinIdxByKey, setSkinIdxByKey] = useState({});
+  
   const owned = useMemo(() => {
     if (!user) return [];
     const ownedIds = new Set(user.ownedItems || []);
@@ -102,12 +103,19 @@ function ChemCardsPanel({ showAlbum }) {
     });
   }, [owned, query, placeId]);
 
-  const getPrimaryCollectionLabel = (item) => {
-    const ids = Array.isArray(item?.collections) ? item.collections : [];
-    const first = ids.find(Boolean);
-    if (!first) return '';
-    const doc = collectionsById.get(first);
-    return String(doc?.displayName || first);
+  const getSkinIdx = (key, len) => {
+    const n = Number(skinIdxByKey?.[key] ?? 0);
+    const L = Math.max(1, Number(len) || 1);
+    return ((n % L) + L) % L;
+  };
+
+  const bumpSkin = (key, len, dir) => {
+    const L = Math.max(1, Number(len) || 1);
+    setSkinIdxByKey((prev) => {
+      const curr = Number(prev?.[key] ?? 0);
+      const next = ((curr + dir) % L + L) % L;
+      return { ...(prev || {}), [key]: next };
+    });
   };
 
   return (
@@ -157,25 +165,79 @@ function ChemCardsPanel({ showAlbum }) {
               return name.includes(q) || formula.includes(q);
             };
 
-            const colEntries = (collections || []).map((col) => {
-              const itemSlims = (Array.isArray(col?.itemIds) ? col.itemIds : [])
-                .map((id) => (slimItems || []).find((x) => x?.id === id))
-                .filter((x) => x && !x.deprecated);
+            // Derive membership from CSV-backed `item.collections` tags.
+            // This avoids relying on Firestore `collection.itemIds`, which can drift.
+            const itemsByCollectionId = new Map();
+            const uncategorized = [];
+            for (const it of (slimItems || [])) {
+              if (!it || it.deprecated) continue;
+              if (!matchesFilters(it)) continue;
+              const cols = Array.isArray(it.collections) ? it.collections : [];
+              const normalized = cols.map((x) => String(x || '').trim()).filter(Boolean);
+              if (normalized.length === 0) {
+                uncategorized.push(it);
+                continue;
+              }
+              for (const colIdRaw of normalized) {
+                const colId = String(colIdRaw || '').trim();
+                if (!colId) continue;
+                const arr = itemsByCollectionId.get(colId) || [];
+                arr.push(it);
+                itemsByCollectionId.set(colId, arr);
+              }
+            }
 
-              const items = itemSlims.filter(matchesFilters);
-              const total = items.length;
-              const collected = items.filter((it) => ownedIds.has(it.id)).length;
+            const colEntries = (collections || []).map((col) => {
+              const colId = String(col?.id || '').trim();
+              const items = itemsByCollectionId.get(colId) || [];
+
+              const groups = new Map();
+              for (const it of items) {
+                const key = String(it?.baseId || '').trim() || String(it?.id || '');
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(it);
+              }
+
+              const total = groups.size;
+              let collected = 0;
+              for (const arr of groups.values()) {
+                if (arr.some((it) => ownedIds.has(it.id))) collected++;
+              }
               const pct = total > 0 ? collected / total : 0;
 
               return {
                 id: col?.id || col?.displayName || '',
                 label: String(col?.displayName || col?.id || 'Collection'),
-                items,
+                groups,
                 collected,
                 total,
                 pct,
               };
-            }).filter((e) => e.items.length > 0);
+            }).filter((e) => e.total > 0);
+
+            // Add a virtual collection for items with no tags.
+            if (uncategorized.length > 0) {
+              const groups = new Map();
+              for (const it of uncategorized) {
+                const key = String(it?.baseId || '').trim() || String(it?.id || '');
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(it);
+              }
+              const total = groups.size;
+              let collected = 0;
+              for (const arr of groups.values()) {
+                if (arr.some((it) => ownedIds.has(it.id))) collected++;
+              }
+              const pct = total > 0 ? collected / total : 0;
+              colEntries.push({
+                id: 'uncategorized',
+                label: 'Uncategorized',
+                groups,
+                collected,
+                total,
+                pct,
+              });
+            }
 
             const entries = colEntries
               .sort((a, b) => (b.pct - a.pct) || String(a.label).localeCompare(String(b.label)))
@@ -226,32 +288,76 @@ function ChemCardsPanel({ showAlbum }) {
                   </button>
                   {expanded && (
                     <div className="p-3 pt-0">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mt-3">
-                        {entry.items.map((it) => {
-                          const isOwned = ownedIds.has(it.id);
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 mt-3">
+                        {Array.from(entry.groups.entries()).map(([key, items]) => {
+                          const idx = getSkinIdx(key, items.length);
+                          const it = items[idx] || items[0];
+                          const isOwned = it ? ownedIds.has(it.id) : false;
+                          const canSwitch = items.length > 1;
                           return (
-                            <div
-                              key={it.id}
-                              className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 overflow-hidden"
-                            >
-                              <div className="aspect-square bg-slate-50 flex items-center justify-center overflow-hidden">
-                                {!isOwned ? (
-                                  <div className="w-full h-full flex items-center justify-center bg-slate-200">
-                                    <div className="text-4xl font-black text-slate-500">?</div>
-                                  </div>
-                                ) : it.imageUrl ? (
-                                  <img src={it.imageUrl} alt={it.name} className="w-full h-full object-cover" draggable={false} />
-                                ) : (
-                                  <div className="text-4xl">🧪</div>
-                                )}
+                            <div key={key} className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 overflow-hidden">
+                              <div className="aspect-square bg-slate-50 flex items-center justify-center overflow-hidden relative">
+                                <button
+                                  type="button"
+                                  onClick={() => bumpSkin(key, items.length, -1)}
+                                  disabled={!canSwitch}
+                                  className={`absolute left-2 top-1/2 -translate-y-1/2 w-7 h-10 rounded-xl font-black border-2 ${canSwitch ? 'bg-white/90 border-slate-200 text-slate-700 hover:bg-white' : 'bg-white/60 border-slate-200 text-slate-300 cursor-not-allowed'}`}
+                                  title="Previous skin"
+                                >
+                                  {'<'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => { if (it) openCardDetail(it.id); }}
+                                  className="w-full h-full"
+                                  style={{ cursor: it ? 'pointer' : 'default' }}
+                                  title={it?.name || ''}
+                                >
+                                  {!it || !isOwned ? (
+                                    <div className="w-full h-full flex items-center justify-center bg-slate-200">
+                                      <div className="text-4xl font-black text-slate-500">?</div>
+                                    </div>
+                                  ) : it.imageUrl ? (
+                                    <img src={it.imageUrl} alt={it.name} className="w-full h-full object-cover" draggable={false} />
+                                  ) : (
+                                    <div className="text-4xl">🧪</div>
+                                  )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => bumpSkin(key, items.length, +1)}
+                                  disabled={!canSwitch}
+                                  className={`absolute right-2 top-1/2 -translate-y-1/2 w-7 h-10 rounded-xl font-black border-2 ${canSwitch ? 'bg-white/90 border-slate-200 text-slate-700 hover:bg-white' : 'bg-white/60 border-slate-200 text-slate-300 cursor-not-allowed'}`}
+                                  title="Next skin"
+                                >
+                                  {'>'}
+                                </button>
                               </div>
+
                               <div className="p-3">
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0">
-                                    <div className="font-black text-slate-900 text-sm truncate" title={it.name}>{it.name}</div>
-                                    <div className="text-[11px] text-slate-500 font-bold truncate">{it.chemicalFormula}</div>
+                                    <div className="font-black text-slate-900 text-[14px] truncate" title={it?.name} style={{ textAlign: 'center', lineHeight: '18px' }}>{it?.name}</div>
+                                    <div
+                                      className="truncate"
+                                      style={{
+                                        color: 'rgba(15,23,42,0.72)',
+                                        fontSize: 12,
+                                        fontWeight: 900,
+                                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                                        lineHeight: '16px',
+                                        minHeight: 16,
+                                        textAlign: 'center',
+                                        display: 'flex',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      {it?.chemicalFormula || '—'}
+                                    </div>
                                   </div>
-                                  <RarityPill rarity={it.rarity} />
+                                  <RarityPill rarity={it?.rarity} />
                                 </div>
                               </div>
                             </div>
@@ -267,9 +373,15 @@ function ChemCardsPanel({ showAlbum }) {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {filtered.map((it) => (
-              <div key={it.id} className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 overflow-hidden">
+              <button
+                key={it.id}
+                type="button"
+                onClick={() => openCardDetail(it.id)}
+                className="bg-white rounded-2xl shadow-lg border-2 border-slate-200 overflow-hidden text-center transition-all active:scale-[0.99] hover:bg-slate-50"
+                title={it.name}
+              >
                 <div className="aspect-square bg-slate-50 flex items-center justify-center overflow-hidden">
                   {it.imageUrl ? (
                     <img src={it.imageUrl} alt={it.name} className="w-full h-full object-cover" draggable={false} />
@@ -280,13 +392,28 @@ function ChemCardsPanel({ showAlbum }) {
                 <div className="p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="font-black text-slate-900 text-sm truncate" title={it.name}>{it.name}</div>
-                      <div className="text-[11px] text-slate-500 font-bold truncate">{it.chemicalFormula}</div>
+                      <div className="font-black text-slate-900 text-[14px] truncate" title={it.name} style={{ textAlign: 'center', lineHeight: '18px' }}>{it.name}</div>
+                      <div
+                        className="truncate"
+                        style={{
+                          color: 'rgba(15,23,42,0.72)',
+                          fontSize: 12,
+                          fontWeight: 900,
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                          lineHeight: '16px',
+                          minHeight: 16,
+                          textAlign: 'center',
+                          display: 'flex',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {it.chemicalFormula || '—'}
+                      </div>
                     </div>
                     <RarityPill rarity={it.rarity} />
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -825,6 +952,8 @@ export default function InventoryPage() {
         {tab === 'wardrobe' && <CosmeticsGrid type="wardrobe" showAlbum={showAlbum} />}
         {tab === 'background' && <CosmeticsGrid type="background" showAlbum={false} />}
       </div>
+
+      <CardDetail />
     </div>
   );
 }

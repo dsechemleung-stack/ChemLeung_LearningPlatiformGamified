@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Coins, Gem, ChevronLeft, Sparkles, BookOpen, Fuel, X, Zap, Ticket } from 'lucide-react';
+import { Coins, Gem, ChevronLeft, Sparkles, Fuel, X, Zap, Ticket } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -10,7 +10,6 @@ export const CurrencyBar: React.FC = () => {
   const view               = useChemCityStore(s => s.view);
   const selectedPlaceId    = useChemCityStore(s => s.selectedPlaceId);
   const navigateToMap      = useChemCityStore(s => s.navigateToMap);
-  const navigateToCollections = useChemCityStore(s => s.navigateToCollections);
   const navigateToGasStationDistributor = useChemCityStore(s => s.navigateToGasStationDistributor);
 
   const [skillsOpen, setSkillsOpen] = useState(false);
@@ -135,9 +134,6 @@ export const CurrencyBar: React.FC = () => {
 
           <NavBtn onClick={() => setSkillsOpen(true)} active={false} label="Skill Boosts">
             <Sparkles size={15} />
-          </NavBtn>
-          <NavBtn onClick={navigateToCollections} active={view === 'collections'} label="Collections Album">
-            <BookOpen size={15} />
           </NavBtn>
           {showGasDistributorButton && (
             <NavBtn onClick={navigateToGasStationDistributor} active={false} label="Distribute Bonus Slots" accent>

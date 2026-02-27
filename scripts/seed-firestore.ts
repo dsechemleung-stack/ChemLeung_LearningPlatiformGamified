@@ -20,6 +20,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import sharp from 'sharp';
+import Papa from 'papaparse';
 
 // ─── Firebase Admin Init ─────────────────────────────────────
 // Expects GOOGLE_APPLICATION_CREDENTIALS env var pointing to
@@ -165,6 +166,11 @@ const SHOULD_UPLOAD_THEMED_AVATARS_FLAG = '--upload-themed-avatars';
 const SHOULD_HARD_REFRESH_FLAG = '--hard-refresh';
 const SHOULD_PURGE_NON_THEMED_V2_FLAG = '--purge-non-themed-v2';
 const SHOULD_PURGE_UNUSED_STORAGE_FLAG = '--purge-unused-storage';
+
+const SHOULD_SEED_ITEMS_FROM_CSV_FLAG = '--seed-items-from-csv';
+
+const DEFAULT_ITEMS_CSV_URL =
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vT1y1TCVk0zDqeO8V58ZN-Dj3M3rqJZFSLUEjWWTW6f-jlzSpqc8UEl3MGmTw78qOZHJNVEEbJYGojc/pub?gid=0&single=true&output=csv';
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -680,6 +686,121 @@ async function seedItems(): Promise<number> {
 
   await batchWrite('items', allItems);
   return allItems.length;
+}
+
+function splitList(raw: unknown): string[] {
+  const s = String(raw ?? '').trim();
+  if (!s) return [];
+  return s
+    .split(/\s*[|,]\s*/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function propagateCollectionsByBaseId(
+  docs: Array<{ id: string; baseId?: unknown; collections?: unknown }>,
+): Array<{ id: string; baseId?: unknown; collections?: unknown }> {
+  const baseToCollections = new Map<string, Set<string>>();
+
+  for (const d of docs) {
+    const baseId = String((d as any)?.baseId ?? '').trim();
+    if (!baseId) continue;
+    const set = baseToCollections.get(baseId) ?? new Set<string>();
+    const curr = Array.isArray((d as any)?.collections) ? ((d as any).collections as unknown[]) : [];
+    for (const c of curr) {
+      const v = String(c ?? '').trim();
+      if (v) set.add(v);
+    }
+    baseToCollections.set(baseId, set);
+  }
+
+  if (baseToCollections.size === 0) return docs;
+
+  return docs.map((d) => {
+    const baseId = String((d as any)?.baseId ?? '').trim();
+    if (!baseId) return d;
+    const set = baseToCollections.get(baseId);
+    if (!set || set.size === 0) return d;
+    const merged = Array.from(set).sort();
+    const curr = Array.isArray((d as any)?.collections) ? ((d as any).collections as unknown[]) : [];
+    const currSet = new Set(curr.map((x) => String(x ?? '').trim()).filter(Boolean));
+    if (currSet.size === merged.length && merged.every((x) => currSet.has(x))) return d;
+    return { ...(d as any), collections: merged } as any;
+  });
+}
+
+function parseBoolean(raw: unknown): boolean {
+  const s = String(raw ?? '').trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
+}
+
+async function seedItemsFromCsv(csvUrl: string): Promise<number> {
+  console.log(`\n🧾 Seeding items from CSV: ${csvUrl}`);
+  const res = await fetch(csvUrl, { redirect: 'follow' } as any);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} when fetching items CSV`);
+  }
+  const csvText = await res.text();
+  const parsed = Papa.parse<Record<string, string>>(csvText, {
+    header: true,
+    skipEmptyLines: true,
+  });
+  if (parsed.errors?.length) {
+    const msg = parsed.errors[0]?.message || 'Unknown CSV parse error';
+    throw new Error(`CSV parse error: ${msg}`);
+  }
+
+  const docs: Array<{ id: string; [key: string]: unknown }> = [];
+
+  for (const row of parsed.data || []) {
+    const id = String((row as any)?.id ?? '').trim();
+    if (!id) continue;
+
+    const coinCostRaw = String((row as any)?.coinCost ?? '').trim();
+    const diamondCostRaw = String((row as any)?.diamondCost ?? '').trim();
+    const coinCost = Number(coinCostRaw);
+    const diamondCost = Number(diamondCostRaw);
+
+    const shopData: Record<string, unknown> = {};
+    if (Number.isFinite(coinCost) && coinCost > 0) shopData.coinCost = coinCost;
+    if (Number.isFinite(diamondCost) && diamondCost > 0) shopData.diamondCost = diamondCost;
+
+    const collections = splitList((row as any)?.collections ?? (row as any)?.collectionIds ?? '');
+
+    docs.push({
+      id,
+      name: String((row as any)?.name ?? '').trim(),
+      chemicalFormula: String((row as any)?.chemicalFormula ?? '').trim(),
+      chemicalKey: String((row as any)?.chemicalKey ?? '').trim(),
+      baseId: String((row as any)?.baseId ?? '').trim(),
+      placeId: String((row as any)?.placeId ?? '').trim(),
+      validSlots: splitList((row as any)?.validSlots ?? ''),
+      imageUrl: String((row as any)?.imageUrl ?? '').trim(),
+      imageKey: String((row as any)?.imageKey ?? '').trim(),
+      imageFile: String((row as any)?.imageFile ?? '').trim(),
+      spriteFile: String((row as any)?.spriteFile ?? '').trim(),
+      rarity: String((row as any)?.rarity ?? '').trim() || 'common',
+      rarityValue: Number(String((row as any)?.rarityValue ?? '').trim() || 0) || undefined,
+      deprecated: parseBoolean((row as any)?.deprecated ?? ''),
+      topicId: String((row as any)?.topicId ?? '').trim(),
+      description: String((row as any)?.description ?? '').trim(),
+      funFact: String((row as any)?.funFact ?? '').trim(),
+      collections,
+      ...(Object.keys(shopData).length ? { shopData } : {}),
+    });
+  }
+
+  const mergedDocs = propagateCollectionsByBaseId(
+    docs as Array<{ id: string; baseId?: unknown; collections?: unknown }>,
+  ) as Array<{ id: string; [key: string]: unknown }>;
+
+  if (docs.length === 0) {
+    console.warn('   ⚠️  No rows parsed from CSV — skipping');
+    return 0;
+  }
+
+  await batchWrite('items', mergedDocs);
+  return mergedDocs.length;
 }
 
 // ─── Migrate Item Images to Firebase Storage (optional) ───────
@@ -1639,6 +1760,8 @@ async function run() {
   const shouldPurgeNonThemed = process.argv.includes(SHOULD_PURGE_NON_THEMED_V2_FLAG);
   const shouldPurgeUnusedStorage = process.argv.includes(SHOULD_PURGE_UNUSED_STORAGE_FLAG);
   const shouldUploadBackgroundsOnly = process.argv.includes(SHOULD_UPLOAD_BACKGROUNDS_ONLY_FLAG);
+  const shouldSeedItemsFromCsv = process.argv.includes(SHOULD_SEED_ITEMS_FROM_CSV_FLAG);
+  const itemsCsvUrl = String(process.env.CHEMCITY_ITEMS_CSV_URL || '').trim() || DEFAULT_ITEMS_CSV_URL;
 
   const shouldSeedGacha = shouldHardRefresh || process.argv.includes(SHOULD_SEED_GACHA_FLAG);
   // NOTE:
@@ -1673,7 +1796,9 @@ async function run() {
   try {
     // 1. Seed items
     console.log('📦 Seeding items...');
-    const itemCount = await seedItems();
+    const itemCount = shouldSeedItemsFromCsv
+      ? await seedItemsFromCsv(itemsCsvUrl)
+      : await seedItems();
 
     if (shouldMigrateImages) {
       await migrateItemImagesToStorage();
