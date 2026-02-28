@@ -14,6 +14,8 @@ dist-ssr
 
 chemseeder.json
 
+public/tmp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -24,3 +26,4 @@ chemseeder.json
 *.njsproj
 *.sln
 *.sw?
+.vercel

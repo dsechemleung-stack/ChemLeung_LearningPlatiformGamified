@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -14,6 +14,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const { t } = useLanguage();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (currentUser) navigate('/dashboard', { replace: true });
@@ -120,7 +121,7 @@ export default function LandingPage() {
       {/* ══════════════════════════════════════════
           TOP NAVIGATION BAR
       ══════════════════════════════════════════ */}
-      <nav className="relative z-20 flex items-center justify-between px-6 sm:px-10 pt-6 sm:pt-8">
+      <nav className="relative z-20 flex flex-wrap items-center justify-between gap-4 px-4 sm:px-10 pt-5 sm:pt-8">
 
         {/* Left: Logo + Wordmark */}
         <div className="flex items-center gap-3">
@@ -153,11 +154,80 @@ export default function LandingPage() {
         </div>
 
         {/* Right: Login + Get Started */}
-        <div className="flex items-center gap-3">
-          <button className="btn-ghost-nav" onClick={() => navigate('/features')} style={{ touchAction: 'manipulation' }}>
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          <div className="relative sm:hidden">
+            <button
+              type="button"
+              aria-label="Menu"
+              aria-expanded={mobileMenuOpen ? 'true' : 'false'}
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              className="btn-ghost-nav"
+              style={{ padding: '10px 14px', touchAction: 'manipulation' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 6h16" />
+                <path d="M4 12h16" />
+                <path d="M4 18h16" />
+              </svg>
+            </button>
+
+            {mobileMenuOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close menu"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="fixed inset-0 z-40"
+                  style={{ background: 'transparent' }}
+                />
+                <div
+                  className="absolute right-0 mt-2 z-50"
+                  style={{ minWidth: 180 }}
+                >
+                  <div
+                    style={{
+                      borderRadius: 16,
+                      border: '1px solid rgba(255,255,255,0.14)',
+                      background: 'rgba(0,0,0,0.55)',
+                      backdropFilter: 'blur(14px)',
+                      WebkitBackdropFilter: 'blur(14px)',
+                      boxShadow: '0 18px 48px rgba(0,0,0,0.55)',
+                      padding: 10,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn-ghost-nav"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        navigate('/features');
+                      }}
+                      style={{ width: '100%', justifyContent: 'center' }}
+                    >
+                      {t('nav.features')}
+                    </button>
+                    <div style={{ height: 8 }} />
+                    <button
+                      type="button"
+                      className="btn-ghost-nav"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        navigate('/vision');
+                      }}
+                      style={{ width: '100%', justifyContent: 'center' }}
+                    >
+                      {t('nav.beliefs')}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <button className="btn-ghost-nav hidden sm:inline-flex" onClick={() => navigate('/features')} style={{ touchAction: 'manipulation' }}>
             {t('nav.features')}
           </button>
-          <button className="btn-ghost-nav" onClick={() => navigate('/vision')} style={{ touchAction: 'manipulation' }}>
+          <button className="btn-ghost-nav hidden sm:inline-flex" onClick={() => navigate('/vision')} style={{ touchAction: 'manipulation' }}>
             {t('nav.beliefs')}
           </button>
           <button className="btn-ghost-nav" onClick={() => navigate('/login')} style={{ touchAction: 'manipulation' }}>

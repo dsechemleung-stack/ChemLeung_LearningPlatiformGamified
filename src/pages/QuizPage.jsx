@@ -8,6 +8,7 @@ import { quizStorage } from '../utils/quizStorage';
 export default function QuizPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const swipeStartRef = useRef(null);
   
   const [questions] = useState(() => quizStorage.getSelectedQuestions());
   const practiceMode = localStorage.getItem('quiz_mode') || 'timed'; // timed, marathon, custom, mistakes
@@ -237,6 +238,53 @@ export default function QuizPage() {
     navigate('/results');
   };
 
+  const shouldIgnoreSwipeTarget = (target) => {
+    const el = target instanceof Element ? target : null;
+    if (!el) return false;
+    return Boolean(el.closest('button, a, input, textarea, select, [role="button"], [data-enlarge-image="true"]'));
+  };
+
+  const handleTouchStart = (e) => {
+    if (showPeriodicTable || showQuestionPanel || showMobileMenu) return;
+    if (!e.touches || e.touches.length !== 1) return;
+    if (shouldIgnoreSwipeTarget(e.target)) return;
+
+    const t0 = e.touches[0];
+    swipeStartRef.current = {
+      x: t0.clientX,
+      y: t0.clientY,
+      time: Date.now(),
+    };
+  };
+
+  const handleTouchEnd = (e) => {
+    if (showPeriodicTable || showQuestionPanel || showMobileMenu) return;
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+
+    const t0 = e.changedTouches && e.changedTouches[0];
+    if (!t0) return;
+
+    const dx = t0.clientX - start.x;
+    const dy = t0.clientY - start.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+
+    // thresholds tuned to avoid interfering with vertical scroll
+    if (absX < 70) return;
+    if (absY > 40 && absY > absX * 0.7) return;
+
+    if (dx < 0) {
+      // swipe left => next
+      if (!isLastQuestion) nextQuestion();
+      else if (allAnswered) handleComplete();
+    } else {
+      // swipe right => prev
+      if (currentIndex > 0) prevQuestion();
+    }
+  };
+
   const isLastQuestion = currentIndex === totalQuestions - 1;
 
   const getTotalTimeSpent = () => {
@@ -294,10 +342,80 @@ export default function QuizPage() {
     }
   }, [timeRemaining, isTimedMode]);
 
+  const mainContent = (
+    <div className="w-full px-4 pt-6 pb-6 lg:px-0">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4">
+        <div className="flex justify-between items-center mb-2">
+          <div className="flex items-baseline gap-3">
+            <span className="text-3xl font-black text-lab-blue">{t('quiz.questionPrefix')}{currentIndex + 1}</span>
+            <span className="text-sm font-medium text-slate-500">{t('quiz.of')} {totalQuestions}</span>
+          </div>
+          <span className="text-xl font-bold text-lab-blue">{Math.round(progress)}%</span>
+        </div>
+        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+          <div className="bg-lab-blue h-full transition-all duration-300" style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+
+      {timerEnabled && !hideTimerUi && (
+        <div className="lg:hidden bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2"><Timer className="text-lab-blue" size={18} /><span className="text-sm font-bold text-slate-600">{t('quiz.totalTime')}</span></div>
+            <div className="text-xl font-black text-lab-blue font-mono">{formatTime(sessionTime)}</div>
+          </div>
+          {isTimedMode && (
+            <div className="flex justify-between text-xs text-slate-500 pb-2 border-b mb-2">
+              <span>{t('quiz.timeRemaining')}</span>
+              <span className={`font-bold ${timeRemaining < 60000 ? 'text-red-600' : 'text-amber-600'}`}>{formatTime(timeRemaining)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-xs text-slate-500">
+            <span>{t('quiz.thisQuestion')}</span>
+            <span className="font-bold text-lab-blue">{formatTime(currentQuestionTime)}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="mb-4">
+        <QuestionCard
+          question={currentQuestion}
+          selectedOption={answers[currentQuestion.ID]}
+          onSelect={handleOptionSelect}
+          showTopic={showTopic}
+          showSubtopic={showSubtopic}
+          showDseCode={showDseCode}
+        />
+      </div>
+
+      <div className="flex justify-center gap-1 py-2">
+        {questions.slice(0, Math.min(30, totalQuestions)).map((_, idx) => (
+          <div key={idx} className={`w-2 h-2 rounded-full transition-all ${idx === currentIndex ? 'bg-lab-blue w-6' : answers[questions[idx].ID] ? 'bg-chemistry-green' : flagged.has(questions[idx].ID) ? 'bg-amber-500' : 'bg-slate-200'}`} />
+        ))}
+        {totalQuestions > 30 && <span className="text-slate-400 text-xs">{t('common.ellipsis')}</span>}
+      </div>
+
+      <div className="text-center text-sm mt-2 space-y-1">
+        <p className="text-slate-500 hidden lg:block">
+          💡 <span className="font-semibold">{t('quiz.tip')}</span> {t('quiz.press')} <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">A</kbd>–<kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">D</kbd> {t('quiz.toSelect')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">Enter</kbd> / <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">→</kbd> {t('quiz.next')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">F</kbd> {t('quiz.flag')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">O</kbd> {t('quiz.overview')}
+        </p>
+        {!allAnswered && isLastQuestion && (
+          <p className="text-amber-600 font-medium">
+            {t('quiz.pleaseAnswerAll')}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="relative min-h-screen pb-32 md:pb-6">
+    <div
+      className="relative min-h-screen pb-32 lg:pb-6"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      style={{ touchAction: 'pan-y' }}
+    >
       {/* Keyboard shortcut hint (desktop only) */}
-      <div className="hidden md:flex fixed top-20 left-1/2 -translate-x-1/2 z-20 items-center gap-3 bg-white/90 backdrop-blur border border-slate-200 rounded-full px-4 py-1.5 shadow-sm text-xs text-slate-500">
+      <div className="hidden lg:flex fixed top-20 left-1/2 -translate-x-1/2 z-20 items-center gap-3 bg-white/90 backdrop-blur border border-slate-200 rounded-full px-4 py-1.5 shadow-sm text-xs text-slate-500">
         <span>{t('quiz.type')} <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">A</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">B</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">C</kbd> <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">D</kbd> {t('quiz.toSelect')}</span>
         <span className="text-slate-300">|</span>
         <span><kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">Enter</kbd> / <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-slate-700">→</kbd> {t('quiz.next')}</span>
@@ -310,15 +428,15 @@ export default function QuizPage() {
       {/* Mobile Tools */}
       <button
         onClick={() => setShowMobileMenu(!showMobileMenu)}
-        className="md:hidden fixed top-20 right-4 z-40 flex items-center gap-2 px-4 py-2 bg-lab-blue text-white rounded-lg font-bold shadow-lg"
+        className="lg:hidden fixed top-20 right-4 z-40 flex items-center gap-2 px-4 py-2 bg-lab-blue text-white rounded-lg font-bold shadow-lg"
       >
         <Menu size={18} />{t('quiz.tools')}
       </button>
 
       {showMobileMenu && (
         <>
-          <div className="md:hidden fixed inset-0 bg-black bg-opacity-25 z-40" onClick={() => setShowMobileMenu(false)} />
-          <div className="md:hidden fixed top-32 right-4 bg-white rounded-xl shadow-2xl border-2 border-slate-200 z-50 overflow-hidden min-w-[200px]">
+          <div className="lg:hidden fixed inset-0 bg-black bg-opacity-25 z-40" onClick={() => setShowMobileMenu(false)} />
+          <div className="lg:hidden fixed top-32 right-4 bg-white rounded-xl shadow-2xl border-2 border-slate-200 z-50 overflow-hidden min-w-[200px]">
             <button onClick={() => { handleBackToTopics(); setShowMobileMenu(false); }}
               className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50 transition-all text-left border-b">
               <Home size={18} className="text-red-500" />
@@ -343,76 +461,101 @@ export default function QuizPage() {
         </>
       )}
 
-      {/* Desktop Back Button */}
-      <button onClick={handleBackToTopics}
-        className="hidden md:flex fixed left-8 top-24 z-30 items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all shadow-lg hover:scale-105 active:scale-95">
-        <Home size={18} /><span>{t('quiz.backToTopics')}</span>
+      {/* Desktop Floating Nav Buttons */}
+      <button
+        type="button"
+        onClick={prevQuestion}
+        disabled={currentIndex === 0}
+        className="hidden lg:flex fixed left-6 top-[82%] -translate-y-1/2 z-40 items-center justify-center w-16 h-16 rounded-full font-bold transition-all shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed bg-lab-blue text-white hover:bg-blue-800 hover:scale-110"
+        aria-label={t('quiz.previous')}
+        title={t('quiz.previous')}
+      >
+        <ChevronLeft size={32} />
       </button>
 
-      {/* Desktop Left Sidebar */}
-      <div className="hidden md:flex fixed left-8 top-40 flex-col gap-4 z-30 h-[calc(100vh-12rem)]">
-        {timerEnabled && !hideTimerUi && (
-          <div className="bg-white rounded-2xl shadow-xl border-2 border-lab-blue p-6 w-48">
-            <div className="text-center">
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <Timer className="text-lab-blue" size={24} />
-                <span className="text-sm font-bold text-slate-600">{t('quiz.totalTime')}</span>
-              </div>
-              <div className="text-4xl font-black text-lab-blue mb-4 font-mono">{formatTime(sessionTime)}</div>
-              
-              {isTimedMode && (
-                <div className="mb-4 pb-4 border-b border-slate-200">
-                  <div className="text-xs text-slate-500 mb-1">{t('quiz.timeRemaining')}</div>
-                  <div className={`text-2xl font-black font-mono ${timeRemaining < 60000 ? 'text-red-600' : 'text-amber-600'}`}>
-                    {formatTime(timeRemaining)}
+      <button
+        type="button"
+        onClick={!isLastQuestion ? nextQuestion : handleComplete}
+        disabled={isLastQuestion && !allAnswered}
+        className={`hidden lg:flex fixed right-6 top-[82%] -translate-y-1/2 z-40 items-center justify-center w-16 h-16 rounded-full font-bold transition-all shadow-lg active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+          !isLastQuestion
+            ? 'bg-lab-blue text-white hover:bg-blue-800 hover:scale-110'
+            : allAnswered
+              ? 'bg-chemistry-green text-white hover:opacity-90 hover:scale-110'
+              : 'bg-slate-300 text-slate-500'
+        }`}
+        aria-label={!isLastQuestion ? t('quiz.next') : t('quiz.finishSubmit')}
+        title={!isLastQuestion ? t('quiz.next') : t('quiz.finishSubmit')}
+      >
+        {!isLastQuestion ? <ChevronRight size={32} /> : <Send size={28} />}
+      </button>
+
+      <div className="hidden lg:flex w-full px-6 pt-6 pb-6 gap-5">
+        <div className="w-52 flex-shrink-0">
+          <div className="sticky top-24 flex flex-col gap-4 h-[calc(100vh-7rem)]">
+            <button onClick={handleBackToTopics}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-all shadow-lg hover:scale-105 active:scale-95"
+            >
+              <Home size={18} /><span>{t('quiz.backToTopics')}</span>
+            </button>
+
+            {timerEnabled && !hideTimerUi && (
+              <div className="bg-white rounded-2xl shadow-xl border-2 border-lab-blue p-6 w-full">
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <Timer className="text-lab-blue" size={24} />
+                    <span className="text-sm font-bold text-slate-600">{t('quiz.totalTime')}</span>
+                  </div>
+                  <div className="text-4xl font-black text-lab-blue mb-4 font-mono">{formatTime(sessionTime)}</div>
+                  
+                  {isTimedMode && (
+                    <div className="mb-4 pb-4 border-b border-slate-200">
+                      <div className="text-xs text-slate-500 mb-1">{t('quiz.timeRemaining')}</div>
+                      <div className={`text-2xl font-black font-mono ${timeRemaining < 60000 ? 'text-red-600' : 'text-amber-600'}`}>
+                        {formatTime(timeRemaining)}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="text-xs text-slate-500 space-y-2">
+                    <div className="flex justify-between pt-2 border-t">
+                      <span>{t('quiz.thisQuestion')}</span>
+                      <span className="font-bold text-lab-blue">{formatTime(currentQuestionTime)}</span>
+                    </div>
                   </div>
                 </div>
-              )}
-              
-              <div className="text-xs text-slate-500 space-y-2">
-                <div className="flex justify-between pt-2 border-t">
-                  <span>{t('quiz.thisQuestion')}</span>
-                  <span className="font-bold text-lab-blue">{formatTime(currentQuestionTime)}</span>
-                </div>
               </div>
-            </div>
-          </div>
-        )}
-        <button onClick={() => setShowPeriodicTable(true)}
-          className="flex items-center gap-2 px-6 py-4 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-all shadow-lg hover:scale-105 active:scale-95">
-          <FlaskConical size={20} /><span>{t('quiz.periodicTable')}</span>
-        </button>
-        <button onClick={() => setShowQuestionPanel(!showQuestionPanel)}
-          className="flex items-center gap-2 px-6 py-4 bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg hover:scale-105 active:scale-95">
-          <Flag size={20} /><span>{t('quiz.overview')}</span>
-        </button>
-        <div className="flex-1" />
-        <button onClick={prevQuestion} disabled={currentIndex === 0}
-          className="flex items-center justify-center w-16 h-16 bg-lab-blue text-white rounded-full font-bold hover:bg-blue-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all shadow-lg hover:scale-110 active:scale-95">
-          <ChevronLeft size={32} />
-        </button>
-      </div>
+            )}
 
-      {/* Desktop Right Sidebar */}
-      <div className="hidden md:flex fixed right-8 top-40 flex-col gap-4 z-30 h-[calc(100vh-12rem)]">
-        <button onClick={toggleFlag}
-          className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg hover:scale-110 active:scale-95 ${flagged.has(currentQuestion?.ID) ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-white text-amber-500 border-2 border-amber-500 hover:bg-amber-50'}`}
-          title={flagged.has(currentQuestion?.ID) ? t('quiz.unflagQuestion') : t('quiz.flagQuestion')}>
-          <Flag size={28} fill={flagged.has(currentQuestion?.ID) ? 'currentColor' : 'none'} />
-        </button>
-        <div className="flex-1" />
-        {!isLastQuestion ? (
-          <button onClick={nextQuestion}
-            className="flex items-center justify-center w-16 h-16 bg-lab-blue text-white rounded-full font-bold hover:bg-blue-800 transition-all shadow-lg hover:scale-110 active:scale-95">
-            <ChevronRight size={32} />
-          </button>
-        ) : (
-          <button onClick={handleComplete} disabled={!allAnswered}
-            className={`flex items-center justify-center w-16 h-16 rounded-full font-bold transition-all shadow-lg hover:scale-110 active:scale-95 ${allAnswered ? 'bg-chemistry-green text-white hover:opacity-90' : 'bg-slate-300 text-slate-500 cursor-not-allowed'}`}
-            title={t('quiz.finishSubmit')}>
-            <Send size={28} />
-          </button>
-        )}
+            <button onClick={() => setShowPeriodicTable(true)}
+              className="flex items-center gap-2 px-5 py-4 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 transition-all shadow-lg hover:scale-105 active:scale-95"
+            >
+              <FlaskConical size={20} /><span>{t('quiz.periodicTable')}</span>
+            </button>
+
+            <button onClick={() => setShowQuestionPanel(!showQuestionPanel)}
+              className="flex items-center gap-2 px-5 py-4 bg-slate-700 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg hover:scale-105 active:scale-95"
+            >
+              <Flag size={20} /><span>{t('quiz.overview')}</span>
+            </button>
+
+            <div className="flex-1" />
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-0">{mainContent}</div>
+
+        <div className="w-20 flex-shrink-0">
+          <div className="sticky top-24 flex flex-col gap-4 h-[calc(100vh-7rem)]">
+            <button onClick={toggleFlag}
+              className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg hover:scale-110 active:scale-95 ${flagged.has(currentQuestion?.ID) ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-white text-amber-500 border-2 border-amber-500 hover:bg-amber-50'}`}
+              title={flagged.has(currentQuestion?.ID) ? t('quiz.unflagQuestion') : t('quiz.flagQuestion')}
+            >
+              <Flag size={28} fill={flagged.has(currentQuestion?.ID) ? 'currentColor' : 'none'} />
+            </button>
+            <div className="flex-1" />
+          </div>
+        </div>
       </div>
 
       {/* Question Overview Panel - No blur, just transparent */}
@@ -468,93 +611,31 @@ export default function QuizPage() {
         </div>
       )}
 
-      {/* Main Content */}
-      <div className="max-w-5xl mx-auto px-4 pt-6 pb-6">
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <div className="flex items-baseline gap-3">
-              <span className="text-3xl font-black text-lab-blue">{t('quiz.questionPrefix')}{currentIndex + 1}</span>
-              <span className="text-sm font-medium text-slate-500">{t('quiz.of')} {totalQuestions}</span>
-            </div>
-            <span className="text-xl font-bold text-lab-blue">{Math.round(progress)}%</span>
-          </div>
-          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-            <div className="bg-lab-blue h-full transition-all duration-300" style={{ width: `${progress}%` }} />
-          </div>
-        </div>
-
-        {timerEnabled && !hideTimerUi && (
-          <div className="md:hidden bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2"><Timer className="text-lab-blue" size={18} /><span className="text-sm font-bold text-slate-600">{t('quiz.totalTime')}</span></div>
-              <div className="text-xl font-black text-lab-blue font-mono">{formatTime(sessionTime)}</div>
-            </div>
-            {isTimedMode && (
-              <div className="flex justify-between text-xs text-slate-500 pb-2 border-b mb-2">
-                <span>{t('quiz.timeRemaining')}</span>
-                <span className={`font-bold ${timeRemaining < 60000 ? 'text-red-600' : 'text-amber-600'}`}>{formatTime(timeRemaining)}</span>
-              </div>
-            )}
-            <div className="flex justify-between text-xs text-slate-500">
-              <span>{t('quiz.thisQuestion')}</span>
-              <span className="font-bold text-lab-blue">{formatTime(currentQuestionTime)}</span>
-            </div>
-          </div>
-        )}
-
-        <div className="mb-4">
-          <QuestionCard
-            question={currentQuestion}
-            selectedOption={answers[currentQuestion.ID]}
-            onSelect={handleOptionSelect}
-            showTopic={showTopic}
-            showSubtopic={showSubtopic}
-            showDseCode={showDseCode}
-          />
-        </div>
-
-        <div className="flex justify-center gap-1 py-2">
-          {questions.slice(0, Math.min(30, totalQuestions)).map((_, idx) => (
-            <div key={idx} className={`w-2 h-2 rounded-full transition-all ${idx === currentIndex ? 'bg-lab-blue w-6' : answers[questions[idx].ID] ? 'bg-chemistry-green' : flagged.has(questions[idx].ID) ? 'bg-amber-500' : 'bg-slate-200'}`} />
-          ))}
-          {totalQuestions > 30 && <span className="text-slate-400 text-xs">{t('common.ellipsis')}</span>}
-        </div>
-
-        <div className="text-center text-sm mt-2 space-y-1">
-          <p className="text-slate-500 hidden md:block">
-            💡 <span className="font-semibold">{t('quiz.tip')}</span> {t('quiz.press')} <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">A</kbd>–<kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">D</kbd> {t('quiz.toSelect')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">Enter</kbd> / <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">→</kbd> {t('quiz.next')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">F</kbd> {t('quiz.flag')} · <kbd className="px-2 py-1 bg-slate-100 border border-slate-300 rounded text-xs font-mono">O</kbd> {t('quiz.overview')}
-          </p>
-          {!allAnswered && isLastQuestion && (
-            <p className="text-amber-600 font-medium">
-              {t('quiz.pleaseAnswerAll')}
-            </p>
-          )}
-        </div>
-      </div>
+      <div className="lg:hidden">{mainContent}</div>
 
       {/* Mobile Nav Bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-200 shadow-2xl z-30">
-        <div className="grid grid-cols-3 gap-2 p-3">
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t-2 border-slate-200 shadow-2xl z-30">
+        <div className="grid grid-cols-3 gap-2 p-2">
           <button onClick={prevQuestion} disabled={currentIndex === 0}
-            className="flex flex-col items-center justify-center py-3 px-2 bg-slate-100 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95">
-            <ChevronLeft size={24} className={currentIndex === 0 ? 'text-slate-400' : 'text-lab-blue'} />
-            <span className={`text-xs mt-1 ${currentIndex === 0 ? 'text-slate-400' : 'text-lab-blue'}`}>{t('quiz.previous')}</span>
+            className="flex flex-col items-center justify-center py-2 px-2 bg-slate-100 rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95">
+            <ChevronLeft size={20} className={currentIndex === 0 ? 'text-slate-400' : 'text-lab-blue'} />
+            <span className={`text-xs mt-0.5 ${currentIndex === 0 ? 'text-slate-400' : 'text-lab-blue'}`}>{t('quiz.previous')}</span>
           </button>
-          <div className="flex flex-col items-center justify-center py-3 px-2 bg-slate-100 rounded-lg">
-            <div className="text-2xl font-black text-lab-blue">{currentIndex + 1}/{totalQuestions}</div>
-            <div className="text-xs text-slate-500 mt-1">{t('quiz.question')}</div>
+          <div className="flex flex-col items-center justify-center py-2 px-2 bg-slate-100 rounded-lg">
+            <div className="text-xl font-black text-lab-blue">{currentIndex + 1}/{totalQuestions}</div>
+            <div className="text-xs text-slate-500">{t('quiz.question')}</div>
           </div>
           {!isLastQuestion ? (
             <button onClick={nextQuestion}
-              className="flex flex-col items-center justify-center py-3 px-2 bg-lab-blue rounded-lg font-bold transition-all active:scale-95">
-              <ChevronRight size={24} className="text-white" />
-              <span className="text-xs text-white mt-1">{t('quiz.next')}</span>
+              className="flex flex-col items-center justify-center py-2 px-2 bg-lab-blue rounded-lg font-bold transition-all active:scale-95">
+              <ChevronRight size={20} className="text-white" />
+              <span className="text-xs text-white mt-0.5">{t('quiz.next')}</span>
             </button>
           ) : (
             <button onClick={handleComplete} disabled={!allAnswered}
-              className={`flex flex-col items-center justify-center py-3 px-2 rounded-lg font-bold transition-all active:scale-95 ${allAnswered ? 'bg-chemistry-green' : 'bg-slate-300 cursor-not-allowed'}`}>
-              <Send size={24} className="text-white" />
-              <span className="text-xs text-white mt-1">{t('quiz.submit')}</span>
+              className={`flex flex-col items-center justify-center py-2 px-2 rounded-lg font-bold transition-all active:scale-95 ${allAnswered ? 'bg-chemistry-green' : 'bg-slate-300 cursor-not-allowed'}`}>
+              <Send size={20} className="text-white" />
+              <span className="text-xs text-white mt-0.5">{t('quiz.submit')}</span>
             </button>
           )}
         </div>

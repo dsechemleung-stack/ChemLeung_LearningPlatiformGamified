@@ -540,7 +540,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight special-calendar-title special-calendar-title-animate">
+              <h3 className="text-lg sm:text-3xl font-black text-slate-800 tracking-tight leading-tight max-w-[14rem] sm:max-w-none special-calendar-title special-calendar-title-animate">
                 {t('calendar.smartStudyCalendar')}
               </h3>
               <button

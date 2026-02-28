@@ -41,7 +41,7 @@ function AppContent() {
   const isStoreRoute = location.pathname === '/store';
   const isGachaRoute = location.pathname === '/gacha';
   const isInventoryRoute = location.pathname === '/inventory';
-  const noShellRoutes = new Set(['/', '/vision', '/features', '/dashboard', '/login', '/register', '/millionaire']);
+  const noShellRoutes = new Set(['/', '/vision', '/features', '/dashboard', '/login', '/register', '/millionaire', '/quiz']);
   const useNoShell = noShellRoutes.has(location.pathname);
   const hideHeaderRoutes = new Set(['/', '/vision', '/features', '/login', '/register', '/millionaire']);
   const showHeader = !hideHeaderRoutes.has(location.pathname);
@@ -278,7 +278,7 @@ function AppContent() {
 
 function AppShell() {
   const location = useLocation();
-  const noShellRoutes = new Set(['/', '/dashboard', '/login', '/register', '/millionaire']);
+  const noShellRoutes = new Set(['/', '/dashboard', '/login', '/register', '/millionaire', '/quiz']);
   const useNoShell = noShellRoutes.has(location.pathname);
 
   return (

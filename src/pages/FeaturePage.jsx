@@ -239,12 +239,20 @@ export default function FeaturePage() {
         .side-item.active { border-color: rgba(255,255,255,0.32); background: rgba(255,255,255,0.12); transform: scale(1.03); }
         .left-panel { width: 168px; }
         .left-btn { width: 100%; height: 44px; padding: 0 12px; justify-content: flex-start; gap: 10px; }
+        .left-label { display: block; }
         @media (min-width: 640px) {
           .left-panel { width: 204px; }
           .left-btn { width: 100%; height: 44px; padding: 0 12px; justify-content: flex-start; gap: 10px; }
         }
-        .scroller { padding-left: 196px; }
+        @media (max-width: 639px) {
+          .left-panel { width: 72px; }
+          .left-btn { justify-content: center; padding: 0; }
+          .left-label { display: none; }
+        }
+        .scroller { padding-left: 92px; }
         @media (min-width: 640px) { .scroller { padding-left: 240px; } }
+        .preview-frame { height: 70vh; }
+        @media (min-width: 640px) { .preview-frame { height: 62vh; } }
       `}</style>
 
       <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
@@ -363,7 +371,7 @@ export default function FeaturePage() {
             >
               <Icon size={18} color={f.accent} />
               <span
-                className="block"
+                className="left-label block"
                 style={{
                   fontWeight: 900,
                   fontSize: 12,
@@ -443,7 +451,7 @@ export default function FeaturePage() {
                   margin: '0 auto',
                 }}
               >
-                <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '62vh' }}>
+                <div className="preview-frame" style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <div
                     style={{
                       width: '100%',
@@ -543,7 +551,7 @@ export default function FeaturePage() {
                 margin: '0 auto',
               }}
             >
-              <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '62vh' }}>
+              <div className="preview-frame" style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div
                   style={{
                     width: '100%',

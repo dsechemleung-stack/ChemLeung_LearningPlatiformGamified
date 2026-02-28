@@ -24,7 +24,14 @@ const HOTSPOTS = [
     label: 'Continuous Growth and Resilience',
     subtitle: 'Wilted Leaves',
     info: 'Wilted leaves can mean a failed quiz, a confusion, or a loss. But remember, no one is perfect. Just keep going.',
-    polygon: [[20.11,30.58],[16.9,27.25],[19.51,18.32],[24.72,23.22],[23.12,29]],
+    polygon: [[29.2,34.65],[24.32,38.98],[25.59,47.84],[30.29,42.24],[29.02,37.72],[29.38,34.47],[29.38,34.47]],
+  },
+  {
+    id: 1771666828766,
+    label: 'Continuous Growth and Resilience',
+    subtitle: 'Wilted Leaves',
+    info: 'Wilted leaves can mean a failed quiz, a confusion, or a loss. But remember, no one is perfect. Just keep going.',
+    polygon: [[34.8,41.15],[31.55,43.14],[31.01,46.75],[33.18,49.46],[33.18,51.27],[36.07,44.04],[34.98,40.61],[34.98,40.61]],
   },
   {
     id: 1771666857730,
@@ -123,9 +130,22 @@ export default function VisionPage() {
   const canvasRef = useRef(null);
   const iconRef   = useRef(null);
   const textRef   = useRef(null);
+  const backdropTapRef = useRef({ down: false, x: 0, y: 0 });
 
   // Mobile panel toggle state
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [compactPopupOpen, setCompactPopupOpen] = useState(false);
+  const [popupItems, setPopupItems] = useState([]);
+  const [isCompactHeight, setIsCompactHeight] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerHeight <= 620;
+  });
+  const [isMobileWidth, setIsMobileWidth] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 768;
+  });
+
+  const popupMode = isMobileWidth || isCompactHeight;
 
   // Active triggers — array of hotspot objects (multi-trigger)
   const [activeItems, setActiveItems]   = useState([]);
@@ -182,7 +202,7 @@ export default function VisionPage() {
   // ── Shared hit-test — works for mouse and touch ──────────────────────────
   const runHitTest = useCallback((clientX, clientY) => {
     const sr = stageRef.current?.getBoundingClientRect();
-    if (!sr) return;
+    if (!sr) return [];
     setCursorPos({ x: clientX - sr.left, y: clientY - sr.top });
 
     const hits = [];
@@ -201,10 +221,28 @@ export default function VisionPage() {
       const unique = hits.filter(h => { if (seen.has(h.id)) return false; seen.add(h.id); return true; });
       setActiveItems(unique);
       setActiveCats([...new Set(unique.map(h => getCategoryForHotspot(h.id)?.id).filter(Boolean))]);
+      return unique;
     } else {
       setActiveItems([]); setActiveCats([]);
+      return [];
     }
+  }, [isCompactHeight, isMobileWidth]);
+
+  useEffect(() => {
+    const onResize = () => {
+      setIsCompactHeight(window.innerHeight <= 620);
+      setIsMobileWidth(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  useEffect(() => {
+    if (!popupMode) {
+      setCompactPopupOpen(false);
+      setPopupItems([]);
+    }
+  }, [popupMode]);
 
   // ── Mouse move ────────────────────────────────────────────────────────────
   const handleMouseMove = useCallback((e) => {
@@ -214,23 +252,53 @@ export default function VisionPage() {
       if (drawing) { const pct = toElemPercent(e, iconRef.current); if (pct) setHoverPt(pct); }
       return;
     }
+    if (popupMode) return;
     runHitTest(e.clientX, e.clientY);
-  }, [devMode, drawing, runHitTest]);
+  }, [devMode, drawing, runHitTest, popupMode]);
 
   // ── Touch / click (mobile) ────────────────────────────────────────────────
-  const handleTouch = useCallback((e) => {
+  const handleTouchEnd = useCallback((e) => {
     if (devMode) return;
-    const t = e.changedTouches?.[0] || e.touches?.[0];
+    const t = e.changedTouches?.[0];
     if (!t) return;
-    e.preventDefault();
-    runHitTest(t.clientX, t.clientY);
-  }, [devMode, runHitTest]);
+    const unique = runHitTest(t.clientX, t.clientY);
+    if (unique.length > 0) {
+      if (popupMode) {
+        setPopupItems(unique);
+        setCompactPopupOpen(true);
+        setMobilePanelOpen(false);
+      } else {
+        setMobilePanelOpen(true);
+        setCompactPopupOpen(false);
+      }
+    } else {
+      setCompactPopupOpen(false);
+      setPopupItems([]);
+      setMobilePanelOpen(false);
+    }
+  }, [devMode, runHitTest, popupMode]);
 
   const handleStageClick = useCallback((e) => {
     if (devMode) { handleDevClick(e); return; }
     // On desktop click, just run hit-test; on mobile this fires after touchend
-    runHitTest(e.clientX, e.clientY);
-  }, [devMode, runHitTest]);
+    const unique = runHitTest(e.clientX, e.clientY);
+
+    if (unique.length > 0) {
+      if (popupMode) {
+        setPopupItems(unique);
+        setCompactPopupOpen(true);
+        setMobilePanelOpen(false);
+      } else {
+        setPopupItems([]);
+        setMobilePanelOpen(true);
+        setCompactPopupOpen(false);
+      }
+    } else {
+      setCompactPopupOpen(false);
+      setPopupItems([]);
+      setMobilePanelOpen(false);
+    }
+  }, [devMode, runHitTest, popupMode]);
 
   // Dev handlers
   const handleDevClick = (e) => {
@@ -297,21 +365,54 @@ export default function VisionPage() {
           z-index: 50;
           transform: translateY(100%);
           transition: transform 0.3s ease;
-          max-height: 60vh;
+          max-height: 62vh;
         }
         .mobile-panel.open {
           transform: translateY(0);
+        }
+
+        @media (max-height: 620px) {
+          .mobile-panel { max-height: 54vh; }
+        }
+        @media (max-height: 460px) {
+          .mobile-panel { max-height: 48vh; }
+        }
+
+        .compact-modal {
+          position: fixed;
+          inset: 0;
+          z-index: 90;
+          background: rgba(0,0,0,0.72);
+          backdrop-filter: blur(10px);
+        }
+        .compact-modal-card {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%,-50%);
+          width: min(92vw, 520px);
+          max-height: min(86vh, 620px);
+          border-radius: 18px;
+          border: 1px solid rgba(118,168,165,0.22);
+          background: rgba(4,14,12,0.97);
+          box-shadow: 0 26px 90px rgba(0,0,0,0.75);
+          overflow: hidden;
+        }
+
+        @media (max-width: 767px) {
+          .vision-icon { left: 50% !important; top: 38% !important; height: auto !important; width: min(86vw, 440px) !important; max-width: 86vw !important; opacity: 0.92 !important; }
+          .vision-text { left: 50% !important; top: 83% !important; width: min(320px, 78vw) !important; opacity: 0.9 !important; }
         }
       `}</style>
 
       {/* ════ DESKTOP LEFT PANEL / MOBILE BOTTOM SHEET ═══════════════════════════════════════════════════ */}
       {/* Desktop: Left sidebar */}
-      <div className="hidden md:flex flex-col z-20 flex-shrink-0" style={{ width:devMode?282:262, minWidth:devMode?282:262, transition:'width .3s', background:'rgba(4,12,11,0.97)', backdropFilter:'blur(20px)', borderRight:'1px solid rgba(118,168,165,0.13)' }}>
+        <div className="hidden md:flex flex-col z-20 flex-shrink-0" style={{ width:devMode?282:262, minWidth:devMode?282:262, transition:'width .3s', background:'rgba(4,12,11,0.97)', backdropFilter:'blur(20px)', borderRight:'1px solid rgba(118,168,165,0.13)' }}>
 
         {/* Header */}
         <div style={{ padding:'22px 20px 16px', borderBottom:'1px solid rgba(118,168,165,0.1)' }}>
           <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:6 }}>
-            <div style={{ width:7,height:7,borderRadius:'50%',background:'#76A8A5',boxShadow:'0 0 9px #76A8A5',animation:'blink 2s infinite' }}/>
+            <div style={{ width:7,height:7,borderRadius:'50%',background:'#76A8A5',boxShadow:'0 0 9px #76A8A5',animation: popupMode ? 'none' : 'blink 2s infinite' }}/>
             <span className="mono" style={{ color:'rgba(118,168,165,0.7)',fontSize:11,letterSpacing:'.18em',textTransform:'uppercase' }}>
               {devMode ? 'ZONE MAPPER' : 'EVIDENCE BOARD'}
             </span>
@@ -395,7 +496,16 @@ export default function VisionPage() {
       </div>
 
       {/* Mobile: Bottom Sheet Panel */}
-      <div className={`md:hidden mobile-panel ${mobilePanelOpen ? 'open' : ''}`} style={{ background:'rgba(4,12,11,0.98)', backdropFilter:'blur(20px)', borderTop:'1px solid rgba(118,168,165,0.13)', borderRadius:'20px 20px 0 0' }}>
+      <div
+        className={`md:hidden mobile-panel ${mobilePanelOpen ? 'open' : ''}`}
+        style={{
+          display: 'none',
+          background:'rgba(4,12,11,0.98)',
+          backdropFilter:'blur(20px)',
+          borderTop:'1px solid rgba(118,168,165,0.13)',
+          borderRadius:'20px 20px 0 0',
+        }}
+      >
         {/* Handle bar */}
         <div className="flex justify-center pt-3 pb-2" onClick={() => setMobilePanelOpen(!mobilePanelOpen)}>
           <div style={{ width:40, height:5, background:'rgba(118,168,165,0.3)', borderRadius:3 }} />
@@ -414,7 +524,42 @@ export default function VisionPage() {
 
         {/* Category list - Mobile */}
         {!devMode && (
-          <div className="overflow-y-auto" style={{ padding:'12px 16px', maxHeight:'40vh' }}>
+          <div className="overflow-y-auto" style={{ padding:'12px 16px', maxHeight:'calc(62vh - 108px)' }}>
+            {hasActive && (
+              <div style={{ marginBottom: 10 }}>
+                {activeItems.map((item) => {
+                  const cat = getCategoryForHotspot(item.id);
+                  return (
+                    <div key={item.id} className="info-box" style={{ marginBottom: 10, pointerEvents: 'auto' }}>
+                      <div style={{ height:3, background:`linear-gradient(90deg,${cat?.color||'#76A8A5'},transparent)`, borderRadius:'2px 2px 0 0' }} />
+                      <div style={{
+                        background: 'rgba(4,14,12,0.97)',
+                        backdropFilter: 'blur(20px)',
+                        border: `1px solid ${cat?.color||'#76A8A5'}30`,
+                        borderTop: 'none',
+                        borderRadius: '0 0 14px 14px',
+                        padding: '14px 16px',
+                        boxShadow: `0 10px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(118,168,165,0.06)`,
+                      }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8 }}>
+                          <div style={{ width:8,height:8,borderRadius:'50%',background:cat?.color||'#76A8A5',boxShadow:`0 0 7px ${cat?.color||'#76A8A5'}`,flexShrink:0 }} />
+                          <span className="mono" style={{ fontSize:10,color:cat?.color||'#76A8A5',letterSpacing:'.14em',textTransform:'uppercase' }}>
+                            {item.label}
+                          </span>
+                        </div>
+                        <div style={{ color:'rgba(210,235,210,0.97)',fontWeight:800,fontSize:15,lineHeight:1.35,marginBottom:8 }}>
+                          {item.subtitle}
+                        </div>
+                        <div style={{ height:1,background:'rgba(118,168,165,0.14)',marginBottom:8 }} />
+                        <p style={{ color:'rgba(255,255,255,0.78)',fontSize:13,fontWeight:500,lineHeight:1.75,whiteSpace:'pre-line' }}>
+                          {item.info}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             {CATEGORIES.map((cat, idx) => {
               const isActive = activeCategories.includes(cat.id);
               return (
@@ -455,14 +600,117 @@ export default function VisionPage() {
         )}
       </div>
 
+      {/* Compact-height popup mode (mobile + short screens) */}
+      {!devMode && popupMode && compactPopupOpen && popupItems.length > 0 && (
+        <div
+          className="compact-modal"
+          onPointerDown={(e) => {
+            if (e.target !== e.currentTarget) return;
+            backdropTapRef.current = { down: true, x: e.clientX, y: e.clientY };
+          }}
+          onPointerUp={(e) => {
+            if (e.target !== e.currentTarget) return;
+            const st = backdropTapRef.current;
+            backdropTapRef.current = { down: false, x: 0, y: 0 };
+            if (!st.down) return;
+            const dx = Math.abs(e.clientX - st.x);
+            const dy = Math.abs(e.clientY - st.y);
+            if (dx <= 8 && dy <= 8) {
+              setCompactPopupOpen(false);
+              setPopupItems([]);
+            }
+          }}
+          onPointerCancel={() => {
+            backdropTapRef.current = { down: false, x: 0, y: 0 };
+          }}
+        >
+          <div className="compact-modal-card" onPointerDown={(e) => e.stopPropagation()}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '14px 14px',
+              borderBottom: '1px solid rgba(118,168,165,0.12)',
+              background: 'rgba(4,12,11,0.92)',
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, minWidth: 0 }}>
+                <div style={{ width:8,height:8,borderRadius:'50%',background:firstCat?.color||'#76A8A5',boxShadow:`0 0 10px ${firstCat?.color||'#76A8A5'}` }} />
+                <div className="mono" style={{ fontSize:11, letterSpacing:'.18em', textTransform:'uppercase', color:'rgba(118,168,165,0.7)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                  Evidence
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCompactPopupOpen(false);
+                  setPopupItems([]);
+                }}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: 'rgba(255,255,255,0.8)',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+                aria-label="Close"
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ padding: '12px 14px', overflowY: 'auto', maxHeight: 'calc(min(86vh, 620px) - 56px)', WebkitOverflowScrolling: 'touch' }}>
+              {popupItems.map((item) => {
+                const cat = getCategoryForHotspot(item.id);
+                return (
+                  <div key={item.id} className="info-box" style={{ marginBottom: 12 }}>
+                    <div style={{ height:3, background:`linear-gradient(90deg,${cat?.color||'#76A8A5'},transparent)`, borderRadius:'2px 2px 0 0' }} />
+                    <div style={{
+                      background: 'rgba(4,14,12,0.97)',
+                      backdropFilter: 'blur(20px)',
+                      border: `1px solid ${cat?.color||'#76A8A5'}30`,
+                      borderTop: 'none',
+                      borderRadius: '0 0 14px 14px',
+                      padding: '14px 16px',
+                      boxShadow: `0 10px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(118,168,165,0.06)`,
+                    }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:8 }}>
+                        <div style={{ width:8,height:8,borderRadius:'50%',background:cat?.color||'#76A8A5',boxShadow:`0 0 7px ${cat?.color||'#76A8A5'}`,flexShrink:0 }} />
+                        <span className="mono" style={{ fontSize:10,color:cat?.color||'#76A8A5',letterSpacing:'.14em',textTransform:'uppercase' }}>
+                          {item.label}
+                        </span>
+                      </div>
+                      <div style={{ color:'rgba(210,235,210,0.97)',fontWeight:800,fontSize:15,lineHeight:1.35,marginBottom:8 }}>
+                        {item.subtitle}
+                      </div>
+                      <div style={{ height:1,background:'rgba(118,168,165,0.14)',marginBottom:8 }} />
+                      <p style={{ color:'rgba(255,255,255,0.78)',fontSize:13,fontWeight:500,lineHeight:1.75,whiteSpace:'pre-line' }}>
+                        {item.info}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ════ MAIN STAGE ═══════════════════════════════════════════════════ */}
       <div ref={stageRef} style={{ flex:1,position:'relative',overflow:'hidden',touchAction:'none' }}
         onMouseMove={handleMouseMove}
-        onMouseLeave={()=>{ if(!devMode){ setActiveItems([]); setActiveCats([]); } }}
+        onMouseLeave={() => {
+          if (devMode) return;
+          if (compactPopupOpen) return;
+          setActiveItems([]);
+          setActiveCats([]);
+        }}
         onClick={handleStageClick}
         onDoubleClick={devMode?handleDevDblClick:undefined}
-        onTouchStart={handleTouch}
-        onTouchMove={handleTouch}
+        onTouchEnd={handleTouchEnd}
       >
         {/* Background */}
         <div style={{ position:'absolute',inset:0,background:'linear-gradient(160deg,#1c3a35 0%,#102820 55%,#0a1a18 100%)' }}/>
@@ -472,6 +720,7 @@ export default function VisionPage() {
 
         {/* ── ICON — shifted left: centred at ~37% of stage ── */}
         <img ref={iconRef} src="/ChemistreeIcon_square.png" alt="Chemistree" draggable="false"
+          className="vision-icon"
           style={{
             position:'absolute', left:'37%', top:'43%',
             transform:'translate(-50%,-50%)',
@@ -487,6 +736,7 @@ export default function VisionPage() {
 
         {/* ── TEXT — shifted left: centred at ~37% of stage ── */}
         <img ref={textRef} src="/ChemistreeText.png" alt="Chemistree" draggable="false"
+          className="vision-text"
           style={{
             position:'absolute', left:'37%', top:'83%',
             transform:'translate(-50%,-50%)',
@@ -499,55 +749,51 @@ export default function VisionPage() {
 
         {/* ── SVG: arrows from cursor → centre of each info box ── */}
         {!devMode && hasActive && stageRef.current && (
-          <svg style={{ position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:28,overflow:'visible' }}>
-            <defs>
-              <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-                <polygon points="0 0,8 4,0 8" fill="rgba(118,168,165,0.65)"/>
-              </marker>
-            </defs>
-            {/* Ripple at cursor / touch point */}
-            <circle cx={cursorPos.x} cy={cursorPos.y} r="4" fill={firstCat?.color||'#76A8A5'} opacity="0.85">
-              <animate attributeName="r" values="4;14;4" dur="1.6s" repeatCount="indefinite"/>
-              <animate attributeName="opacity" values="0.85;0;0.85" dur="1.6s" repeatCount="indefinite"/>
-            </circle>
-            <circle cx={cursorPos.x} cy={cursorPos.y} r="3" fill="white" opacity="0.9"/>
-            {/* Arrows — all point to right column mid-point; each gets evenly-spaced target Y */}
-            {activeItems.map((item, i) => {
-              const sw = stageRef.current.offsetWidth;
-              const sh = stageRef.current.offsetHeight;
-              const colX = sw * INFO_COL_LEFT_PCT;
-              // Distribute arrows evenly down the vertical centre
-              const slotH = sh / activeItems.length;
-              const targetY = slotH * i + slotH / 2;
-              const cat = getCategoryForHotspot(item.id);
-              return (
-                <line key={item.id}
-                  x1={cursorPos.x} y1={cursorPos.y}
-                  x2={colX + 10} y2={targetY}
-                  stroke={cat?.color||'rgba(118,168,165,0.5)'}
-                  strokeWidth="1.5" strokeDasharray="6,4" opacity="0.55"
-                  markerEnd="url(#arr)"
-                />
-              );
-            })}
-          </svg>
+          <div className="hidden md:block">
+            <svg style={{ position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:28,overflow:'visible' }}>
+              <defs>
+                <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                  <polygon points="0 0,8 4,0 8" fill="rgba(118,168,165,0.65)"/>
+                </marker>
+              </defs>
+              <circle cx={cursorPos.x} cy={cursorPos.y} r="4" fill={firstCat?.color||'#76A8A5'} opacity="0.85">
+                <animate attributeName="r" values="4;14;4" dur="1.6s" repeatCount="indefinite"/>
+                <animate attributeName="opacity" values="0.85;0;0.85" dur="1.6s" repeatCount="indefinite"/>
+              </circle>
+              <circle cx={cursorPos.x} cy={cursorPos.y} r="3" fill="white" opacity="0.9"/>
+              {activeItems.map((item, i) => {
+                const sw = stageRef.current.offsetWidth;
+                const sh = stageRef.current.offsetHeight;
+                const colX = sw * INFO_COL_LEFT_PCT;
+                const slotH = sh / activeItems.length;
+                const targetY = slotH * i + slotH / 2;
+                const cat = getCategoryForHotspot(item.id);
+                return (
+                  <line key={item.id}
+                    x1={cursorPos.x} y1={cursorPos.y}
+                    x2={colX + 10} y2={targetY}
+                    stroke={cat?.color||'rgba(118,168,165,0.5)'}
+                    strokeWidth="1.5" strokeDasharray="6,4" opacity="0.55"
+                    markerEnd="url(#arr)"
+                  />
+                );
+              })}
+            </svg>
+          </div>
         )}
 
         {/* ── INFO BOXES — flex column, truly centred vertically in stage ── */}
         {!devMode && hasActive && stageRef.current && (
-          <div style={{
+          <div className="hidden md:flex" style={{
             position: 'absolute',
-            // Right column starts at INFO_COL_LEFT_PCT of stage width
             left: `calc(${INFO_COL_LEFT_PCT * 100}% + 14px)`,
             right: 12,
             top: '50%',
             transform: 'translateY(-50%)',
             zIndex: 30,
             pointerEvents: 'none',
-            display: 'flex',
             flexDirection: 'column',
             gap: 12,
-            // prevent panel from overflowing off bottom
             maxHeight: 'calc(100vh - 40px)',
             overflowY: 'auto',
           }}>
@@ -596,10 +842,12 @@ export default function VisionPage() {
         >← Back</button>
 
         {/* Dev toggle */}
-        <button type="button"
-          onClick={()=>{ setDevMode(d=>!d); setDrawing(false); setCurrentPts([]); setPendingZone(null); setHoverPt(null); setActiveItems([]); setActiveCats([]); }}
-          style={{ position:'absolute',top:22,right:22,zIndex:35,padding:'9px 18px',borderRadius:11,fontWeight:700,fontSize:12,background:devMode?'rgba(182,154,132,.25)':'rgba(255,255,255,.05)',color:devMode?'#B69A84':'rgba(255,255,255,.35)',border:`1.5px solid ${devMode?'rgba(182,154,132,.38)':'rgba(255,255,255,.08)'}`,cursor:'pointer',transition:'all .15s',fontFamily:"'Quicksand',sans-serif",letterSpacing:'.08em',textTransform:'uppercase' }}
-        >{devMode?'⬡ Dev On':'⬡ Dev'}</button>
+        {false && (
+          <button type="button"
+            onClick={()=>{ setDevMode(d=>!d); setDrawing(false); setCurrentPts([]); setPendingZone(null); setHoverPt(null); setActiveItems([]); setActiveCats([]); }}
+            style={{ position:'absolute',top:22,right:22,zIndex:35,padding:'9px 18px',borderRadius:11,fontWeight:700,fontSize:12,background:devMode?'rgba(182,154,132,.25)':'rgba(255,255,255,.05)',color:devMode?'#B69A84':'rgba(255,255,255,.35)',border:`1.5px solid ${devMode?'rgba(182,154,132,.38)':'rgba(255,255,255,.08)'}`,cursor:'pointer',transition:'all .15s',fontFamily:"'Quicksand',sans-serif",letterSpacing:'.08em',textTransform:'uppercase' }}
+          >{devMode?'⬡ Dev On':'⬡ Dev'}</button>
+        )}
 
         {/* Dev hint */}
         {devMode && (

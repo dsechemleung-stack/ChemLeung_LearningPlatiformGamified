@@ -163,7 +163,7 @@ export default function Header() {
                             <div className="floating-island island-amber flex-1 px-3 sm:px-3 py-0.5">
                                 <div className="floating-island-content flex justify-between items-center h-14 gap-4 min-w-0">
                                     {/* Logo and Brand */}
-                                    <div className="flex-shrink-0 min-w-0">
+                                    <div className="flex-shrink min-w-0">
                                         <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavigation('/dashboard')}>
                                             <div className="transition-transform active:scale-95">
                                                 <img
@@ -174,7 +174,7 @@ export default function Header() {
                                                 />
                                             </div>
                                             <div className="min-w-0 flex-1">
-                                                <h1 className="text-xl font-black leading-tight whitespace-nowrap chem-sans" style={{ color: '#76A8A5' }}>
+                                                <h1 className="text-lg sm:text-xl font-black leading-tight whitespace-nowrap overflow-hidden text-ellipsis chem-sans" style={{ color: '#76A8A5' }}>
                                                     Chemistree
                                                 </h1>
                                                 <p className="text-[10px] text-slate-500 font-bold -mt-1 hidden sm:block whitespace-nowrap overflow-hidden text-ellipsis chem-sans">
@@ -385,18 +385,18 @@ export default function Header() {
                                             size={40}
                                             className="shadow-md flex-shrink-0"
                                         />
-                                        <div className="hidden sm:block text-left min-w-0">
+                                        <div className="block text-left min-w-0">
                                             <p
-                                                className="text-[11px] font-bold text-slate-900 leading-[12px]"
+                                                className="text-[10px] sm:text-[11px] font-bold text-slate-900 leading-[12px]"
                                                 title={nameRaw}
                                                 style={{
                                                     display: '-webkit-box',
                                                     WebkitBoxOrient: 'vertical',
-                                                    WebkitLineClamp: 2,
+                                                    WebkitLineClamp: 1,
                                                     overflow: 'hidden',
                                                     overflowWrap: 'anywhere',
                                                     wordBreak: 'break-word',
-                                                    maxWidth: '90px',
+                                                    maxWidth: '72px',
                                                 }}
                                             >
                                                 {nameRaw}
