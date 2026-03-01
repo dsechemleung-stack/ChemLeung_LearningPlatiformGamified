@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collision Theory Lab v30 - Optimized Spacing</title>
+    <style>
+        :root {
+            --bg: #0f172a; --panel: #1e293b; --text: #f8fafc;
+            --col-A: #38bdf8; --col-B: #4ade80; --col-C: #22d3ee;
+            --col-D: #f59e0b; --col-E: #fb923c; --col-X: #a855f7; --col-AX: #f472b6;
+        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { margin: 0; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        .header { height: 75px; background: var(--panel); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 2px solid #334155; }
+        
+        .equation-box { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.3); padding: 8px 15px; border-radius: 8px; border: 1px solid #334155; }
+        .eq-part { display: flex; align-items: center; gap: 4px; font-weight: bold; color: #cbd5e1; font-size: 0.75rem; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .sq { width: 10px; height: 10px; display: inline-block; border: 1px solid rgba(255,255,255,0.5); }
+
+        .workspace { flex: 1; display: flex; overflow: hidden; }
+        .sim-container { flex: 1.6; position: relative; background: #000; border-right: 2px solid #334155; }
+        .data-container { flex: 1; display: flex; flex-direction: column; background: var(--panel); padding: 15px; gap: 15px; overflow-y: auto; }
+
+        .graph-box { height: 220px; background: #020617; border: 1px solid #475569; border-radius: 8px; position: relative; }
+        .table-box { flex: 1; background: #020617; border-radius: 8px; overflow-y: auto; border: 1px solid #475569; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        th { background: #334155; padding: 10px; text-align: left; position: sticky; top: 0; }
+        td { padding: 8px; border-bottom: 1px solid #1e293b; color: #cbd5e1; }
+
+        .controls { height: 140px; background: var(--panel); display: flex; align-items: center; justify-content: space-around; padding: 0 20px; border-top: 2px solid #334155; }
+        .slider-wrap { width: 18%; text-align: center; }
+        .slider-wrap label { display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 8px; text-transform: uppercase; }
+        input[type=range] { width: 100%; cursor: pointer; accent-color: var(--col-A); }
+
+        .btn { padding: 10px 15px; border-radius: 6px; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 0.75rem; }
+        .btn-run { background: #10b981; color: white; }
+        .btn-skip { background: #f59e0b; color: white; }
+        .btn-mode { background: #475569; color: white; }
+        .btn-mode.active { background: var(--col-A); }
+        .btn-del { background: transparent; color: #ef4444; border: 1px solid #ef4444; padding: 2px 8px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div style="display:flex; gap:8px;">
+        <button id="btn-gas" class="btn btn-mode active" onclick="setMode('gas')">Gas Phase</button>
+        <button id="btn-solid" class="btn btn-mode" onclick="setMode('solid')">Solid Surface</button>
+    </div>
+    <div id="equation-display" class="equation-box"></div>
+    <div style="display:flex; gap:8px;">
+        <button class="btn btn-run" onclick="startTrial()">▶ RUN TRIAL</button>
+        <button class="btn btn-skip" onclick="fastForward()">⚡ SKIP</button>
+        <button class="btn" style="background:#64748b" onclick="clearAll()">CLEAR</button>
+    </div>
+</div>
+
+<div class="workspace">
+    <div class="sim-container">
+        <canvas id="simCanvas"></canvas>
+    </div>
+    <div class="data-container">
+        <div class="graph-box"><canvas id="graphCanvas"></canvas></div>
+        <div class="table-box">
+            <table>
+                <thead><tr><th>Trial</th><th>T</th><th>C</th><th>V</th><th>SA</th><th>Init. Rate</th><th></th></tr></thead>
+                <tbody id="trial-rows"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="controls">
+    <div class="slider-wrap"><label>Temp: <span id="val-temp">40</span></label><input type="range" id="sl-temp" min="10" max="100" value="40"></div>
+    <div class="slider-wrap"><label>Conc: <span id="val-conc">60</span></label><input type="range" id="sl-conc" min="20" max="150" value="60"></div>
+    <div class="slider-wrap"><label>Volume: <span id="val-vol">100</span>%</label><input type="range" id="sl-vol" min="30" max="100" value="100"></div>
+    <div class="slider-wrap" id="sa-wrap" style="display:none"><label>Surface Area: <span id="val-sa">1</span></label><input type="range" id="sl-sa" min="1" max="50" value="1"></div>
+    <div class="slider-wrap" id="cat-wrap"><label>Catalyst</label><button id="btn-cat" class="btn" style="width:100%; background:#475569; color:white;" onclick="toggleCat()">OFF</button></div>
+</div>
+
+<script>
+const S_CVS = document.getElementById('simCanvas'), S_CTX = S_CVS.getContext('2d');
+const G_CVS = document.getElementById('graphCanvas'), G_CTX = G_CVS.getContext('2d');
+
+const STATE = {
+    active: false, mode: 'gas', cat: false,
+    temp: 40, conc: 60, vol: 100, sa: 1,
+    particles: [], obstacles: [], trials: [], ripples: [],
+    colors: { A: '#38bdf8', B: '#4ade80', C: '#22d3ee', D: '#f59e0b', E: '#fb923c', X: '#a855f7', AX: '#f472b6' }
+};
+
+class Ripple {
+    constructor(x, y, color) { this.x = x; this.y = y; this.r = 4; this.opacity = 0.8; this.color = color; }
+    draw() {
+        S_CTX.beginPath(); S_CTX.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        S_CTX.strokeStyle = this.color + Math.floor(this.opacity * 255).toString(16).padStart(2, '0');
+        S_CTX.lineWidth = 1.5; S_CTX.stroke();
+        this.r += 1.5; this.opacity -= 0.05;
+    }
+}
+
+class Particle {
+    constructor(type, radius = 5) { this.type = type; this.r = radius; this.spawn(); this.initVel(); }
+    spawn() {
+        const w = S_CVS.width * (STATE.vol/100);
+        this.x = Math.random() * (w - 20) + 10;
+        this.y = Math.random() * (S_CVS.height - 20) + 10;
+    }
+    initVel() {
+        const speed = (STATE.temp / 10) * 1.4 * (0.8 + Math.random() * 0.4);
+        const angle = Math.random() * Math.PI * 2;
+        this.vx = Math.cos(angle) * speed; this.vy = Math.sin(angle) * speed;
+    }
+    update() {
+        this.x += this.vx; this.y += this.vy;
+        const w = S_CVS.width * (STATE.vol/100);
+        if (this.x < this.r) { this.x = this.r; this.vx *= -1; }
+        if (this.x > w - this.r) { this.x = w - this.r; this.vx *= -1; }
+        if (this.y < this.r) { this.y = this.r; this.vy *= -1; }
+        if (this.y > S_CVS.height - this.r) { this.y = S_CVS.height - this.r; this.vy *= -1; }
+
+        STATE.obstacles.forEach(o => {
+            if (this.x + this.r > o.x && this.x - this.r < o.x + o.w && this.y + this.r > o.y && this.y - this.r < o.y + o.h) {
+                if (this.type === 'C') { 
+                    this.type = 'E'; 
+                    STATE.ripples.push(new Ripple(this.x, this.y, '#ffffff'));
+                }
+                const overlapX = Math.min(this.x + this.r - o.x, o.x + o.w - (this.x - this.r));
+                const overlapY = Math.min(this.y + this.r - o.y, o.y + o.h - (this.y - this.r));
+                if (overlapX < overlapY) { this.vx *= -1; this.x += (this.vx > 0 ? overlapX : -overlapX); }
+                else { this.vy *= -1; this.y += (this.vy > 0 ? overlapY : -overlapY); }
+            }
+        });
+    }
+}
+
+function resolveCollisions() {
+    const pressureFactor = 100 / STATE.vol;
+    const stdThr = 2.5; 
+    const successChance = Math.min(2.0, pressureFactor);
+
+    for(let i=0; i<STATE.particles.length; i++) {
+        for(let j=i+1; j<STATE.particles.length; j++) {
+            let p1 = STATE.particles[i], p2 = STATE.particles[j];
+            let dx = p2.x-p1.x, dy = p2.y-p1.y, dist = Math.sqrt(dx*dx+dy*dy);
+            if(dist < p1.r + p2.r) {
+                let nx = dx/dist, ny = dy/dist;
+                let relVNormal = (p2.vx - p1.vx) * nx + (p2.vy - p1.vy) * ny;
+                if(relVNormal > 0) continue;
+                p1.vx += relVNormal * nx; p1.vy += relVNormal * ny;
+                p2.vx -= relVNormal * nx; p2.vy -= relVNormal * ny;
+
+                if (STATE.mode === 'gas') {
+                    if ((relVNormal**2) > stdThr && p1.type === 'A' && p2.type === 'A') {
+                        if (Math.random() < 0.65 * successChance) {
+                            STATE.ripples.push(new Ripple((p1.x+p2.x)/2, (p1.y+p2.y)/2, STATE.colors.B));
+                            p1.type = 'B'; STATE.particles.splice(j, 1); j--;
+                            continue; 
+                        }
+                    }
+                    if (STATE.cat) {
+                        if ((p1.type === 'A' && p2.type === 'X') || (p1.type === 'X' && p2.type === 'A')) {
+                            let rIdx = (p1.type === 'A') ? i : j;
+                            STATE.ripples.push(new Ripple(STATE.particles[rIdx].x, STATE.particles[rIdx].y, STATE.colors.AX));
+                            STATE.particles[rIdx].type = 'B';
+                            let partnerIdx = STATE.particles.findIndex((p, idx) => p.type === 'A' && idx !== rIdx);
+                            if (partnerIdx !== -1) {
+                                STATE.particles[partnerIdx].type = 'B';
+                                STATE.ripples.push(new Ripple(STATE.particles[partnerIdx].x, STATE.particles[partnerIdx].y, STATE.colors.B));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+function startTrial() {
+    refresh();
+    const volFactor = 100 / STATE.vol;
+    const modeMult = STATE.mode === 'solid' ? 0.40 : 0.40; 
+    const saMult = STATE.mode === 'solid' ? (Math.sqrt(STATE.sa)) : 1;
+    const catMult = (STATE.mode === 'gas' && STATE.cat) ? 2.8 : 1.0; 
+    const rateVal = (modeMult * (STATE.temp/40) * catMult * saMult * (STATE.conc/100) * volFactor).toFixed(2);
+
+    STATE.trials.push({
+        id: Date.now(), color: `hsl(${(STATE.trials.length * 137) % 360}, 70%, 60%)`,
+        data: [], start: Date.now(), done: false, rate: parseFloat(rateVal),
+        initialConc: parseInt(STATE.conc),
+        params: { T: STATE.temp, C: STATE.conc, V: STATE.vol, SA: STATE.mode==='solid'?STATE.sa:'-', Cat: STATE.cat?'ON':'OFF' }
+    });
+    STATE.active = true;
+    updateTable();
+}
+
+function fastForward() {
+    const tr = STATE.trials.find(t => !t.done); if(!tr) return;
+    const lastPoint = tr.data.length > 0 ? tr.data[tr.data.length-1] : {t: 0, v: tr.initialConc};
+    let currentV = lastPoint.v;
+    for(let t = lastPoint.t; t <= 10; t += 0.1) {
+        let prob = (currentV / tr.initialConc) * tr.rate * 0.22;
+        let delta = Math.random() < prob ? Math.ceil(Math.random() * 4) : 0;
+        currentV = Math.max(0, currentV - delta);
+        tr.data.push({t: t, v: currentV});
+        if(currentV <= 0) break;
+    }
+    tr.done = true; STATE.active = false;
+}
+
+function clearAll() { STATE.active = false; STATE.trials = []; STATE.ripples = []; refresh(); G_CTX.clearRect(0,0, G_CVS.width, G_CVS.height); updateTable(); }
+
+function updateTable() {
+    document.getElementById('trial-rows').innerHTML = STATE.trials.map((t, i) => `
+        <tr><td><span style="color:${t.color}">●</span> ${i+1}</td><td>${t.params.T}</td><td>${t.params.C}</td><td>${t.params.V}</td><td>${t.params.SA}</td>
+        <td style="color:#fbbf24">${t.rate}</td><td><button class="btn-del" onclick="deleteTrial(${t.id})">X</button></td></tr>
+    `).join('');
+}
+
+function mainLoop() {
+    S_CTX.fillStyle = '#000'; S_CTX.fillRect(0,0, S_CVS.width, S_CVS.height);
+    const w = S_CVS.width * (STATE.vol/100);
+    S_CTX.strokeStyle = '#334155'; S_CTX.strokeRect(0,0, w, S_CVS.height);
+
+    STATE.obstacles.forEach(o => { 
+        S_CTX.fillStyle = STATE.colors.D; S_CTX.fillRect(o.x, o.y, o.w, o.h); 
+        S_CTX.strokeStyle="rgba(255,255,255,0.4)"; S_CTX.strokeRect(o.x,o.y,o.w,o.h); 
+    });
+    
+    STATE.particles.forEach(p => { if(STATE.active) p.update(); S_CTX.fillStyle = STATE.colors[p.type]; S_CTX.beginPath(); S_CTX.arc(p.x, p.y, p.r, 0, Math.PI*2); S_CTX.fill(); });
+    STATE.ripples = STATE.ripples.filter(r => r.opacity > 0);
+    STATE.ripples.forEach(r => r.draw());
+
+    if (STATE.active) {
+        resolveCollisions();
+        const tr = STATE.trials[STATE.trials.length-1];
+        if (tr) {
+            const elapsed = (Date.now() - tr.start) / 1000;
+            const rType = STATE.mode === 'gas' ? 'A' : 'C';
+            const remaining = STATE.particles.filter(p => p.type === rType).length;
+            if (tr.data.length === 0 || elapsed - tr.data[tr.data.length-1].t > 0.05) tr.data.push({t: elapsed, v: remaining});
+            if (elapsed > 10 || remaining <= 0) { STATE.active = false; tr.done = true; }
+        }
+    }
+
+    G_CTX.clearRect(0,0, G_CVS.width, G_CVS.height);
+    const pad = 10, gh = G_CVS.height - 20, gw = G_CVS.width, MAX_C = 150;
+    STATE.trials.forEach(t => {
+        G_CTX.beginPath(); G_CTX.strokeStyle = t.color; G_CTX.lineWidth = 2;
+        t.data.forEach((d, i) => {
+            let x = (d.t / 10) * gw; let y = pad + gh - (d.v / MAX_C) * gh; 
+            if (i === 0) G_CTX.moveTo(x,y); else G_CTX.lineTo(x,y);
+        });
+        G_CTX.stroke();
+    });
+    requestAnimationFrame(mainLoop);
+}
+
+function handleResize() {
+    S_CVS.width = S_CVS.parentElement.clientWidth; S_CVS.height = S_CVS.parentElement.clientHeight;
+    G_CVS.width = G_CVS.parentElement.clientWidth; G_CVS.height = G_CVS.parentElement.clientHeight;
+    refresh();
+}
+window.onresize = handleResize;
+
+function refresh() {
+    STATE.particles = []; STATE.obstacles = []; STATE.ripples = [];
+    const w = S_CVS.width * (STATE.vol/100), h = S_CVS.height;
+    if (STATE.mode === 'gas') {
+        for(let i=0; i<STATE.conc; i++) STATE.particles.push(new Particle('A'));
+        if(STATE.cat) for(let i=0; i<20; i++) STATE.particles.push(new Particle('X', 9));
+    } else {
+        const n = parseInt(STATE.sa); 
+        const side = Math.sqrt(3600 / n); 
+        const cols = Math.ceil(Math.sqrt(n));
+        // INCREASED SPACING MULTIPLIER: Spreads blocks across the canvas
+        const spacing = side + (Math.max(w, h) / (cols + 1.5)); 
+        
+        for(let i=0; i<n; i++) {
+            const startX = (w - (cols * spacing)) / 2;
+            const startY = (h - (Math.ceil(n/cols) * spacing)) / 2;
+            STATE.obstacles.push({ 
+                x: startX + (i % cols) * spacing + (spacing - side) / 2, 
+                y: startY + Math.floor(i / cols) * spacing + (spacing - side) / 2, 
+                w: side, 
+                h: side 
+            });
+        }
+        for(let i=0; i<STATE.conc; i++) STATE.particles.push(new Particle('C'));
+    }
+    updateEquation();
+}
+
+function updateEquation() {
+    const box = document.getElementById('equation-display'), cols = STATE.colors;
+    if (STATE.mode === 'gas') {
+        if (!STATE.cat) box.innerHTML = `<div class="eq-part">2<span class="dot" style="background:${cols.A}"></span> ➔ <span class="dot" style="background:${cols.B}"></span></div>`;
+        else box.innerHTML = `<div class="eq-part">Reaction: 2<span class="dot" style="background:${cols.A}"></span> + <span class="dot" style="background:${cols.X}"></span> ➔ [Intermediate] ➔ <span class="dot" style="background:${cols.B}"></span> + <span class="dot" style="background:${cols.X}"></span></div>`;
+    } else box.innerHTML = `<div class="eq-part"><span class="dot" style="background:${cols.C}"></span> + <span class="sq" style="background:${cols.D}"></span>(s) ➔ <span class="dot" style="background:${cols.E}"></span></div>`;
+}
+
+function setMode(m) { 
+    STATE.mode = m; 
+    document.getElementById('btn-gas').className = 'btn btn-mode'+(m==='gas'?' active':'');
+    document.getElementById('btn-solid').className = 'btn btn-mode'+(m==='solid'?' active':'');
+    document.getElementById('cat-wrap').style.display = m==='gas' ? 'block' : 'none';
+    document.getElementById('sa-wrap').style.display = m==='solid' ? 'block' : 'none';
+    refresh();
+}
+function toggleCat() { STATE.cat = !STATE.cat; let b = document.getElementById('btn-cat'); b.innerText = STATE.cat ? 'ON' : 'OFF'; b.style.background = STATE.cat ? 'var(--col-X)' : '#475569'; refresh(); }
+function deleteTrial(id) { STATE.trials = STATE.trials.filter(t => t.id !== id); updateTable(); }
+
+['temp','conc','vol','sa'].forEach(id => {
+    document.getElementById('sl-'+id).oninput = (e) => { STATE[id] = e.target.value; document.getElementById('val-'+id).innerText = e.target.value; refresh(); };
+});
+
+setTimeout(handleResize, 100); mainLoop();
+</script>
+</body>
+</html>

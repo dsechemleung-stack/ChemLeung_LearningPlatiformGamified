@@ -285,6 +285,19 @@ export default function QuizPage() {
     }
   };
 
+  useEffect(() => {
+    const onStart = (e) => handleTouchStart(e);
+    const onEnd = (e) => handleTouchEnd(e);
+
+    window.addEventListener('touchstart', onStart, { passive: true, capture: true });
+    window.addEventListener('touchend', onEnd, { passive: true, capture: true });
+
+    return () => {
+      window.removeEventListener('touchstart', onStart, { capture: true });
+      window.removeEventListener('touchend', onEnd, { capture: true });
+    };
+  }, [handleTouchStart, handleTouchEnd]);
+
   const isLastQuestion = currentIndex === totalQuestions - 1;
 
   const getTotalTimeSpent = () => {
@@ -410,8 +423,6 @@ export default function QuizPage() {
   return (
     <div
       className="relative min-h-screen pb-32 lg:pb-6"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
       style={{ touchAction: 'pan-y' }}
     >
       {/* Keyboard shortcut hint (desktop only) */}

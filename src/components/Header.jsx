@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, Coins, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle, Building2, Archive } from 'lucide-react';
+import { Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, BookOpen, MessageSquare, Gem, Coins, ShoppingBag, Clock, AlertTriangle, Pencil, Bell, BellDot, Trash2, AlertCircle, Building2, Archive, Calculator, FlaskConical } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
 import { forumService } from '../services/forumService';
 
@@ -159,7 +159,7 @@ export default function Header() {
             <header className="fixed top-0 left-0 right-0 z-50 py-1">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="w-full flex justify-center">
-                        <div className="inline-flex items-center gap-2 w-[min(100%,1000px)]">
+                        <div className="inline-flex items-center gap-2 w-[min(100%,1100px)]">
                             <div className="floating-island island-amber flex-1 px-3 sm:px-3 py-0.5">
                                 <div className="floating-island-content flex justify-between items-center h-14 gap-4 min-w-0">
                                     {/* Logo and Brand */}
@@ -206,6 +206,26 @@ export default function Header() {
                                 >
                                     <Pencil size={20} />
                                     <span className="nav-orb-label font-extrabold text-slate-900">{t('nav.practice')}</span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleNavigation('/calculator')}
+                                    className={`nav-orb ${isActive('/calculator') ? 'bg-slate-900 text-white' : 'bg-white/70 text-slate-800 hover:bg-white/80'}`}
+                                    aria-label="Calculator"
+                                    title="Calculator"
+                                >
+                                    <Calculator size={20} />
+                                    <span className="nav-orb-label font-extrabold text-slate-900">Calculator</span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleNavigation('/virtual-lab')}
+                                    className={`nav-orb ${isActive('/virtual-lab') ? 'bg-indigo-600 text-white' : 'bg-white/70 text-slate-800 hover:bg-white/80'}`}
+                                    aria-label="Virtual Lab"
+                                    title="Virtual Lab"
+                                >
+                                    <FlaskConical size={20} />
+                                    <span className="nav-orb-label font-extrabold text-slate-900">Virtual Lab</span>
                                 </button>
 
                                 <button
@@ -545,6 +565,28 @@ export default function Header() {
                                         draggable="false"
                                     />
                                     <span>{t('nav.practice')}</span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleNavigation('/calculator')}
+                                    className={`flex items-center gap-3 px-4 py-3 rounded-lg font-bold transition-all active:scale-[0.99] ${isActive('/calculator')
+                                            ? 'bg-slate-900 text-white'
+                                            : 'text-slate-900 hover:bg-slate-100'
+                                        }`}
+                                >
+                                    <Calculator size={20} />
+                                    <span>Calculator</span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleNavigation('/virtual-lab')}
+                                    className={`flex items-center gap-3 px-4 py-3 rounded-lg font-bold transition-all active:scale-[0.99] ${isActive('/virtual-lab')
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'text-slate-900 hover:bg-slate-100'
+                                        }`}
+                                >
+                                    <FlaskConical size={20} />
+                                    <span>Virtual Lab</span>
                                 </button>
                                 
                                 <button

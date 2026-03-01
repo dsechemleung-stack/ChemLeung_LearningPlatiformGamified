@@ -664,6 +664,7 @@ export default function DashboardPage({ questions = [] }) {
         {showEventModal && (
           <EventCreationModal
             userId={currentUser?.uid}
+            userProfile={userProfile}
             questions={questions}
             onClose={() => setShowEventModal(false)}
             onEventCreated={handleEventCreated}

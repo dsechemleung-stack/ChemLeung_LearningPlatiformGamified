@@ -9,6 +9,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { quizService } from '../services/quizService';
 import * as srsService from '../services/srsService';
+import { CURRICULUM_SUBTOPICS } from '../lib/calculationQuestionGenerator/generators/index.js';
 
 // Helper function for AI Daily Mission selection
 function calculateMasteryPriority(mistake, recentTopics = []) {
@@ -122,6 +123,7 @@ export default function PracticeModeSelection({ questions }) {
   const [customCount, setCustomCount] = useState(10);
   const [customTimerEnabled, setCustomTimerEnabled] = useState(() => showTimer);
   const [customIsTimed, setCustomIsTimed] = useState(false);
+  const [customOrderById, setCustomOrderById] = useState(false);
 
   useEffect(() => {
     setTimedModeTimer(showTimer);
@@ -129,9 +131,8 @@ export default function PracticeModeSelection({ questions }) {
     setCustomTimerEnabled(showTimer);
   }, [showTimer]);
 
-  // Quick update topics state
-  const [tempLearnedUpTo, setTempLearnedUpTo] = useState(userProfile?.learnedUpTo || '');
-  const [tempExceptions, setTempExceptions] = useState(userProfile?.topicExceptions || []);
+  const [tempTopicRangeFrom, setTempTopicRangeFrom] = useState(userProfile?.topicRangeFrom || '01');
+  const [tempTopicRangeTo, setTempTopicRangeTo] = useState(userProfile?.topicRangeTo || userProfile?.learnedUpTo || '01');
   const [updating, setUpdating] = useState(false);
 
   const MAX_QUESTIONS = 40;
@@ -143,16 +144,32 @@ export default function PracticeModeSelection({ questions }) {
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [questions]);
 
-  // Get available topics based on user's learned progress
+  const allTopicNums = useMemo(() => {
+    return [...new Set(allTopics.map((topic) => topic.match(/^\d+/)?.[0]).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [allTopics]);
+
+  useEffect(() => {
+    setTempTopicRangeFrom(userProfile?.topicRangeFrom || '01');
+    setTempTopicRangeTo(userProfile?.topicRangeTo || userProfile?.learnedUpTo || '01');
+  }, [userProfile]);
+
+  // Get available topics based on user's topic range
   const availableTopics = useMemo(() => {
-    const learnedUpTo = userProfile?.learnedUpTo;
-    const exceptions = userProfile?.topicExceptions || [];
+    const from = userProfile?.topicRangeFrom || '01';
+    const to = userProfile?.topicRangeTo || userProfile?.learnedUpTo || '';
     
-    if (!learnedUpTo) return [];
-    
+    if (!from || !to) return [];
+    const fromN = Number(from);
+    const toN = Number(to);
+    if (!Number.isFinite(fromN) || !Number.isFinite(toN)) return [];
+    const lo = Math.min(fromN, toN);
+    const hi = Math.max(fromN, toN);
+
     return allTopics.filter(topic => {
-      const topicNum = topic.match(/^\d+/)?.[0];
-      return topicNum && topicNum <= learnedUpTo && !exceptions.includes(topic);
+      const n = topic.match(/^\d+/)?.[0];
+      const v = Number(n);
+      return n && Number.isFinite(v) && v >= lo && v <= hi;
     });
   }, [allTopics, userProfile]);
 
@@ -208,8 +225,8 @@ export default function PracticeModeSelection({ questions }) {
     try {
       const userRef = doc(db, 'users', currentUser.uid);
       await updateDoc(userRef, {
-        learnedUpTo: tempLearnedUpTo,
-        topicExceptions: tempExceptions,
+        topicRangeFrom: tempTopicRangeFrom,
+        topicRangeTo: tempTopicRangeTo,
         updatedAt: new Date().toISOString()
       });
       await loadUserProfile(currentUser.uid);
@@ -233,6 +250,11 @@ export default function PracticeModeSelection({ questions }) {
       return;
     }
 
+    if (!Array.isArray(questions) || questions.length === 0) {
+      alert(t('common.loading') || 'Questions are still loading. Please try again in a moment.');
+      return;
+    }
+
     if (availableTopics.length === 0) {
       alert(t('practice.pleaseSetTopics'));
       navigate('/profile');
@@ -247,7 +269,14 @@ export default function PracticeModeSelection({ questions }) {
     } else {
       const filtered = questions.filter(q => availableTopics.includes(q.Topic));
       const shuffled = [...filtered].sort(() => 0.5 - Math.random());
-      const finalSelection = shuffled.slice(0, Math.min(count, MAX_QUESTIONS, shuffled.length));
+      const finalSelection = shuffled
+        .slice(0, Math.min(count, MAX_QUESTIONS, shuffled.length))
+        .sort((a, b) => Number(a?.ID) - Number(b?.ID));
+
+      if (finalSelection.length === 0) {
+        alert(t('notebook.noQuestionsFound'));
+        return;
+      }
       
       startQuiz(finalSelection, mode, timerEnabled, isTimed);
     }
@@ -365,16 +394,25 @@ export default function PracticeModeSelection({ questions }) {
   };
 
   const handleCustomStart = () => {
+    if (!Array.isArray(questions) || questions.length === 0) {
+      alert(t('common.loading') || 'Questions are still loading. Please try again in a moment.');
+      return;
+    }
+
     let pool = questions.filter(q => selectedTopics.includes(q.Topic));
     
     if (selectedSubtopics.length > 0) {
       pool = pool.filter(q => selectedSubtopics.includes(q.Subtopic));
     }
     
-    const shuffled = [...pool].sort(() => 0.5 - Math.random());
     const requestedCount = customCount === 'All' ? pool.length : parseInt(customCount);
     const finalCount = Math.min(requestedCount, MAX_QUESTIONS);
-    const finalSelection = shuffled.slice(0, finalCount);
+
+    const byIdAsc = [...pool].sort((a, b) => Number(a?.ID) - Number(b?.ID));
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+
+    const finalSelection = (customOrderById ? byIdAsc : shuffled)
+      .slice(0, finalCount);
     
     if (finalSelection.length === 0) {
       alert(t('notebook.noQuestionsFound'));
@@ -396,92 +434,77 @@ export default function PracticeModeSelection({ questions }) {
     localStorage.setItem('quiz_timer_enabled', timerEnabled.toString());
     localStorage.setItem('quiz_is_timed_mode', isTimed.toString());
     localStorage.setItem('quiz_hide_timer_ui', (!showTimer).toString());
-    
+
     navigate('/quiz');
   };
 
-  // Quick update topics modal
-  if (showUpdateTopics) {
-    const learnedRangeTopics = allTopics.filter(topic => {
-      const topicNum = topic.match(/^\d+/)?.[0];
-      return topicNum && topicNum <= tempLearnedUpTo;
-    });
-
-    return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="rounded-2xl p-4 border border-white/40 bg-white/55 backdrop-blur-xl shadow-lg">
-          <div className="absolute inset-0 rounded-2xl opacity-70 bg-[radial-gradient(circle_at_15%_20%,rgba(99,102,241,0.22),transparent_60%),radial-gradient(circle_at_80%_30%,rgba(236,72,153,0.18),transparent_60%),radial-gradient(circle_at_50%_85%,rgba(34,211,238,0.16),transparent_55%)]" />
-          <div className="relative rounded-2xl border border-white/40 bg-white/30 backdrop-blur shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-white/40 flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                <BookOpen size={18} className="text-slate-900" />
-                <h2 className="text-lg sm:text-xl font-black text-slate-900 truncate">
-                  {t('practiceMode.updateYourTopics')}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowUpdateTopics(false)}
-                className="w-10 h-10 rounded-xl border border-white/40 bg-white/40 backdrop-blur flex items-center justify-center text-slate-900 hover:bg-white/55 transition-all flex-none"
-                aria-label={t('common.close')}
-              >
-                ×
-              </button>
+// Quick update topics modal
+if (showUpdateTopics) {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center">
+      <div className="rounded-2xl p-4 border border-white/40 bg-white/55 backdrop-blur-xl shadow-lg">
+        <div className="absolute inset-0 rounded-2xl opacity-70 bg-[radial-gradient(circle_at_15%_20%,rgba(99,102,241,0.22),transparent_60%),radial-gradient(circle_at_80%_30%,rgba(236,72,153,0.18),transparent_60%),radial-gradient(circle_at_50%_85%,rgba(34,211,238,0.16),transparent_55%)]" />
+        <div className="relative rounded-2xl border border-white/40 bg-white/30 backdrop-blur shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-white/40 flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <BookOpen size={18} className="text-slate-900" />
+              <h2 className="text-lg sm:text-xl font-black text-slate-900 truncate">
+                {t('practiceMode.updateYourTopics')}
+              </h2>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowUpdateTopics(false)}
+              className="w-10 h-10 rounded-xl border border-white/40 bg-white/40 backdrop-blur flex items-center justify-center text-slate-900 hover:bg-white/55 transition-all flex-none"
+              aria-label={t('common.close')}
+            >
+              ×
+            </button>
+          </div>
 
-            <div className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-3">
-                  {t('practiceMode.learnedUpTo')}
-                </label>
-                <div className="grid grid-cols-6 md:grid-cols-8 gap-2">
-                  {allTopics.map((topic) => {
-                    const topicNum = topic.match(/^\d+/)?.[0];
-                    return (
-                      <button
-                        key={topic}
-                        onClick={() => setTempLearnedUpTo(topicNum)}
-                        className={`py-2 rounded-lg border-2 font-bold transition-all ${
-                          tempLearnedUpTo === topicNum
-                            ? 'border-chemistry-green bg-green-50 text-chemistry-green'
-                            : 'border-slate-200 text-slate-600 hover:border-slate-300'
-                        }`}
-                      >
-                        {topicNum}
-                      </button>
-                    );
-                  })}
+          <div className="p-6 space-y-6">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-3">
+                {t('profile.topicsLearnedUpTo') || 'Topics Range'}
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-xs font-extrabold text-slate-600 mb-2">From</div>
+                  <select
+                    className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 bg-white font-bold text-slate-800"
+                    value={tempTopicRangeFrom}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setTempTopicRangeFrom(v);
+                      if (Number(v) > Number(tempTopicRangeTo)) setTempTopicRangeTo(v);
+                    }}
+                    disabled={!allTopicNums.length}
+                  >
+                    {allTopicNums.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="text-xs font-extrabold text-slate-600 mb-2">To</div>
+                  <select
+                    className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 bg-white font-bold text-slate-800"
+                    value={tempTopicRangeTo}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setTempTopicRangeTo(v);
+                      if (Number(v) < Number(tempTopicRangeFrom)) setTempTopicRangeFrom(v);
+                    }}
+                    disabled={!allTopicNums.length}
+                  >
+                    {allTopicNums.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
-
-            {tempLearnedUpTo && learnedRangeTopics.length > 0 && (
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-3">
-                  {t('practiceMode.exceptions')}
-                </label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {learnedRangeTopics.map((topic) => {
-                    const isException = tempExceptions.includes(topic);
-                    return (
-                      <button
-                        key={topic}
-                        onClick={() => setTempExceptions(prev =>
-                          prev.includes(topic) ? prev.filter(t => t !== topic) : [...prev, topic]
-                        )}
-                        className={`flex items-center justify-between p-3 rounded-xl border-2 transition-all ${
-                          isException
-                            ? 'border-red-300 bg-red-50 text-red-700'
-                            : 'border-green-200 bg-green-50 text-green-700'
-                        }`}
-                      >
-                        <span className="text-sm font-semibold">{topic}</span>
-                        {isException ? <Lock size={16} /> : <Check size={16} />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            </div>
 
             <div className="flex gap-3">
               <button
@@ -500,10 +523,10 @@ export default function PracticeModeSelection({ questions }) {
             </div>
           </div>
         </div>
-        </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   // Custom mode configuration
   if (showCustom) {
@@ -606,6 +629,29 @@ export default function PracticeModeSelection({ questions }) {
                     {num}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 border-2 border-slate-200">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <h3 className="font-bold text-slate-800">Order by ID</h3>
+                  <p className="text-xs text-slate-500">
+                    If ON: picks the lowest IDs first (no random). If OFF: random.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCustomOrderById((v) => !v)}
+                  className={`relative w-14 h-8 rounded-full transition-all flex-shrink-0 ${
+                    customOrderById ? 'bg-indigo-600' : 'bg-slate-300'
+                  }`}
+                  aria-pressed={customOrderById}
+                >
+                  <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform ${
+                    customOrderById ? 'translate-x-6' : 'translate-x-0'
+                  }`} />
+                </button>
               </div>
             </div>
 

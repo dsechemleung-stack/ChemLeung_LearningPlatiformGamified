@@ -721,6 +721,21 @@ function calcPriority(row) {
   return days * 1.2 - rep * 2;
 }
 
+function compareByQuestionIdAsc(a, b) {
+  const aRaw = a?.ID ?? a?.questionId ?? '';
+  const bRaw = b?.ID ?? b?.questionId ?? '';
+  const aNum = Number(aRaw);
+  const bNum = Number(bRaw);
+
+  const aOk = Number.isFinite(aNum);
+  const bOk = Number.isFinite(bNum);
+
+  if (aOk && bOk && aNum !== bNum) return aNum - bNum;
+  if (aOk && !bOk) return -1;
+  if (!aOk && bOk) return 1;
+  return String(aRaw).localeCompare(String(bRaw), undefined, { numeric: true, sensitivity: 'base' });
+}
+
 function computeCountFromSummary(topicStatsDoc, { selectedTopics, selectedSubtopics, selectedMasteryLevels, srsPresence }) {
   if (!topicStatsDoc?.topics) return null;
   if (selectedSubtopics.length > 0) return null;
@@ -1834,6 +1849,10 @@ export default function MistakeNotebookPage({ questions = [] }) {
         })
         .filter(m => m.questionId)
         .sort((a, b) => calcPriority(b) - calcPriority(a));
+
+      // Display order in Custom Review: arrange by question ID ascending (1 → ...)
+      // without changing the selection priority logic above.
+      mistakeRows = [...mistakeRows].sort(compareByQuestionIdAsc);
 
       if (!mistakeRows.length) return;
 

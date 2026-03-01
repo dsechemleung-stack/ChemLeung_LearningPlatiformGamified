@@ -15,6 +15,8 @@ import { ProfileCard } from '../components/chemcity/gacha/ProfileCard';
 import { getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
 import { useChemCityStore } from '../store/chemcityStore';
 import { callChemCityEquipCosmetics } from '../lib/chemcity/cloudFunctions';
+import MultiSelect from '../components/MultiSelect.jsx';
+import { CURRICULUM_SUBTOPICS } from '../lib/calculationQuestionGenerator/generators/index.js';
 
 const SHEET_URL =
   'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
@@ -370,14 +372,15 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [gender, setGender] = useState(userProfile?.gender || 'boy');
   const [level, setLevel] = useState(userProfile?.level || 'S4');
-  const [learnedUpTo, setLearnedUpTo] = useState(userProfile?.learnedUpTo || '');
-  const [topicExceptions, setTopicExceptions] = useState(Array.isArray(userProfile?.topicExceptions) ? userProfile.topicExceptions : []);
+  const [topicRangeFrom, setTopicRangeFrom] = useState(userProfile?.topicRangeFrom || '01');
+  const [topicRangeTo, setTopicRangeTo] = useState(userProfile?.topicRangeTo || userProfile?.learnedUpTo || '01');
 
   const [rightTab, setRightTab] = useState('info');
   const [message, setMessage] = useState({ type: '', text: '' });
   const [saving, setSaving] = useState(false);
   const [cosmeticsMap, setCosmeticsMap] = useState(null);
-  const [showAllTopicExceptions, setShowAllTopicExceptions] = useState(false);
+  const [openSelectId, setOpenSelectId] = useState(null);
+  const [selectedTopicRangeTopics, setSelectedTopicRangeTopics] = useState([]);
 
   useEffect(() => {
     setDisplayName(currentUser?.displayName || '');
@@ -386,8 +389,8 @@ export default function ProfilePage() {
   useEffect(() => {
     setGender(userProfile?.gender || 'boy');
     setLevel(userProfile?.level || 'S4');
-    setLearnedUpTo(userProfile?.learnedUpTo || '');
-    setTopicExceptions(Array.isArray(userProfile?.topicExceptions) ? userProfile.topicExceptions : []);
+    setTopicRangeFrom(userProfile?.topicRangeFrom || '01');
+    setTopicRangeTo(userProfile?.topicRangeTo || userProfile?.learnedUpTo || '01');
   }, [userProfile]);
 
   const fallbackIds = useMemo(() => {
@@ -413,26 +416,70 @@ export default function ProfilePage() {
   }, []);
 
   const allTopics = useMemo(() => {
-    if (!questions?.length) return [];
-    return [...new Set(questions.map(q => q.Topic))].filter(t => t && t !== 'Uncategorized')
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const fromSheet = questions?.length
+      ? [...new Set(questions.map((q) => q.Topic))].filter((t) => t && t !== 'Uncategorized')
+      : [];
+
+    const fromCurriculum = [...new Set(CURRICULUM_SUBTOPICS.map((x) => x.topic))].filter(Boolean);
+
+    const topics = fromSheet.length ? fromSheet : fromCurriculum;
+    return topics.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [questions]);
 
+  const allTopicNums = useMemo(() => {
+    return [...new Set(allTopics.map((topic) => topic.match(/^\d+/)?.[0]).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [allTopics]);
+
+  const pad2 = (n) => String(n).padStart(2, '0');
+
+  const extractLeadingNumber = (s) => {
+    const m = String(s ?? '').match(/^\s*(\d+)/);
+    if (!m) return null;
+    const n = Number(m[1]);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  useEffect(() => {
+    if (!allTopicNums.length) return;
+
+    setTopicRangeFrom((prev) => (prev && allTopicNums.includes(prev) ? prev : allTopicNums[0]));
+    setTopicRangeTo((prev) => {
+      const fallback = prev || allTopicNums[0];
+      return allTopicNums.includes(fallback) ? fallback : allTopicNums[allTopicNums.length - 1];
+    });
+  }, [allTopicNums]);
+
+  useEffect(() => {
+    if (!allTopics.length) return;
+    if (!topicRangeFrom || !topicRangeTo) return;
+    const fromN = Number(topicRangeFrom);
+    const toN = Number(topicRangeTo);
+    if (!Number.isFinite(fromN) || !Number.isFinite(toN)) return;
+    const lo = Math.min(fromN, toN);
+    const hi = Math.max(fromN, toN);
+    setSelectedTopicRangeTopics(
+      allTopics.filter((topic) => {
+        const n = topic.match(/^\d+/)?.[0];
+        const v = Number(n);
+        return n && Number.isFinite(v) && v >= lo && v <= hi;
+      }),
+    );
+  }, [allTopics, topicRangeFrom, topicRangeTo]);
+
   const availableTopics = useMemo(() => {
-    if (!learnedUpTo) return [];
+    if (!topicRangeFrom || !topicRangeTo) return [];
+    const fromN = Number(topicRangeFrom);
+    const toN = Number(topicRangeTo);
+    if (!Number.isFinite(fromN) || !Number.isFinite(toN)) return [];
+    const lo = Math.min(fromN, toN);
+    const hi = Math.max(fromN, toN);
     return allTopics.filter(topic => {
       const n = topic.match(/^\d+/)?.[0];
-      return n && n <= learnedUpTo && !topicExceptions.includes(topic);
+      const v = Number(n);
+      return n && Number.isFinite(v) && v >= lo && v <= hi;
     });
-  }, [allTopics, learnedUpTo, topicExceptions]);
-
-  const learnedRangeTopics = useMemo(() =>
-    allTopics.filter(topic => { const n = topic.match(/^\d+/)?.[0]; return n && n <= learnedUpTo; }),
-    [allTopics, learnedUpTo],
-  );
-
-  const toggleTopicException = (topic) =>
-    setTopicExceptions(prev => prev.includes(topic) ? prev.filter(t => t !== topic) : [...prev, topic]);
+  }, [allTopics, topicRangeFrom, topicRangeTo]);
 
   async function handleSave(e) {
     e.preventDefault();
@@ -441,7 +488,7 @@ export default function ProfilePage() {
     try {
       await updateProfile(currentUser, { displayName });
       await updateDoc(doc(db, 'users', currentUser.uid), {
-        displayName, gender, level, learnedUpTo, topicExceptions,
+        displayName, gender, level, topicRangeFrom, topicRangeTo,
         updatedAt: new Date().toISOString(),
       });
       await loadUserProfile(currentUser.uid);
@@ -755,86 +802,48 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {/* Topics learned up to */}
+                {/* Topics Range with MultiSelect dropdown */}
                 <div>
                   <label className="section-label">
                     <BookOpen size={11} style={{ display: 'inline', marginRight: 4 }} />
-                    {t('profile.topicsLearnedUpTo')}
+                    Topics Range
                   </label>
-                  <p style={{ fontSize: 11, color: P.textMuted, margin: '0 0 8px' }}>{t('profile.selectHighestTopic')}</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {allTopics.map(topic => {
-                      const n = topic.match(/^\d+/)?.[0];
-                      return (
-                        <button key={topic} type="button" onClick={() => setLearnedUpTo(n)} style={{
-                          padding: '5px 10px', borderRadius: 8, border: `1.5px solid`,
-                          borderColor: learnedUpTo === n ? '#86a874' : P.border,
-                          background: learnedUpTo === n ? 'rgba(134,168,116,0.12)' : 'transparent',
-                          color: learnedUpTo === n ? '#4a7c4e' : P.textMuted,
-                          fontFamily: "'Quicksand',sans-serif", fontWeight: 700, fontSize: 12,
-                          cursor: 'pointer', transition: 'all 0.15s',
-                        }} title={topic}>{n}</button>
-                      );
-                    })}
+                  <p style={{ fontSize: 11, color: P.textMuted, margin: '0 0 8px' }}>Select topics to include in your practice</p>
+                  <div style={{ maxWidth: 520 }}>
+                    <MultiSelect
+                      id="profile-topic-range"
+                      label="TOPIC"
+                      allLabel="All"
+                      enableRange
+                      rangeType="numeric_prefix"
+                      options={allTopics.map((topic) => ({ value: topic, label: topic }))}
+                      value={selectedTopicRangeTopics}
+                      openId={openSelectId}
+                      setOpenId={setOpenSelectId}
+                      onChange={(vals) => {
+                        setSelectedTopicRangeTopics(vals);
+
+                        const nums = (vals || [])
+                          .map((x) => extractLeadingNumber(x))
+                          .filter((n) => n !== null);
+
+                        if (!nums.length) {
+                          if (!allTopicNums.length) return;
+                          setTopicRangeFrom(allTopicNums[0]);
+                          setTopicRangeTo(allTopicNums[allTopicNums.length - 1]);
+                          return;
+                        }
+
+                        const lo = Math.min(...nums);
+                        const hi = Math.max(...nums);
+                        setTopicRangeFrom(pad2(lo));
+                        setTopicRangeTo(pad2(hi));
+                      }}
+                      buttonClassName="w-full rounded-xl border-2 border-slate-200 bg-white text-slate-800 font-bold px-3 py-2 shadow-sm focus:outline-none"
+                      listClassName="absolute z-20 mt-2 w-full max-h-72 overflow-auto rounded-2xl border-2 border-slate-200 bg-white shadow-xl p-2"
+                    />
                   </div>
                 </div>
-
-                {/* Topic Exceptions */}
-                {learnedUpTo && learnedRangeTopics.length > 0 && (
-                  <div style={{ borderTop: `1px solid ${P.border}`, paddingTop: 16 }}>
-                    <label className="section-label">
-                      <Lock size={11} style={{ display: 'inline', marginRight: 4 }} />
-                      {t('profile.topicExceptionsLabel')}
-                    </label>
-                    <p style={{ fontSize: 11, color: P.textMuted, margin: '0 0 8px' }}>{t('profile.clickToExclude')}</p>
-                    {learnedRangeTopics.length > 8 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAllTopicExceptions((v) => !v)}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: 9,
-                          border: `1.5px solid ${P.border}`,
-                          background: 'rgba(245,249,246,0.8)',
-                          color: P.text,
-                          fontFamily: "'Quicksand',sans-serif",
-                          fontWeight: 700,
-                          fontSize: 11,
-                          cursor: 'pointer',
-                          marginBottom: 8,
-                        }}
-                      >
-                        {showAllTopicExceptions ? 'Show less' : `Show all (${learnedRangeTopics.length})`}
-                      </button>
-                    )}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                      gap: 6,
-                      maxHeight: showAllTopicExceptions ? 220 : 188,
-                      overflowY: 'auto',
-                      paddingRight: 2,
-                    }}>
-                      {(showAllTopicExceptions ? learnedRangeTopics : learnedRangeTopics.slice(0, 8)).map(topic => {
-                        const isExc = topicExceptions.includes(topic);
-                        return (
-                          <button key={topic} type="button" onClick={() => toggleTopicException(topic)} style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            padding: '6px 10px', borderRadius: 9, border: `1.5px solid`,
-                            borderColor: isExc ? 'rgba(239,68,68,0.35)' : 'rgba(134,168,116,0.35)',
-                            background: isExc ? 'rgba(239,68,68,0.05)' : 'rgba(134,168,116,0.06)',
-                            color: isExc ? '#dc2626' : '#4a7c4e',
-                            fontFamily: "'Quicksand',sans-serif", fontWeight: 700, fontSize: 11,
-                            cursor: 'pointer', transition: 'all 0.15s', textAlign: 'left',
-                          }}>
-                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{topic}</span>
-                            {isExc ? <Lock size={12} /> : <Unlock size={12} />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
 
                 {/* Available Topics Preview */}
                 {availableTopics.length > 0 && (

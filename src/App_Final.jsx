@@ -30,6 +30,8 @@ import VisionPage from './pages/VisionPage';
 import FeaturePage from './pages/FeaturePage';
 import GachaPage from './pages/GachaPage';
 import InventoryPage from './pages/InventoryPage';
+import CalculatorPage from './pages/CalculatorPage';
+import VirtualLabHub from './pages/VirtualLabHub';
 
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
 
@@ -225,6 +227,24 @@ function AppContent() {
             element={
               <PrivateRoute>
                 <InventoryPage />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/calculator"
+            element={
+              <PrivateRoute>
+                <CalculatorPage />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/virtual-lab"
+            element={
+              <PrivateRoute>
+                <VirtualLabHub />
               </PrivateRoute>
             }
           />

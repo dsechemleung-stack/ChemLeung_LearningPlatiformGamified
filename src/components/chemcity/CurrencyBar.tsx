@@ -1,12 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Coins, Gem, ChevronLeft, Sparkles, Fuel, X, Zap, Ticket, Archive } from 'lucide-react';
+import { ChevronLeft, Sparkles, Fuel, X, Zap, Archive } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChemCityStore } from '../../store/chemcityStore';
-import { useAuth } from '../../contexts/AuthContext';
 
 export const CurrencyBar: React.FC = () => {
   const navigate = useNavigate();
-  const { userProfile } = useAuth() as any;
   const user               = useChemCityStore(s => s.user);
   const places             = useChemCityStore(s => s.places);
   const view               = useChemCityStore(s => s.view);
@@ -15,10 +13,6 @@ export const CurrencyBar: React.FC = () => {
   const navigateToGasStationDistributor = useChemCityStore(s => s.navigateToGasStationDistributor);
 
   const [skillsOpen, setSkillsOpen] = useState(false);
-
-  const coins    = user?.currencies.coins ?? 0;
-  const diamonds = Number(userProfile?.tokens ?? 0);
-  const tickets  = (user?.currencies as any)?.tickets ?? 0;
 
   const showGasDistributorButton = view === 'place' && selectedPlaceId === 'gas_station' && (user?.extraSlotsBudget ?? 0) > 0;
 
@@ -38,21 +32,64 @@ export const CurrencyBar: React.FC = () => {
   }, [user?.activeBonuses]);
 
   const NavBtn: React.FC<{
-    onClick: () => void; active: boolean; label: string; children: React.ReactNode; accent?: boolean;
-  }> = ({ onClick, active, label, children, accent }) => (
-    <button onClick={onClick} title={label} aria-label={label} style={{
-      width: 36, height: 36, borderRadius: 10,
-      border: `1.5px solid ${active ? 'rgba(118,168,165,0.6)' : accent ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)'}`,
-      background: active
-        ? 'rgba(118,168,165,0.25)'
-        : accent ? 'rgba(251,191,36,0.12)' : 'rgba(8,20,19,0.9)',
+    onClick: () => void;
+    active: boolean;
+    label: string;
+    children: React.ReactNode;
+    accent?: boolean;
+    showText?: boolean;
+    pulse?: boolean;
+    textColor?: string;
+    bg?: string;
+    borderColor?: string;
+    className?: string;
+  }> = ({ onClick, active, label, children, accent, showText, pulse, textColor, bg, borderColor, className }) => (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={showText ? `cc-nav-pill ${className ?? ''}`.trim() : className}
+      style={{
+      width: showText ? 'auto' : 36,
+      height: 36,
+      borderRadius: showText ? 999 : 10,
+      padding: showText ? '0 12px' : 0,
+      border: `1.5px solid ${
+        borderColor ?? (active ? 'rgba(118,168,165,0.6)' : accent ? 'rgba(251,191,36,0.4)' : 'rgba(255,255,255,0.12)')
+      }`,
+      background:
+        bg ??
+        (active
+          ? 'rgba(118,168,165,0.25)'
+          : accent
+            ? 'linear-gradient(135deg, rgba(251,191,36,0.22), rgba(251,191,36,0.08))'
+            : 'rgba(8,20,19,0.9)'),
       backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-      color: active ? '#C5D7B5' : accent ? '#fbbf24' : '#94a3b8',
+      color: textColor ?? (active ? '#C5D7B5' : accent ? '#fbbf24' : '#94a3b8'),
       cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
       transition: 'all 0.2s ease',
       boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+      gap: showText ? 8 : undefined,
+      fontWeight: showText ? 900 : undefined,
+      fontSize: showText ? 12 : undefined,
+      letterSpacing: showText ? 0.2 : undefined,
+      animation: pulse ? 'skillPulse 1.8s ease-in-out infinite' : undefined,
     }}>
       {children}
+      {showText && (
+        <span
+          className="cc-nav-pill-label"
+          style={{
+          color: textColor ?? (active ? '#C5D7B5' : accent ? '#fbbf24' : '#94a3b8'),
+          fontWeight: 900,
+          fontSize: 13,
+          lineHeight: '13px',
+          whiteSpace: 'nowrap',
+          }}
+        >
+          {label}
+        </span>
+      )}
     </button>
   );
 
@@ -61,6 +98,20 @@ export const CurrencyBar: React.FC = () => {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700;800&display=swap');
         .skills-row:hover { background: rgba(255,255,255,0.06) !important; }
+        @keyframes skillPulse {
+          0%, 100% { box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 0 rgba(251,191,36,0); }
+          50% { box-shadow: 0 2px 8px rgba(0,0,0,0.4), 0 0 16px rgba(251,191,36,0.35); }
+        }
+        @media (max-width: 480px) {
+          .cc-nav-pill {
+            height: 32px !important;
+            padding: 0 10px !important;
+          }
+          .cc-nav-pill-label {
+            font-size: 12px !important;
+            line-height: 12px !important;
+          }
+        }
       `}</style>
 
       <div style={{
@@ -87,58 +138,30 @@ export const CurrencyBar: React.FC = () => {
           )}
         </div>
 
-        {/* Right: Currency pills + nav buttons */}
+        {/* Right: nav buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, pointerEvents: 'auto' }}>
-          {/* Coins pill */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            background: 'rgba(8,20,19,0.9)',
-            border: '1.5px solid rgba(251,191,36,0.25)',
-            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-            borderRadius: 20, padding: '5px 10px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-          }}>
-            <Coins size={13} color="#fbbf24" />
-            <span style={{ color: '#fff', fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-              {coins.toLocaleString()}
-            </span>
-          </div>
-
-          {/* Diamonds pill */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            background: 'rgba(8,20,19,0.9)',
-            border: '1.5px solid rgba(103,232,249,0.25)',
-            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-            borderRadius: 20, padding: '5px 10px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-          }}>
-            <Gem size={12} color="#67e8f9" />
-            <span style={{ color: '#fff', fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-              {diamonds.toLocaleString()}
-            </span>
-          </div>
-
-          {/* Tickets pill */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            background: 'rgba(8,20,19,0.9)',
-            border: '1.5px solid rgba(167,139,250,0.25)',
-            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-            borderRadius: 20, padding: '5px 10px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-          }}>
-            <Ticket size={12} color="#a78bfa" />
-            <span style={{ color: '#fff', fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-              {Number(tickets || 0).toLocaleString()}
-            </span>
-          </div>
-
-          <NavBtn onClick={() => setSkillsOpen(true)} active={false} label="Skill Boosts">
-            <Sparkles size={15} />
+          <NavBtn
+            onClick={() => setSkillsOpen(true)}
+            active={false}
+            label="Skill Boosts"
+            showText
+            pulse
+            bg="linear-gradient(135deg, rgba(251,191,36,0.95), rgba(245,158,11,0.92))"
+            borderColor="rgba(253,230,138,0.95)"
+            textColor="#111827"
+          >
+            <Sparkles size={16} color="#111827" />
           </NavBtn>
-          <NavBtn onClick={() => navigate('/inventory')} active={false} label="Inventory">
-            <Archive size={15} />
+          <NavBtn
+            onClick={() => navigate('/inventory')}
+            active={false}
+            label="Inventory"
+            showText
+            bg="linear-gradient(135deg, rgba(59,130,246,0.35), rgba(14,165,233,0.18))"
+            borderColor="rgba(125,211,252,0.55)"
+            textColor="#111827"
+          >
+            <Archive size={16} color="#111827" />
           </NavBtn>
           {showGasDistributorButton && (
             <NavBtn onClick={navigateToGasStationDistributor} active={false} label="Distribute Bonus Slots" accent>

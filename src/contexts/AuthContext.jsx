@@ -93,6 +93,29 @@ export function AuthProvider({ children }) {
       .trim() === '1';
 
     const docRef = doc(db, 'users', uid);
+
+    const ensureUserProfileDoc = async () => {
+      try {
+        const u = auth.currentUser;
+        if (!u?.uid) return;
+        await setDoc(doc(db, 'users', u.uid), {
+          uid: u.uid,
+          email: u.email || '',
+          displayName: u.displayName || '',
+          gender: 'boy',
+          level: 'S4',
+          createdAt: new Date().toISOString(),
+          totalAttempts: 0,
+          totalQuestions: 0,
+          totalCorrect: 0,
+          tokens: 100,
+          inventory: [],
+          equipped: {},
+        }, { merge: true });
+      } catch (e) {
+        setProfileError(e);
+      }
+    };
     
     if (disableListeners) {
       let timer = null;
@@ -132,14 +155,15 @@ export function AuthProvider({ children }) {
           });
           setUserProfile(data);
         } else {
-          console.error('❌ User profile not found');
-          setUserProfile(null);
+          if (!docSnap.metadata?.fromCache) {
+            ensureUserProfileDoc();
+          }
+          setUserProfile((prev) => (prev && prev.uid === uid ? prev : null));
         }
       },
       (error) => {
         console.error('❌ Profile listener error:', error);
         setProfileError(error);
-        loadUserProfile(uid);
       },
     );
 
@@ -156,6 +180,21 @@ export function AuthProvider({ children }) {
       if (docSnap.exists()) {
         setProfileError(null);
         setUserProfile(docSnap.data());
+      } else {
+        await setDoc(doc(db, 'users', uid), {
+          uid,
+          email: auth.currentUser?.email || '',
+          displayName: auth.currentUser?.displayName || '',
+          gender: 'boy',
+          level: 'S4',
+          createdAt: new Date().toISOString(),
+          totalAttempts: 0,
+          totalQuestions: 0,
+          totalCorrect: 0,
+          tokens: 100,
+          inventory: [],
+          equipped: {},
+        }, { merge: true });
       }
     } catch (error) {
       setProfileError(error);

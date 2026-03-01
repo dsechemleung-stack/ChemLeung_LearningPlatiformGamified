@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { PassiveIncomeCollector } from './PassiveIncomeCollector';
 
@@ -7,11 +8,10 @@ export const ChemCityMap: React.FC = () => {
   const places = useChemCityStore((s) => s.places);
   const navigateToPlace = useChemCityStore((s) => s.navigateToPlace);
   const openPlaceUnlockModal = useChemCityStore((s) => s.openPlaceUnlockModal);
+  const navigate = useNavigate();
   const [mapLevel, setMapLevel] = useState<'world' | 'home'>('world');
 
-  const isHotspotEditorEnabled = false;
-  const [editMode, setEditMode] = useState(false);
-  const [selectedHotspotKey, setSelectedHotspotKey] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const mapImgRef = useRef<HTMLImageElement | null>(null);
   const [mapNaturalWidth, setMapNaturalWidth] = useState(0);
@@ -23,7 +23,7 @@ export const ChemCityMap: React.FC = () => {
       placeId?: string;
       leftPct: number;
       topPct: number;
-      action?: 'home';
+      action?: 'home' | 'chemstore';
     }>
   >([
     { key: 'school', label: 'School', placeId: 'school', leftPct: 32.372, topPct: 34.495 },
@@ -31,6 +31,7 @@ export const ChemCityMap: React.FC = () => {
     { key: 'boutique', label: 'Boutique', placeId: 'lifestyle_boutique', leftPct: 29.487, topPct: 63.241 },
     { key: 'gas_station', label: 'Gas Station', placeId: 'gas_station', leftPct: 67.147, topPct: 50.761 },
     { key: 'home', label: 'Home', leftPct: 48.958, topPct: 50.06, action: 'home' },
+    { key: 'chemstore', label: 'ChemStore', leftPct: 61.071, topPct: 40.189, action: 'chemstore' },
   ]);
 
   const [homeHotspots, setHomeHotspots] = useState<
@@ -54,7 +55,7 @@ export const ChemCityMap: React.FC = () => {
     placeId?: string;
     leftPct: number;
     topPct: number;
-    action?: 'home';
+    action?: 'home' | 'chemstore';
   }> = worldHotspots;
 
   const homeHotspotsSnapshot: Array<{
@@ -75,8 +76,6 @@ export const ChemCityMap: React.FC = () => {
   };
 
   const mapSrc = mapLevel === 'world' ? '/Map1.png' : '/Map2.png';
-
-  const activeHotspots = mapLevel === 'world' ? worldHotspots : homeHotspots;
 
   useEffect(() => {
     const img = mapImgRef.current;
@@ -103,34 +102,23 @@ export const ChemCityMap: React.FC = () => {
     };
   }, [mapSrc]);
 
+  const centerScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const maxLeft = el.scrollWidth - el.clientWidth;
+    if (maxLeft > 0) el.scrollLeft = maxLeft / 2;
+  };
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => centerScroll());
+    return () => cancelAnimationFrame(raf);
+  }, [mapSrc, mapRenderedWidth]);
+
   const hotspotScale = (() => {
     if (!mapNaturalWidth || !mapRenderedWidth) return 1;
     const scale = mapRenderedWidth / mapNaturalWidth;
     return Math.max(0.65, Math.min(1.25, scale * 1.1));
   })();
-
-  const exportHotspotCoords = async () => {
-    const payload = {
-      mapLevel,
-      hotspots: activeHotspots.map((h) => ({
-        key: h.key,
-        label: h.label,
-        leftPct: h.leftPct,
-        topPct: h.topPct,
-      })),
-    };
-
-    const text = JSON.stringify(payload, null, 2);
-    console.log('[ChemCityMap] Hotspot coords export:\n' + text);
-
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      }
-    } catch {
-      // ignore clipboard errors
-    }
-  };
 
   const HotspotButton: React.FC<{
     label: string;
@@ -140,7 +128,12 @@ export const ChemCityMap: React.FC = () => {
     onClick: () => void;
     disabled?: boolean;
     locked?: boolean;
-  }> = ({ label, leftPct, topPct, scale, onClick, disabled, locked }) => {
+    variant?: 'default' | 'store';
+  }> = ({ label, leftPct, topPct, scale, onClick, disabled, locked, variant = 'default' }) => {
+    const activeTone =
+      variant === 'store'
+        ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 border-pink-200 text-white'
+        : 'bg-indigo-500/90 hover:bg-indigo-400 border-indigo-200 text-white';
     return (
       <button
         type="button"
@@ -152,12 +145,12 @@ export const ChemCityMap: React.FC = () => {
           onClick();
         }}
         disabled={disabled}
-        className={`absolute rounded-full border font-bold shadow-md transition-all px-4 py-2 text-xs ${
+        className={`absolute z-10 pointer-events-auto rounded-full border font-bold shadow-md transition-all px-4 py-2 text-xs ${
           disabled
             ? 'bg-slate-800/80 border-slate-700 text-slate-500 cursor-not-allowed'
             : locked
             ? 'bg-slate-800/90 hover:bg-slate-700 border-amber-600/80 text-amber-300 active:scale-95'
-            : 'bg-indigo-500/90 hover:bg-indigo-400 border-indigo-200 text-white active:scale-95'
+            : `${activeTone} active:scale-95`
         }`}
         style={{
           left: `${leftPct}%`,
@@ -175,180 +168,88 @@ export const ChemCityMap: React.FC = () => {
     <div className="relative w-full h-full flex-1">
       <PassiveIncomeCollector />
 
-      <div className="absolute inset-0 overflow-auto bg-[#f5f1e6]">
-        <div className="min-h-full w-full flex items-center justify-center p-4">
-        <div
-          className="relative inline-block rounded-3xl bg-[#f3ead8] border border-[#e7d8bf] shadow-xl p-3"
-          onClick={(e) => {
-            if (!isHotspotEditorEnabled) return;
-            if (!editMode) return;
-            if (!selectedHotspotKey) return;
-
-            const target = e.currentTarget;
-            const rect = target.getBoundingClientRect();
-            const leftPct = ((e.clientX - rect.left) / rect.width) * 100;
-            const topPct = ((e.clientY - rect.top) / rect.height) * 100;
-            const leftRounded = Math.round(leftPct * 1000) / 1000;
-            const topRounded = Math.round(topPct * 1000) / 1000;
-
-            const leftClamped = Math.max(0, Math.min(100, leftRounded));
-            const topClamped = Math.max(0, Math.min(100, topRounded));
-
-            if (mapLevel === 'world') {
-              setWorldHotspots((hs) =>
-                hs.map((h) => (h.key === selectedHotspotKey ? { ...h, leftPct: leftClamped, topPct: topClamped } : h)),
-              );
-            } else {
-              setHomeHotspots((hs) =>
-                hs.map((h) => (h.key === selectedHotspotKey ? { ...h, leftPct: leftClamped, topPct: topClamped } : h)),
-              );
-            }
-
-            console.log(
-              `[ChemCityMap] ${mapLevel} set ${selectedHotspotKey}: leftPct=${leftClamped}, topPct=${topClamped}`,
-            );
-          }}
-        >
-          <img
-            ref={mapImgRef}
-            src={mapSrc}
-            alt={mapLevel === 'world' ? 'ChemCity world map' : 'ChemCity home map'}
-            className="block w-[min(1100px,92vw)] h-auto rounded-2xl"
-            loading="lazy"
-            onLoad={(e) => {
-              const el = e.currentTarget;
-              if (el.naturalWidth) setMapNaturalWidth(el.naturalWidth);
-              const rect = el.getBoundingClientRect();
-              setMapRenderedWidth(rect.width);
-            }}
-          />
-
-        {mapLevel === 'world'
-          ? worldHotspotsSnapshot.map((h) => (
-            <HotspotButton
-              key={h.key}
-              label={h.label}
-              leftPct={h.leftPct}
-              topPct={h.topPct}
-              scale={hotspotScale}
-              locked={h.placeId ? !isPlaceUnlocked(h.placeId) : false}
-              onClick={() => {
-                if (isHotspotEditorEnabled && editMode) {
-                  setSelectedHotspotKey(h.key);
-                  return;
-                }
-                if (h.action === 'home') {
-                  setMapLevel('home');
-                  return;
-                }
-                if (!h.placeId) return;
-                if (!isPlaceUnlocked(h.placeId)) {
-                  openPlaceUnlockModal(h.placeId);
-                  return;
-                }
-                navigateToPlace(h.placeId);
-              }}
-              disabled={h.placeId ? !placeById(h.placeId) : false}
-            />
-          ))
-          : homeHotspotsSnapshot.map((h) => (
-            <HotspotButton
-              key={h.key}
-              label={h.label}
-              leftPct={h.leftPct}
-              topPct={h.topPct}
-              scale={hotspotScale}
-              onClick={() => {
-                if (isHotspotEditorEnabled && editMode) {
-                  setSelectedHotspotKey(h.key);
-                  return;
-                }
-                if (!isPlaceUnlocked(h.placeId)) {
-                  openPlaceUnlockModal(h.placeId);
-                  return;
-                }
-                navigateToPlace(h.placeId);
-              }}
-              disabled={!placeById(h.placeId)}
-              locked={!isPlaceUnlocked(h.placeId)}
-            />
-          ))}
-
-        {isHotspotEditorEnabled && (
+      <div ref={scrollRef} className="absolute inset-0 overflow-auto bg-[#f5f1e6]">
+        <div className="min-h-[100vh] w-full flex justify-center items-center py-3 px-2">
           <div
-            className="absolute left-3 bottom-3 z-20 pointer-events-auto"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
+            className="relative inline-block"
           >
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
+            <img
+              ref={mapImgRef}
+              src={mapSrc}
+              alt={mapLevel === 'world' ? 'ChemCity world map' : 'ChemCity home map'}
+              className="block w-[min(100vw,1400px)] h-auto"
+              loading="lazy"
+              onLoad={(e) => {
+                const el = e.currentTarget;
+                if (el.naturalWidth) setMapNaturalWidth(el.naturalWidth);
+                const rect = el.getBoundingClientRect();
+                setMapRenderedWidth(rect.width);
+                centerScroll();
+              }}
+            />
+
+          {mapLevel === 'world'
+            ? worldHotspotsSnapshot.map((h) => (
+              <HotspotButton
+                key={h.key}
+                label={h.label}
+                leftPct={h.leftPct}
+                topPct={h.topPct}
+                scale={hotspotScale}
+                locked={h.placeId ? !isPlaceUnlocked(h.placeId) : false}
+                variant={h.action === 'chemstore' ? 'store' : 'default'}
                 onClick={() => {
-                  setEditMode((v) => !v);
-                  setSelectedHotspotKey(null);
+                  if (h.action === 'home') {
+                    setMapLevel('home');
+                    return;
+                  }
+                  if (h.action === 'chemstore') {
+                    navigate('/store');
+                    return;
+                  }
+                  if (!h.placeId) return;
+                  if (!isPlaceUnlocked(h.placeId)) {
+                    openPlaceUnlockModal(h.placeId);
+                    return;
+                  }
+                  navigateToPlace(h.placeId);
                 }}
-                className={`text-xs font-bold rounded-xl px-3 py-2 border backdrop-blur transition-colors ${
-                  editMode
-                    ? 'bg-indigo-600/90 border-indigo-300 text-white'
-                    : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700 text-slate-200'
-                }`}
-              >
-                {editMode ? 'Editing' : 'Edit hotspots'}
-              </button>
-              {editMode && (
-                <button
-                  type="button"
-                  onClick={() => exportHotspotCoords()}
-                  className="text-xs font-bold rounded-xl px-3 py-2 border bg-slate-900/80 hover:bg-slate-800 border-slate-700 text-slate-200 backdrop-blur transition-colors"
-                >
-                  Export
-                </button>
-              )}
-            </div>
+                disabled={h.placeId ? !placeById(h.placeId) : false}
+              />
+            ))
+            : homeHotspotsSnapshot.map((h) => (
+              <HotspotButton
+                key={h.key}
+                label={h.label}
+                leftPct={h.leftPct}
+                topPct={h.topPct}
+                scale={hotspotScale}
+                onClick={() => {
+                  if (!isPlaceUnlocked(h.placeId)) {
+                    openPlaceUnlockModal(h.placeId);
+                    return;
+                  }
+                  navigateToPlace(h.placeId);
+                }}
+                disabled={!placeById(h.placeId)}
+                locked={!isPlaceUnlocked(h.placeId)}
+              />
+            ))}
 
-            {editMode && (
-              <div className="mt-2 p-2 rounded-xl bg-slate-900/80 border border-slate-700 backdrop-blur max-w-[86vw]">
-                <div className="flex flex-wrap gap-1.5">
-                  {activeHotspots.map((h) => (
-                    <button
-                      key={h.key}
-                      type="button"
-                      onClick={() => setSelectedHotspotKey(h.key)}
-                      className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-colors ${
-                        selectedHotspotKey === h.key
-                          ? 'bg-indigo-600 border-indigo-300 text-white'
-                          : 'bg-slate-800 border-slate-600 text-slate-200 hover:bg-slate-700'
-                      }`}
-                    >
-                      {h.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-1 text-slate-300/80 text-[11px]">
-                  {selectedHotspotKey
-                    ? `Click map to set: ${selectedHotspotKey}`
-                    : 'Select a hotspot, then click on the map'}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {mapLevel === 'home' && (
-          <button
-            type="button"
-            onClick={() => setMapLevel('world')}
-            className="absolute left-3 bottom-[4.5rem] z-10 w-12 h-12 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 backdrop-blur text-white font-bold"
-            aria-label="Back to city map"
-            title="Back"
-          >
-            ←
-          </button>
-        )}
-        </div>
+          {mapLevel === 'home' && (
+            <button
+              type="button"
+              onClick={() => setMapLevel('world')}
+              className="absolute left-3 bottom-3 z-10 w-12 h-12 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 backdrop-blur text-white font-bold"
+              aria-label="Back to city map"
+              title="Back"
+            >
+              ←
+            </button>
+          )}
         </div>
       </div>
+    </div>
     </div>
   );
 };

@@ -3,6 +3,8 @@ import { X, Flag, BookOpen, Calendar, Tag, Layers, ArrowUpCircle } from 'lucide-
 import { motion } from 'framer-motion';
 import { calendarServiceOptimized } from '../../services/calendarServiceOptimized';
 import { useLanguage } from '../../contexts/LanguageContext';
+import MultiSelect from '../MultiSelect.jsx';
+import { CURRICULUM_SUBTOPICS } from '../../lib/calculationQuestionGenerator/generators/index.js';
 
 /**
  * EventCreationModal - COMPLETE FIX
@@ -13,13 +15,14 @@ import { useLanguage } from '../../contexts/LanguageContext';
  * ✅ Selected subtopics are cleared when they're no longer in available list
  * ✅ YYYY/MM/DD or MM/DD date format
  */
-export default function EventCreationModal({ userId, questions = [], onClose, onEventCreated }) {
+export default function EventCreationModal({ userId, userProfile, questions = [], onClose, onEventCreated }) {
   const { t, tf } = useLanguage();
   const [eventType, setEventType] = useState('major_exam');
   const [title, setTitle] = useState('');
   const [dateInput, setDateInput] = useState('');
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedSubtopics, setSelectedSubtopics] = useState([]);
+  const [openSelectId, setOpenSelectId] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // Extract unique topics from questions (sorted)
@@ -132,34 +135,6 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
     if (formatted.length <= 10) {
       setDateInput(formatted);
     }
-  }
-
-  function toggleTopic(topic) {
-    setSelectedTopics(prev => 
-      prev.includes(topic) 
-        ? prev.filter(t => t !== topic)
-        : [...prev, topic]
-    );
-  }
-
-  function selectTopicsUpTo(targetTopic) {
-    const targetIndex = allTopics.indexOf(targetTopic);
-    if (targetIndex === -1) return;
-    setSelectedTopics(allTopics.slice(0, targetIndex + 1));
-  }
-
-  function toggleSubtopic(subtopic) {
-    setSelectedSubtopics(prev => 
-      prev.includes(subtopic)
-        ? prev.filter(s => s !== subtopic)
-        : [...prev, subtopic]
-    );
-  }
-
-  function selectSubtopicsUpTo(targetSubtopic) {
-    const targetIndex = availableSubtopics.indexOf(targetSubtopic);
-    if (targetIndex === -1) return;
-    setSelectedSubtopics(availableSubtopics.slice(0, targetIndex + 1));
   }
 
   function generateTitle() {
@@ -362,48 +337,18 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   </button>
                 </div>
 
-                <div className="border-2 border-slate-200 rounded-lg p-3 bg-white h-96 overflow-y-auto">
-                  <div className="space-y-2">
-                    {allTopics.map((topic) => (
-                      <div key={topic} className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleTopic(topic)}
-                          className={`flex-1 px-3 py-2 rounded-lg text-left transition-all flex items-center gap-2 text-sm ${
-                            selectedTopics.includes(topic)
-                              ? 'bg-indigo-100 border-2 border-indigo-500 text-indigo-900 font-bold'
-                              : 'bg-slate-50 border-2 border-transparent hover:bg-slate-100'
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                            selectedTopics.includes(topic)
-                              ? 'border-indigo-600 bg-indigo-600'
-                              : 'border-slate-300'
-                          }`}>
-                            {selectedTopics.includes(topic) && (
-                              <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </div>
-                          <span className="truncate">{topic}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => selectTopicsUpTo(topic)}
-                          title={tf('calendar.selectAllTopicsUpToTitle', { topic })}
-                          className="px-2 py-2 bg-purple-100 hover:bg-purple-200 rounded-lg transition-all flex items-center gap-1 text-xs font-bold text-purple-700 flex-shrink-0"
-                        >
-                          <ArrowUpCircle size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-xs text-slate-500 mt-2 italic">
-                  {t('calendar.upToHint')}
-                </p>
+                <MultiSelect
+                  id="event-topics"
+                  label="TOPICS"
+                  allLabel={t('common.all') || 'All'}
+                  options={allTopics.map((topic) => ({ value: topic, label: topic }))}
+                  value={selectedTopics}
+                  openId={openSelectId}
+                  setOpenId={setOpenSelectId}
+                  onChange={(vals) => {
+                    setSelectedTopics(vals);
+                  }}
+                />
               </div>
 
               {/* RIGHT: Subtopic Filter */}
@@ -428,54 +373,24 @@ export default function EventCreationModal({ userId, questions = [], onClose, on
                   </button>
                 </div>
 
-                <div className="border-2 border-slate-200 rounded-lg p-3 bg-white h-96 overflow-y-auto">
-                  {availableSubtopics.length === 0 ? (
-                    <div className="flex items-center justify-center h-full text-slate-400 text-sm">
-                      {selectedTopics.length === 0 ? t('calendar.selectTopicsToFilterSubtopics') : t('calendar.noSubtopicsAvailable')}
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {availableSubtopics.map((subtopic) => (
-                        <div key={subtopic} className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleSubtopic(subtopic)}
-                            className={`flex-1 px-3 py-2 rounded-lg text-left transition-all flex items-center gap-2 text-sm ${
-                              selectedSubtopics.includes(subtopic)
-                                ? 'bg-purple-100 border-2 border-purple-500 text-purple-900 font-bold'
-                                : 'bg-slate-50 border-2 border-transparent hover:bg-slate-100'
-                            }`}
-                          >
-                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                              selectedSubtopics.includes(subtopic)
-                                ? 'border-purple-600 bg-purple-600'
-                                : 'border-slate-300'
-                            }`}>
-                              {selectedSubtopics.includes(subtopic) && (
-                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </div>
-                            <span className="truncate">{subtopic}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => selectSubtopicsUpTo(subtopic)}
-                            title={tf('calendar.selectAllSubtopicsUpToTitle', { subtopic })}
-                            className="px-2 py-2 bg-purple-100 hover:bg-purple-200 rounded-lg transition-all flex items-center gap-1 text-xs font-bold text-purple-700 flex-shrink-0"
-                          >
-                            <ArrowUpCircle size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500 mt-2 italic">
-                  {t('calendar.subtopicsAutoFilterHint')}
-                </p>
+                {availableSubtopics.length === 0 ? (
+                  <div className="border-2 border-slate-200 rounded-lg p-3 bg-white h-24 flex items-center justify-center text-slate-400 text-sm">
+                    {selectedTopics.length === 0 ? t('calendar.selectTopicsToFilterSubtopics') : t('calendar.noSubtopicsAvailable')}
+                  </div>
+                ) : (
+                  <MultiSelect
+                    id="event-subtopics"
+                    label="SUBTOPICS"
+                    allLabel={t('common.all') || 'All'}
+                    options={availableSubtopics.map((sub) => ({ value: sub, label: sub }))}
+                    value={selectedSubtopics}
+                    openId={openSelectId}
+                    setOpenId={setOpenSelectId}
+                    onChange={(vals) => {
+                      setSelectedSubtopics(vals);
+                    }}
+                  />
+                )}
               </div>
             </div>
           </div>

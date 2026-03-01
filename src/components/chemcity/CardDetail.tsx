@@ -1,6 +1,78 @@
 import React, { useMemo } from 'react';
-import { X, Zap, BookOpen, FlaskConical, Star, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Zap, BookOpen, FlaskConical, Star, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
+
+// Slot ID to human-readable label mapping (from FIXED_SLOT_LAYOUTS in PlaceView.tsx)
+const SLOT_LABELS: Record<string, string> = {
+  // School
+  school_student_desk_1: 'School — Student Desk 1',
+  school_teacher_desk: 'School — Teacher Desk',
+  school_blackboard: 'School — Blackboard',
+  school_science_corner: 'School — Science Corner',
+  school_poster: 'School — Poster',
+  school_window_side_table: 'School — Window-side Table',
+  school_student_desk_2: 'School — Student Desk 2',
+  // Gas Station
+  gas_station_car_1: 'Gas Station — Car 1',
+  gas_station_construction_site: 'Gas Station — Construction Site',
+  gas_station_factory: 'Gas Station — Factory',
+  gas_station_petrol_pump: 'Gas Station — Petrol Pump',
+  gas_station_car_2: 'Gas Station — Car 2',
+  gas_station_motel: 'Gas Station — Motel',
+  gas_station_street_light: 'Gas Station — Street Light',
+  gas_station_firework: 'Gas Station — Firework',
+  // Lab
+  lab_bench: 'Lab — Bench',
+  lab_fume_hood: 'Lab — Fume Hood',
+  lab_acid_alkali_cabinet: 'Lab — Acid & Alkali Cabinet',
+  lab_apparatus_1: 'Lab — Apparatus 1',
+  lab_metal_shelf: 'Lab — Metal Shelf',
+  lab_salt_shelf: 'Lab — Salt Shelf',
+  lab_hazardous_chemical_shelf: 'Lab — Hazardous Chemical Shelf',
+  lab_apparatus_2: 'Lab — Apparatus 2',
+  lab_chemical_shelf: 'Lab — Chemical Shelf',
+  lab_gas_tank: 'Lab — Gas Tank',
+  // Kitchen
+  kitchen_cutlery_drawer: 'Kitchen — Cutlery Drawer',
+  kitchen_pantry_1: 'Kitchen — Pantry 1',
+  kitchen_stove_oven: 'Kitchen — Stove & Oven',
+  kitchen_dinette: 'Kitchen — Dinette',
+  kitchen_fridge: 'Kitchen — Fridge',
+  kitchen_pantry_2: 'Kitchen — Pantry 2',
+  kitchen_base_cabinet: 'Kitchen — Base Cabinet',
+  kitchen_countertop: 'Kitchen — Countertop',
+  // Toilet
+  toilet_faucet: 'Toilet — Faucet',
+  toilet_vanity_cabinet: 'Toilet — Vanity Cabinet',
+  toilet_bathtub: 'Toilet — Bathtub',
+  toilet_mirror_cabinet_1: 'Toilet — Mirror Cabinet 1',
+  toilet_toilet: 'Toilet — Toilet',
+  toilet_vanity_top: 'Toilet — Vanity Top',
+  toilet_mirror_cabinet_2: 'Toilet — Mirror Cabinet 2',
+  // Garden
+  garden_shed_1: 'Garden — Shed 1',
+  garden_lawn: 'Garden — Lawn',
+  garden_greenhouse: 'Garden — Greenhouse',
+  garden_flower_bed: 'Garden — Flower Bed',
+  garden_mole_hill: 'Garden — Mole Hill',
+  garden_broadcast_spreader: 'Garden — Broadcast Spreader',
+  garden_shed_2: 'Garden — Shed 2',
+  // Boutique
+  lifestyle_boutique_poseur_table_1: 'Boutique — Poseur Table 1',
+  lifestyle_boutique_service_desk: 'Boutique — Service Desk',
+  lifestyle_boutique_jewellery_display: 'Boutique — Jewellery Display',
+  lifestyle_boutique_power_essentials: 'Boutique — Power Essentials',
+  lifestyle_boutique_apparel_gallery: 'Boutique — Apparel Gallery',
+  lifestyle_boutique_poseur_table_2: 'Boutique — Poseur Table 2',
+  // Beach
+  beach_sky: 'Beach — Sky',
+  beach_sea: 'Beach — Sea',
+  beach_rock_1: 'Beach — Rock 1',
+  beach_dry_sand: 'Beach — Dry Sand',
+  beach_strandline: 'Beach — Strandline',
+  beach_rock_2: 'Beach — Rock 2',
+  beach_cliffside: 'Beach — Cliffside',
+};
 
 function needsAnonymousCrossOrigin(url?: string | null): boolean {
   if (!url) return false;
@@ -77,6 +149,14 @@ export const CardDetail: React.FC = () => {
   const rarity = slim?.rarity ?? 'common';
   const cfg = RARITY_CONFIG[rarity] ?? RARITY_CONFIG.common;
   const rarityStars = { common: 1, uncommon: 2, rare: 2, epic: 3, legendary: 4 }[rarity] ?? 1;
+
+  const placementSlots = useMemo(() => {
+    const raw = (full as any)?.validSlots ?? (slim as any)?.validSlots;
+    if (!Array.isArray(raw)) return [] as string[];
+    const uniq = Array.from(new Set(raw.map((v) => String(v ?? '').trim()).filter(Boolean)));
+    uniq.sort((a, b) => (SLOT_LABELS[a] || a).localeCompare(SLOT_LABELS[b] || b));
+    return uniq;
+  }, [full, slim]);
 
   const variants = useMemo(() => {
     if (!cardDetailItemId) return [];
@@ -378,6 +458,24 @@ export const CardDetail: React.FC = () => {
                             borderRadius: 6, padding: '3px 8px', fontSize: 10, color: '#86efac',
                             fontFamily: "'Quicksand',sans-serif", fontWeight: 600,
                           }}>{tid}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {placementSlots.length > 0 && (
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <MapPin size={11} color="#fbbf24" />
+                        <span style={{ color: 'rgba(251,191,36,0.8)', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>Can be placed at</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {placementSlots.map((slotId) => (
+                          <span key={slotId} style={{
+                            background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)',
+                            borderRadius: 6, padding: '4px 10px', fontSize: 10, color: '#fbbf24',
+                            fontFamily: "'Quicksand',sans-serif", fontWeight: 600,
+                          }}>{SLOT_LABELS[slotId] || slotId}</span>
                         ))}
                       </div>
                     </div>

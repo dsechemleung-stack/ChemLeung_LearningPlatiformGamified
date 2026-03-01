@@ -4,20 +4,21 @@ import { X, Play, Eye, CheckSquare, Filter, Tag, Layers, ArrowRight, Timer, Zap 
 import { motion } from 'framer-motion';
 import ChemistryLoading from '../ChemistryLoading';
 import { useLanguage } from '../../contexts/LanguageContext';
+import MultiSelect from '../MultiSelect.jsx';
 import { getNow } from '../../utils/timeTravel';
 
 /**
  * SpacedRepetitionModal - COMPLETE ENHANCED VERSION with SRS Service
  * 
  * FEATURES:
- * ✅ Default: "5-Mistake Review" - AI selects 5 random questions
- * ✅ Question number selector (1 to all available)
- * ✅ Auto-select all topics → auto-select all subtopics → auto-select all questions
- * ✅ Timer and timed mode options for all review modes
- * ✅ Improved side-by-side topic/subtopic layout
- * ✅ Single question review option
- * ✅ Custom batch review with full filtering
- * ✅ SRS service integration for fetching due cards
+ * Default: "5-Mistake Review" - AI selects 5 random questions
+ * Question number selector (1 to all available)
+ * Auto-select all topics → auto-select all subtopics → auto-select all questions
+ * Timer and timed mode options for all review modes
+ * Improved side-by-side topic/subtopic layout
+ * Single question review option
+ * Custom batch review with full filtering
+ * SRS service integration for fetching due cards
  */
 export default function SpacedRepetitionModal({ 
   userId,
@@ -30,6 +31,8 @@ export default function SpacedRepetitionModal({
   onStartReview 
 }) {
   const { t, tf } = useLanguage();
+
+  const [openSelectId, setOpenSelectId] = useState(null);
   const safeOnClose = typeof onClose === 'function' ? onClose : () => {};
   // Review modes: '5-mistake' (default), 'single', 'batch'
   const [reviewMode, setReviewMode] = useState('5-mistake');
@@ -641,56 +644,31 @@ export default function SpacedRepetitionModal({
                         <Tag size={14} className="text-slate-500" />
                         {tf('calendar.topicsCount', { selected: shouldVisuallyClearBatchFilters ? 0 : (allTopicsSelected ? availableTopics.length : selectedTopicFilters.length), total: availableTopics.length })}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAllTopicsSelected(true);
-                            setSelectedTopicFilters([]);
-                            setBatchFiltersVisuallyCleared(false);
-                          }}
-                          disabled={availableTopics.length === 0}
-                          className={`text-[11px] font-black ${availableTopics.length === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-indigo-700 hover:text-indigo-900'}`}
-                        >
-                          {t('common.selectAll')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAllTopicsSelected(false);
-                            setSelectedTopicFilters([]);
-                            setBatchFiltersVisuallyCleared(false);
-                          }}
-                          disabled={!allTopicsSelected && selectedTopicFilters.length === 0}
-                          className={`text-[11px] font-black ${(!allTopicsSelected && selectedTopicFilters.length === 0) ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                          {t('common.clear')}
-                        </button>
-                      </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 flex-1 min-h-0 overflow-auto pr-1">
-                      {availableTopics.map(topic => (
-                        <button
-                          key={topic}
-                          onClick={() => toggleTopicFilter(topic)}
-                          className={`px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
-                            allTopicsSelected
-                              ? 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                              : selectedTopicFilters.includes(topic)
-                                ? 'bg-indigo-600 text-white shadow-md'
-                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          {topic}
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
-                            (!allTopicsSelected && selectedTopicFilters.includes(topic)) ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                          }`}
-                          >
-                            {topicCounts[topic] || 0}
-                          </span>
-                        </button>
-                      ))}
+                    <div className="flex-1 min-h-0">
+                      <MultiSelect
+                        id="sr-modal-topics"
+                        label="TOPICS"
+                        allLabel={t('common.all') || 'All'}
+                        options={availableTopics.map((topic) => ({
+                          value: topic,
+                          label: topic,
+                        }))}
+                        value={allTopicsSelected ? [] : selectedTopicFilters}
+                        openId={openSelectId}
+                        setOpenId={setOpenSelectId}
+                        onChange={(vals) => {
+                          setBatchFiltersVisuallyCleared(false);
+                          if (!vals.length) {
+                            setAllTopicsSelected(true);
+                            setSelectedTopicFilters([]);
+                          } else {
+                            setAllTopicsSelected(false);
+                            setSelectedTopicFilters(vals);
+                          }
+                        }}
+                      />
                     </div>
                   </div>
 
@@ -700,58 +678,33 @@ export default function SpacedRepetitionModal({
                         <Layers size={14} className="text-slate-500" />
                         {tf('calendar.subtopicsCount', { selected: shouldVisuallyClearBatchFilters ? 0 : (allSubtopicsSelected ? availableSubtopics.length : selectedSubtopicFilters.length), total: availableSubtopics.length })}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAllSubtopicsSelected(true);
-                            setSelectedSubtopicFilters([]);
-                            setBatchFiltersVisuallyCleared(false);
-                          }}
-                          disabled={availableSubtopics.length === 0}
-                          className={`text-[11px] font-black ${availableSubtopics.length === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-purple-700 hover:text-purple-900'}`}
-                        >
-                          {t('common.selectAll')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAllSubtopicsSelected(false);
-                            setSelectedSubtopicFilters([]);
-                            setBatchFiltersVisuallyCleared(false);
-                          }}
-                          disabled={!allSubtopicsSelected && selectedSubtopicFilters.length === 0}
-                          className={`text-[11px] font-black ${(!allSubtopicsSelected && selectedSubtopicFilters.length === 0) ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                          {t('common.clear')}
-                        </button>
-                      </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 flex-1 min-h-0 overflow-auto pr-1">
-                      {availableSubtopics.map(subtopic => (
-                        <button
-                          key={subtopic}
-                          onClick={() => toggleSubtopicFilter(subtopic)}
-                          className={`px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
-                            allSubtopicsSelected
-                              ? 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                              : selectedSubtopicFilters.includes(subtopic)
-                                ? 'bg-purple-600 text-white shadow-md'
-                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          {subtopic}
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
-                            (!allSubtopicsSelected && selectedSubtopicFilters.includes(subtopic)) ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                          }`}
-                          >
-                            {subtopicCounts[subtopic] || 0}
-                          </span>
-                        </button>
-                      ))}
+                    <div className="flex-1 min-h-0">
+                      <MultiSelect
+                        id="sr-modal-subtopics"
+                        label="SUBTOPICS"
+                        allLabel={t('common.all') || 'All'}
+                        options={availableSubtopics.map((subtopic) => ({
+                          value: subtopic,
+                          label: `${subtopic} (${subtopicCounts[subtopic] || 0})`,
+                        }))}
+                        value={shouldVisuallyClearBatchFilters ? [] : (allSubtopicsSelected ? [] : selectedSubtopicFilters)}
+                        openId={openSelectId}
+                        setOpenId={setOpenSelectId}
+                        onChange={(vals) => {
+                          setBatchFiltersVisuallyCleared(false);
+                          if (!vals.length) {
+                            setAllSubtopicsSelected(true);
+                            setSelectedSubtopicFilters([]);
+                          } else {
+                            setAllSubtopicsSelected(false);
+                            setSelectedSubtopicFilters(vals);
+                          }
+                        }}
+                      />
                       {availableSubtopics.length === 0 && (
-                        <div className="text-xs text-slate-500">{t('calendar.noSubtopicsAvailable')}</div>
+                        <div className="mt-2 text-xs text-slate-500">{t('calendar.noSubtopicsAvailable')}</div>
                       )}
                     </div>
                   </div>

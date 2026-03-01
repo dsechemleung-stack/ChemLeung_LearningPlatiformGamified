@@ -69,3 +69,9 @@ _______
 backup 22: unified chemstore, collection album, inventory
 _______
 backup 23: adding ChemCards (not yet assign topic), removed chemcity collection
+_______
+backup 24: UI, featurePage
+______
+backup 25: mobileophone compatibility
+______
+backup 26: 

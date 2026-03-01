@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, Play } from 'lucide-react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { useLanguage } from '../contexts/LanguageContext';
+import MultiSelect from '../components/MultiSelect.jsx';
 import { formatHKDateKey, getHKYearMonth, makeHKDate, parseHKDateKey } from '../utils/hkTime';
 import { getNow } from '../utils/timeTravel';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,6 +30,8 @@ export default function SRSReviewPage({ questions = [] }) {
   const { t, tf } = useLanguage();
   const { currentUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const [openSelectId, setOpenSelectId] = useState(null);
 
   const todayStr = useMemo(() => formatHKDateKey(getNow()), []);
 
@@ -516,99 +519,43 @@ export default function SRSReviewPage({ questions = [] }) {
             <div className="bg-white rounded-xl p-5 border-2 border-slate-200">
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-black text-slate-800">{tf('calendar.topicsCount', { selected: allTopicsSelected ? availableTopics.length : selectedTopics.length, total: availableTopics.length })}</div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      markInteracted();
-                      if (allTopicsSelected) {
-                        setAllTopicsSelected(false);
-                        setSelectedTopics([]);
-                      } else {
-                        setAllTopicsSelected(true);
-                        setSelectedTopics([]);
-                      }
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${allTopicsSelected ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}
-                  >
-                    {t('common.selectAll')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      markInteracted();
-                      setAllTopicsSelected(false);
-                      setSelectedTopics([]);
-                    }}
-                    className="px-3 py-1.5 rounded-lg text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-                  >
-                    {t('common.clear')}
-                  </button>
-                </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {availableTopics.map((topic) => {
-                  const enc = encodeURIComponent(topic);
-                  const count = Number(topicCounts?.[enc] || 0);
-                  const selected = !allTopicsSelected && selectedTopics.includes(topic);
-                  return (
-                    <button
-                      key={topic}
-                      type="button"
-                      onClick={() => toggleTopic(topic)}
-                      className={`px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
-                        allTopicsSelected || selected
-                          ? 'bg-indigo-600 text-white shadow-md'
-                          : 'bg-white text-slate-600 border border-slate-200'
-                      }`}
-                    >
-                      {topic}
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-black ${allTopicsSelected || selected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>{count}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <MultiSelect
+                id="srs-topics"
+                label="TOPICS"
+                allLabel={t('common.all') || 'All'}
+                options={availableTopics.map((topic) => ({
+                  value: topic,
+                  label: topic,
+                }))}
+                value={allTopicsSelected ? [] : selectedTopics}
+                openId={openSelectId}
+                setOpenId={setOpenSelectId}
+                onChange={(vals) => {
+                  markInteracted();
+                  if (!vals.length) {
+                    setAllTopicsSelected(true);
+                    setSelectedTopics([]);
+                  } else {
+                    setAllTopicsSelected(false);
+                    setSelectedTopics(vals);
+                  }
+                }}
+              />
             </div>
 
             <div className="bg-white rounded-xl p-5 border-2 border-slate-200">
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-black text-slate-800">{tf('calendar.subtopicsCount', { selected: allSubtopicsSelected ? availableSubtopics.length : selectedSubtopics.length, total: availableSubtopics.length })}</div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      markInteracted();
-                      if (allSubtopicsSelected) {
-                        setAllSubtopicsSelected(false);
-                        setSelectedSubtopics([]);
-                      } else {
-                        setAllSubtopicsSelected(true);
-                        setSelectedSubtopics([]);
-                      }
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${allSubtopicsSelected ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}
-                  >
-                    {t('common.selectAll')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      markInteracted();
-                      setAllSubtopicsSelected(false);
-                      setSelectedSubtopics([]);
-                    }}
-                    className="px-3 py-1.5 rounded-lg text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-                  >
-                    {t('common.clear')}
-                  </button>
-                </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {availableSubtopics.map((sub) => {
+              <MultiSelect
+                id="srs-subtopics"
+                label="SUBTOPICS"
+                allLabel={t('common.all') || 'All'}
+                options={availableSubtopics.map((sub) => {
                   const subEnc = encodeURIComponent(sub);
-                  // total for sub across selected topics
                   let count = 0;
                   Object.keys(subtopicCounts).forEach((compound) => {
                     const [tEnc, sEnc] = String(compound).split('::');
@@ -618,25 +565,22 @@ export default function SRSReviewPage({ questions = [] }) {
                       count += Number(subtopicCounts[compound] || 0);
                     }
                   });
-
-                  const selected = !allSubtopicsSelected && selectedSubtopics.includes(sub);
-                  return (
-                    <button
-                      key={sub}
-                      type="button"
-                      onClick={() => toggleSubtopic(sub)}
-                      className={`px-3 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
-                        allSubtopicsSelected || selected
-                          ? 'bg-purple-600 text-white shadow-md'
-                          : 'bg-white text-slate-600 border border-slate-200'
-                      }`}
-                    >
-                      {sub}
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-black ${allSubtopicsSelected || selected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>{count}</span>
-                    </button>
-                  );
+                  return { value: sub, label: `${sub} (${count})` };
                 })}
-              </div>
+                value={allSubtopicsSelected ? [] : selectedSubtopics}
+                openId={openSelectId}
+                setOpenId={setOpenSelectId}
+                onChange={(vals) => {
+                  markInteracted();
+                  if (!vals.length) {
+                    setAllSubtopicsSelected(true);
+                    setSelectedSubtopics([]);
+                  } else {
+                    setAllSubtopicsSelected(false);
+                    setSelectedSubtopics(vals);
+                  }
+                }}
+              />
             </div>
           </div>
         </div>

@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Rate of Reaction Lab</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Custom Lab Styling */
+        body { background-color: #f3f4f6; font-family: 'Segoe UI', sans-serif; }
+        
+        .lab-bench {
+            background-color: #e5e7eb;
+            border-bottom: 8px solid #9ca3af;
+            position: relative;
+            height: 400px;
+            overflow: hidden;
+        }
+
+        .draggable { cursor: grab; transition: transform 0.1s; }
+        .draggable:active { cursor: grabbing; transform: scale(1.05); }
+
+        /* Apparatus Styles */
+        .flask {
+            width: 100px;
+            height: 140px;
+            background: rgba(255, 255, 255, 0.4);
+            border: 2px solid #94a3b8;
+            border-radius: 10% 10% 40% 40%; /* Flask shape */
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .liquid {
+            width: 100%;
+            height: 0%;
+            background-color: #bfdbfe; /* Acid color */
+            transition: height 1s;
+            position: relative;
+        }
+
+        .solids {
+            position: absolute;
+            bottom: 5px;
+            width: 100%;
+            text-align: center;
+            display: none;
+        }
+
+        /* Bubbles Animation */
+        .bubble {
+            position: absolute;
+            background: white;
+            border-radius: 50%;
+            opacity: 0.7;
+            bottom: 0;
+            animation: rise 2s infinite ease-in;
+        }
+
+        @keyframes rise {
+            0% { bottom: 0; transform: scale(0.5); }
+            100% { bottom: 100%; transform: scale(1.2); opacity: 0; }
+        }
+
+        /* Syringe Styles */
+        .syringe-setup {
+            position: absolute;
+            bottom: 140px; /* Aligned with flask top */
+            left: calc(50% - 10px);
+            display: none; /* Hidden until attached */
+            align-items: center;
+        }
+
+        .tubing {
+            width: 40px;
+            height: 40px;
+            border-left: 6px solid #475569;
+            border-top: 6px solid #475569;
+            border-top-left-radius: 15px;
+            position: relative;
+            top: 15px;
+        }
+
+        .syringe-barrel {
+            width: 200px;
+            height: 40px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px solid #334155;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .plunger {
+            width: 180px;
+            height: 30px;
+            background: #94a3b8;
+            position: absolute;
+            left: 0; /* Starts fully in */
+            top: 3px;
+            transition: left 0.1s linear; /* Smooth movement driven by JS */
+        }
+        
+        .markings {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(90deg, transparent, transparent 19px, #000 20px);
+            opacity: 0.3;
+            pointer-events: none;
+        }
+
+    </style>
+</head>
+<body class="p-6">
+
+    <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <div class="lg:col-span-1 space-y-4">
+            <div class="bg-white p-4 rounded shadow">
+                <h1 class="text-xl font-bold mb-2 text-blue-800">Rate of Reaction Lab</h1>
+                <p class="text-sm text-gray-600 mb-4">Simulate: Zn(s) + 2HCl(aq) &rarr; ZnCl2(aq) + H2(g)</p>
+                <div class="space-y-2">
+                    <h3 class="font-semibold text-sm">Inventory (Drag to Flask):</h3>
+                    <div id="zinc-source" class="draggable bg-gray-300 p-2 rounded text-center font-bold border-2 border-gray-500" draggable="true">Zinc Granules (Zn)</div>
+                    <div id="acid-source" class="draggable bg-blue-100 p-2 rounded text-center font-bold border-2 border-blue-300 text-blue-800" draggable="true">Hydrochloric Acid (HCl)</div>
+                    <div id="bung-source" class="draggable bg-orange-200 p-2 rounded text-center font-bold border-2 border-orange-400 text-orange-800" draggable="true">Gas Syringe & Bung</div>
+                </div>
+                <button onclick="resetLab()" class="mt-6 w-full bg-red-500 hover:bg-red-600 text-white p-2 rounded transition">Reset Experiment</button>
+            </div>
+
+            <div class="bg-white p-4 rounded shadow">
+                <h3 class="font-semibold text-sm mb-2">Live Data:</h3>
+                <div class="flex justify-between text-sm">
+                    <span>Time: <span id="timer" class="font-mono font-bold">0.0</span> s</span>
+                    <span>Volume: <span id="vol-display" class="font-mono font-bold">0</span> cm³</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 space-y-4">
+            <div class="lab-bench rounded shadow-inner relative" id="drop-zone">
+                
+                <div class="flask" id="flask">
+                    <div class="liquid" id="flask-liquid">
+                        </div>
+                    <div class="solids text-2xl" id="flask-solids">🪨</div>
+                </div>
+
+                <div class="syringe-setup" id="connected-syringe">
+                    <div class="tubing"></div>
+                    <div class="syringe-barrel">
+                        <div class="markings"></div>
+                        <div class="plunger" id="plunger"></div>
+                    </div>
+                </div>
+
+                <div id="status-text" class="absolute top-4 left-4 text-gray-500 text-sm italic">
+                    Setup empty. Drag items to the flask.
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded shadow h-64">
+                <canvas id="reactionChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- State Variables ---
+    let state = {
+        hasZinc: false,
+        hasAcid: false,
+        isSealed: false,
+        reactionStarted: false,
+        startTime: 0,
+        volume: 0
+    };
+
+    const MAX_VOLUME = 100; // cm3
+    const REACTION_RATE = 0.15; // Determines how fast the curve flattens
+
+    // --- Drag and Drop Logic ---
+    const draggables = document.querySelectorAll('.draggable');
+    const dropZone = document.getElementById('drop-zone');
+    const flask = document.getElementById('flask');
+
+    draggables.forEach(elem => {
+        elem.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', e.target.id);
+        });
+    });
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault(); // Allow dropping
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const type = e.dataTransfer.getData('text/plain');
+        handleDrop(type);
+    });
+
+    function handleDrop(type) {
+        const status = document.getElementById('status-text');
+
+        if (type === 'zinc-source') {
+            if (state.hasZinc) return;
+            state.hasZinc = true;
+            document.getElementById('flask-solids').style.display = 'block';
+            status.textContent = "Zinc added.";
+            checkReaction();
+        } else if (type === 'acid-source') {
+            if (state.hasAcid) return;
+            state.hasAcid = true;
+            document.getElementById('flask-liquid').style.height = '40%';
+            status.textContent = "Acid poured.";
+            checkReaction();
+        } else if (type === 'bung-source') {
+            if (state.isSealed) return;
+            state.isSealed = true;
+            document.getElementById('connected-syringe').style.display = 'flex';
+            status.textContent = "Syringe attached.";
+            checkReaction();
+        }
+    }
+
+    // --- Reaction Logic ---
+    function checkReaction() {
+        // If we have chemicals but no seal, bubbles escape (visual only, no graph)
+        if (state.hasZinc && state.hasAcid && !state.isSealed) {
+            startBubbles();
+            document.getElementById('status-text').textContent = "Reacting! Gas is escaping (attach syringe!)";
+        }
+        
+        // If we have everything, start collecting gas
+        if (state.hasZinc && state.hasAcid && state.isSealed && !state.reactionStarted) {
+            startExperiment();
+        }
+    }
+
+    let animationId;
+    let chartInstance;
+
+    function startExperiment() {
+        state.reactionStarted = true;
+        state.startTime = Date.now();
+        document.getElementById('status-text').textContent = "Reaction in progress. Collecting Hydrogen...";
+        startBubbles();
+        
+        // Start the loop
+        loop();
+    }
+
+    function loop() {
+        const now = Date.now();
+        const timeElapsed = (now - state.startTime) / 1000; // seconds
+
+        // THEORY: First order kinetics approximation: V = Vmax * (1 - e^(-kt))
+        // This creates the "fast start, slow finish" curve
+        let currentVol = MAX_VOLUME * (1 - Math.exp(-REACTION_RATE * timeElapsed));
+
+        // Update State
+        state.volume = currentVol;
+
+        // Update UI
+        updateSyringe(currentVol);
+        document.getElementById('timer').textContent = timeElapsed.toFixed(1);
+        document.getElementById('vol-display').textContent = currentVol.toFixed(1);
+
+        // Update Chart
+        addDataToChart(timeElapsed, currentVol);
+
+        // Stop condition (when volume changes are negligible)
+        if (currentVol < MAX_VOLUME - 0.5) {
+            animationId = requestAnimationFrame(loop);
+        } else {
+            document.getElementById('status-text').textContent = "Reaction Complete.";
+            stopBubbles();
+        }
+    }
+
+    // --- Visual Updates ---
+    function updateSyringe(vol) {
+        // Map 0-100 volume to pixel movement
+        // Plunger moves RIGHT as gas fills. 
+        // Max pixels movement approx 150px
+        const maxPx = 150;
+        const px = (vol / MAX_VOLUME) * maxPx;
+        document.getElementById('plunger').style.transform = `translateX(${px}px)`;
+    }
+
+    let bubbleInterval;
+    function startBubbles() {
+        if (bubbleInterval) return;
+        const liquid = document.getElementById('flask-liquid');
+        bubbleInterval = setInterval(() => {
+            const b = document.createElement('div');
+            b.className = 'bubble';
+            b.style.left = Math.random() * 80 + 10 + '%';
+            b.style.width = Math.random() * 6 + 4 + 'px';
+            b.style.height = b.style.width;
+            liquid.appendChild(b);
+            setTimeout(() => b.remove(), 2000);
+        }, 100);
+    }
+
+    function stopBubbles() {
+        clearInterval(bubbleInterval);
+        bubbleInterval = null;
+    }
+
+    // --- Chart.js Setup ---
+    const ctx = document.getElementById('reactionChart').getContext('2d');
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Volume of H2 (cm³)',
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                data: [],
+                fill: true,
+                tension: 0.4 // Smooth curve
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { title: { display: true, text: 'Time (s)' } },
+                y: { title: { display: true, text: 'Volume (cm³)' }, min: 0, max: 110 }
+            },
+            animation: false // Turn off chart internal animation for performance
+        }
+    });
+
+    function addDataToChart(time, vol) {
+        // Optimize: only update chart every ~0.5s visually to save resources
+        // But for this demo, we'll push every frame for smoothness
+        if (Math.floor(time * 10) % 5 === 0) { 
+            chartInstance.data.labels.push(time.toFixed(1));
+            chartInstance.data.datasets[0].data.push(vol);
+            chartInstance.update();
+        }
+    }
+
+    // --- Reset ---
+    window.resetLab = function() {
+        cancelAnimationFrame(animationId);
+        stopBubbles();
+        state = { hasZinc: false, hasAcid: false, isSealed: false, reactionStarted: false, startTime: 0, volume: 0 };
+        
+        // Reset Visuals
+        document.getElementById('flask-solids').style.display = 'none';
+        document.getElementById('flask-liquid').style.height = '0%';
+        document.getElementById('flask-liquid').innerHTML = ''; // clear bubbles
+        document.getElementById('connected-syringe').style.display = 'none';
+        document.getElementById('plunger').style.transform = 'translateX(0px)';
+        document.getElementById('timer').textContent = '0.0';
+        document.getElementById('vol-display').textContent = '0';
+        document.getElementById('status-text').textContent = 'Setup empty. Drag items to the flask.';
+        
+        // Reset Chart
+        chartInstance.data.labels = [];
+        chartInstance.data.datasets[0].data = [];
+        chartInstance.update();
+    }
+</script>
+</body>
+</html>
