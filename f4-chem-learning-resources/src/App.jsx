@@ -5,7 +5,7 @@ export default function App() {
     <div style={{ minHeight: '100vh', width: '100%', position: 'relative', overflow: 'hidden', background: '#0a1a18' }}>
       <style>{`
         .brand-script {
-          font-family: 'Pacifico', cursive;
+          font-family: 'Quicksand', sans-serif;
           background: linear-gradient(135deg, #C5D7B5 0%, #76A8A5 50%, #ffffff 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
