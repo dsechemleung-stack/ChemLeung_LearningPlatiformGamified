@@ -162,17 +162,32 @@ export default function App() {
             </div>
           </div>
 
-          <span
-            style={{
-              fontFamily: "'Quicksand', sans-serif",
-              fontWeight: 800,
-              fontSize: 18,
-              color: '#fff',
-              letterSpacing: '-0.01em',
-            }}
-          >
-            F4 Chemistry Learning Resources
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.15 }}>
+            <span
+              style={{
+                fontFamily: "'Quicksand', sans-serif",
+                fontWeight: 800,
+                fontSize: 18,
+                color: '#fff',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              F4 Chemistry Learning Resources
+            </span>
+            <span
+              style={{
+                fontFamily: "'Quicksand', sans-serif",
+                fontWeight: 700,
+                fontSize: 12,
+                color: 'rgba(255,255,255,0.72)',
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                marginTop: 4,
+              }}
+            >
+              by ChemLeung
+            </span>
+          </div>
         </div>
       </nav>
 
