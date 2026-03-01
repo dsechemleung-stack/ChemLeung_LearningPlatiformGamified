@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Molar Volume — Ideal Gas Simulation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&display=swap');
+
+  :root {
+    --bg: #080c14;
+    --surface: #0d1420;
+    --surface2: #111927;
+    --border: #1e2d45;
+    --border2: #243550;
+    --text: #d4e5f7;
+    --text2: #7a9bb8;
+    --text3: #3d5a78;
+    --accent: #00d4ff;
+    --accent2: #0088cc;
+    --gold: #ffb340;
+    --green: #00e8a2;
+    --red: #ff5a7e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+
+  header {
+    position: relative; z-index: 10;
+    padding: 20px 32px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: linear-gradient(180deg, rgba(13,20,32,0.98) 0%, rgba(13,20,32,0.7) 100%);
+  }
+  .logo-block h1 { font-family:'Space Mono',monospace; font-size:1.05rem; font-weight:700; letter-spacing:.08em; color:var(--accent); text-transform:uppercase; }
+  .logo-block p  { font-size:.72rem; color:var(--text2); letter-spacing:.12em; text-transform:uppercase; margin-top:2px; }
+  .rtp-badge {
+    background: linear-gradient(135deg,rgba(0,212,255,.12),rgba(0,136,204,.08));
+    border:1px solid rgba(0,212,255,.25); border-radius:8px;
+    padding:8px 16px; font-family:'Space Mono',monospace; font-size:.68rem; line-height:1.8; color:var(--text2); text-align:right;
+  }
+  .rtp-badge span { color:var(--accent); font-weight:700; }
+
+  main { position:relative; z-index:1; padding:18px 24px; max-width:1400px; margin:0 auto; }
+
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap; }
+  .btn {
+    font-family:'Space Mono',monospace; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase;
+    padding:8px 16px; border-radius:6px; border:1px solid var(--border2); background:var(--surface2); color:var(--text); cursor:pointer; transition:all .15s;
+  }
+  .btn:hover { border-color:var(--accent); color:var(--accent); background:rgba(0,212,255,.07); }
+  .btn-primary { background:linear-gradient(135deg,var(--accent2),var(--accent)); color:#001520; border-color:transparent; font-weight:700; }
+  .btn-primary:hover { opacity:.85; color:#001520; background:linear-gradient(135deg,var(--accent2),var(--accent)); }
+  .btn-gold { border-color:var(--gold)!important; color:var(--gold)!important; background:rgba(255,179,64,.08)!important; }
+  .spacer { flex:1; }
+  .pause-indicator {
+    font-family:'Space Mono',monospace; font-size:.65rem; color:var(--gold);
+    padding:6px 12px; border:1px solid rgba(255,179,64,.35); border-radius:5px; display:none; letter-spacing:.08em;
+    animation:blink 1.5s ease-in-out infinite;
+  }
+  .pause-indicator.visible { display:block; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  .sim-grid { display:grid; grid-template-columns:1fr 1fr 280px; gap:16px; align-items:start; }
+
+  .gas-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; transition:border-color .2s; }
+  .gas-card:hover { border-color:var(--border2); }
+
+  .card-header { padding:13px 18px 11px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; }
+  .gas-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+  .card-title { font-family:'Space Mono',monospace; font-size:.82rem; font-weight:700; letter-spacing:.05em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gas-select {
+    margin-left:auto; flex-shrink:0;
+    background:var(--surface2); border:1px solid var(--border2); color:var(--text);
+    font-family:'Space Mono',monospace; font-size:.68rem; padding:5px 10px; border-radius:5px; cursor:pointer; outline:none;
+  }
+  .gas-select:focus { border-color:var(--accent); }
+
+  /* Canvas wrapper with zoom controls overlay */
+  .card-canvas-wrap { position:relative; }
+
+  canvas.sim-canvas { display:block; width:100%; aspect-ratio:4/5; cursor:crosshair; }
+
+  /* Zoom controls overlay — top-right corner of canvas */
+  .zoom-controls {
+    position:absolute; top:8px; right:8px;
+    display:flex; flex-direction:column; gap:4px; z-index:5;
+  }
+  .zoom-btn {
+    width:26px; height:26px;
+    background:rgba(8,12,20,.75); backdrop-filter:blur(4px);
+    border:1px solid rgba(0,212,255,.3); border-radius:5px;
+    color:var(--accent); font-family:'Space Mono',monospace; font-size:1rem; font-weight:700;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1;
+    transition:all .12s; user-select:none;
+  }
+  .zoom-btn:hover { background:rgba(0,212,255,.15); border-color:var(--accent); }
+  .zoom-btn:active { transform:scale(.9); }
+  .zoom-indicator {
+    background:rgba(8,12,20,.75); backdrop-filter:blur(4px);
+    border:1px solid rgba(0,212,255,.2); border-radius:5px;
+    padding:2px 4px; text-align:center;
+    font-family:'Space Mono',monospace; font-size:.58rem; color:var(--text2);
+    white-space:nowrap;
+  }
+  /* Auto-fit badge flashes when zoom changes automatically */
+  .auto-zoom-badge {
+    position:absolute; top:8px; left:8px;
+    background:rgba(0,212,255,.15); border:1px solid rgba(0,212,255,.35);
+    border-radius:4px; padding:3px 7px;
+    font-family:'Space Mono',monospace; font-size:.56rem; color:var(--accent);
+    opacity:0; transition:opacity .4s; pointer-events:none;
+    letter-spacing:.06em; text-transform:uppercase;
+  }
+  .auto-zoom-badge.show { opacity:1; }
+
+  .prediction-overlay {
+    position:absolute; inset:0; background:rgba(8,12,20,.88); backdrop-filter:blur(5px); display:none; align-items:center; justify-content:center;
+  }
+  .prediction-overlay.active { display:flex; }
+  .pred-text { font-family:'Space Mono',monospace; font-size:2rem; color:var(--gold); text-align:center; padding:20px; }
+  .pred-text small { display:block; font-size:.65rem; color:var(--text2); margin-top:8px; font-family:'DM Sans',sans-serif; font-weight:300; }
+
+  .card-stats { padding:12px 16px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .stat-item { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; }
+  .stat-label { font-size:.6rem; color:var(--text3); text-transform:uppercase; letter-spacing:.12em; font-family:'Space Mono',monospace; margin-bottom:3px; }
+  .stat-value { font-family:'Space Mono',monospace; font-size:1rem; font-weight:700; color:var(--text); line-height:1; }
+  .stat-value.highlight { color:var(--accent); }
+  .stat-value small { font-size:.57rem; color:var(--text2); font-weight:400; }
+
+  .molar-vol-display { grid-column:1/-1; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; display:flex; align-items:center; gap:10px; }
+  .molar-vol-display .stat-label { margin:0; }
+  .molar-vol-display .stat-value { font-size:1.2rem; margin-left:auto; }
+  .eq-badge { font-family:'Space Mono',monospace; font-size:.58rem; padding:3px 7px; border-radius:4px; background:rgba(0,232,162,.15); border:1px solid rgba(0,232,162,.3); color:var(--green); white-space:nowrap; }
+  .eq-badge.off { background:rgba(255,90,126,.15); border-color:rgba(255,90,126,.3); color:var(--red); }
+
+  .pressure-gauge { grid-column:1/-1; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:9px 12px; display:flex; align-items:center; gap:12px; }
+  .gauge-label { font-family:'Space Mono',monospace; font-size:.6rem; color:var(--text3); text-transform:uppercase; letter-spacing:.1em; white-space:nowrap; }
+  .gauge-bar-wrap { flex:1; height:7px; background:rgba(255,255,255,.05); border-radius:4px; overflow:hidden; }
+  .gauge-bar { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--accent2),var(--accent)); transition:width .25s ease; }
+  .gauge-val { font-family:'Space Mono',monospace; font-size:.7rem; color:var(--text); white-space:nowrap; min-width:72px; text-align:right; }
+
+  .control-panel { display:flex; flex-direction:column; gap:14px; }
+  .panel-section { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; transition:opacity .25s; }
+  .panel-section-head { padding:11px 16px; border-bottom:1px solid var(--border); font-family:'Space Mono',monospace; font-size:.68rem; font-weight:700; color:var(--text2); letter-spacing:.1em; text-transform:uppercase; }
+  .panel-section-body { padding:13px 16px; display:flex; flex-direction:column; gap:13px; }
+  .slider-row { display:flex; flex-direction:column; gap:5px; }
+  .slider-label-row { display:flex; justify-content:space-between; align-items:baseline; }
+  .slider-name { font-size:.72rem; color:var(--text2); font-weight:500; }
+  .slider-val { font-family:'Space Mono',monospace; font-size:.78rem; font-weight:700; color:var(--text); }
+  input[type=range] { -webkit-appearance:none; width:100%; height:5px; background:var(--border); border-radius:3px; outline:none; cursor:pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px rgba(0,212,255,.5); transition:transform .1s; }
+  input[type=range]::-webkit-slider-thumb:hover { transform:scale(1.25); }
+  input[type=range]::-moz-range-thumb { width:14px; height:14px; border-radius:50%; background:var(--accent); border:none; }
+  .link-toggle { display:flex; align-items:center; gap:8px; padding:5px 0; }
+  .link-toggle input[type=checkbox] { -webkit-appearance:none; width:32px; height:18px; background:var(--border); border-radius:9px; position:relative; cursor:pointer; transition:background .2s; outline:none; border:none; flex-shrink:0; }
+  .link-toggle input[type=checkbox]:checked { background:var(--accent2); }
+  .link-toggle input[type=checkbox]::after { content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:white; transition:left .2s; }
+  .link-toggle input[type=checkbox]:checked::after { left:16px; }
+  .link-label { font-size:.72rem; color:var(--text2); cursor:pointer; }
+  .legend-grid { display:flex; flex-direction:column; gap:5px; }
+  .legend-item { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:5px; background:var(--surface2); border:1px solid transparent; transition:border-color .15s; }
+  .legend-item:hover { border-color:var(--border2); }
+  .legend-swatch { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .legend-name { font-family:'Space Mono',monospace; font-size:.62rem; color:var(--text); flex:1; }
+  .legend-mass { font-family:'Space Mono',monospace; font-size:.59rem; color:var(--text3); }
+
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
+
+  @media (max-width:1100px) {
+    .sim-grid { grid-template-columns:1fr 1fr; }
+    .control-panel { grid-column:1/-1; display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  }
+  @media (max-width:720px) {
+    .sim-grid { grid-template-columns:1fr; }
+    .control-panel { grid-template-columns:1fr 1fr; }
+    header { flex-direction:column; gap:10px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-block">
+    <h1>Molar Volume Simulator</h1>
+    <p>Ideal Gas at RTP — Particle Model</p>
+  </div>
+  <div class="rtp-badge">
+    RTP Reference &nbsp;·&nbsp;
+    T = <span>25 °C</span> (298 K) &nbsp;·&nbsp; P = <span>1 atm</span> (101.3 kPa)<br>
+    Molar Volume of any ideal gas = <span>24.0 dm³ mol⁻¹</span>
+  </div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <button class="btn btn-primary" id="rtpBtn">⟳ Reset to RTP</button>
+    <button class="btn" id="pauseBtn">⏸ Pause</button>
+    <button class="btn" id="swapBtn">⇄ Swap Gases</button>
+    <button class="btn" id="linkCondBtn">🔗 Link Conditions</button>
+    <button class="btn" id="predBtn">👁 Prediction Mode</button>
+    <div class="spacer"></div>
+    <div class="pause-indicator" id="pauseIndicator">⏸ PAUSED — sliders still active</div>
+  </div>
+
+  <div class="sim-grid">
+
+    <!-- Container A -->
+    <div class="gas-card">
+      <div class="card-header">
+        <div class="gas-dot" id="dot0" style="background:#00d4c8"></div>
+        <div class="card-title" id="gasName0">Helium (He)</div>
+        <select class="gas-select" id="gasSel0">
+          <option value="He" selected>Helium (He)</option>
+          <option value="Ne">Neon (Ne)</option>
+          <option value="N2">Nitrogen (N₂)</option>
+          <option value="O2">Oxygen (O₂)</option>
+          <option value="Ar">Argon (Ar)</option>
+          <option value="CO2">Carbon Dioxide (CO₂)</option>
+          <option value="Br2">Bromine (Br₂)</option>
+        </select>
+      </div>
+      <div class="card-canvas-wrap">
+        <canvas class="sim-canvas" id="canvas0" width="500" height="625"></canvas>
+        <div class="zoom-controls">
+          <button class="zoom-btn" id="zoomIn0" title="Zoom in (scroll up)">+</button>
+          <div class="zoom-indicator" id="zoomInd0">100%</div>
+          <button class="zoom-btn" id="zoomOut0" title="Zoom out (scroll down)">−</button>
+          <button class="zoom-btn" id="zoomFit0" title="Auto-fit" style="font-size:.6rem;letter-spacing:-.02em">FIT</button>
+        </div>
+        <div class="auto-zoom-badge" id="autoZoomBadge0">AUTO-FIT</div>
+        <div class="prediction-overlay" id="predOverlay0">
+          <div class="pred-text">? dm³<small>What volume do you predict?</small></div>
+        </div>
+      </div>
+      <div class="card-stats">
+        <div class="stat-item"><div class="stat-label">Volume</div><div class="stat-value highlight" id="vol0">24.0 <small>dm³</small></div></div>
+        <div class="stat-item"><div class="stat-label">Moles</div><div class="stat-value" id="mol0">1.00 <small>mol</small></div></div>
+        <div class="stat-item"><div class="stat-label">Temperature</div><div class="stat-value" id="temp0">25 <small>°C</small></div></div>
+        <div class="stat-item"><div class="stat-label">Pressure</div><div class="stat-value" id="pres0">1.00 <small>atm</small></div></div>
+        <div class="molar-vol-display">
+          <div class="stat-label">Molar Volume</div>
+          <div class="eq-badge" id="badge0">= 24 dm³/mol ✓</div>
+          <div class="stat-value highlight" id="mvol0">24.0 <small>dm³/mol</small></div>
+        </div>
+        <div class="pressure-gauge">
+          <div class="gauge-label">Wall Hits</div>
+          <div class="gauge-bar-wrap"><div class="gauge-bar" id="gauge0" style="width:50%"></div></div>
+          <div class="gauge-val" id="gaugeVal0">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Container B -->
+    <div class="gas-card">
+      <div class="card-header">
+        <div class="gas-dot" id="dot1" style="background:#ff6b6b"></div>
+        <div class="card-title" id="gasName1">Oxygen (O₂)</div>
+        <select class="gas-select" id="gasSel1">
+          <option value="He">Helium (He)</option>
+          <option value="Ne">Neon (Ne)</option>
+          <option value="N2">Nitrogen (N₂)</option>
+          <option value="O2" selected>Oxygen (O₂)</option>
+          <option value="Ar">Argon (Ar)</option>
+          <option value="CO2">Carbon Dioxide (CO₂)</option>
+          <option value="Br2">Bromine (Br₂)</option>
+        </select>
+      </div>
+      <div class="card-canvas-wrap">
+        <canvas class="sim-canvas" id="canvas1" width="500" height="625"></canvas>
+        <div class="zoom-controls">
+          <button class="zoom-btn" id="zoomIn1" title="Zoom in (scroll up)">+</button>
+          <div class="zoom-indicator" id="zoomInd1">100%</div>
+          <button class="zoom-btn" id="zoomOut1" title="Zoom out (scroll down)">−</button>
+          <button class="zoom-btn" id="zoomFit1" title="Auto-fit" style="font-size:.6rem;letter-spacing:-.02em">FIT</button>
+        </div>
+        <div class="auto-zoom-badge" id="autoZoomBadge1">AUTO-FIT</div>
+        <div class="prediction-overlay" id="predOverlay1">
+          <div class="pred-text">? dm³<small>What volume do you predict?</small></div>
+        </div>
+      </div>
+      <div class="card-stats">
+        <div class="stat-item"><div class="stat-label">Volume</div><div class="stat-value highlight" id="vol1">24.0 <small>dm³</small></div></div>
+        <div class="stat-item"><div class="stat-label">Moles</div><div class="stat-value" id="mol1">1.00 <small>mol</small></div></div>
+        <div class="stat-item"><div class="stat-label">Temperature</div><div class="stat-value" id="temp1">25 <small>°C</small></div></div>
+        <div class="stat-item"><div class="stat-label">Pressure</div><div class="stat-value" id="pres1">1.00 <small>atm</small></div></div>
+        <div class="molar-vol-display">
+          <div class="stat-label">Molar Volume</div>
+          <div class="eq-badge" id="badge1">= 24 dm³/mol ✓</div>
+          <div class="stat-value highlight" id="mvol1">24.0 <small>dm³/mol</small></div>
+        </div>
+        <div class="pressure-gauge">
+          <div class="gauge-label">Wall Hits</div>
+          <div class="gauge-bar-wrap"><div class="gauge-bar" id="gauge1" style="width:50%"></div></div>
+          <div class="gauge-val" id="gaugeVal1">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="control-panel">
+      <div class="panel-section">
+        <div class="panel-section-head">Container A — Controls</div>
+        <div class="panel-section-body">
+          <div class="slider-row">
+            <div class="slider-label-row"><span class="slider-name">Temperature</span><span class="slider-val" id="slTemp0">25 °C</span></div>
+            <input type="range" id="sliderTemp0" min="-50" max="600" value="25">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label-row"><span class="slider-name">Pressure</span><span class="slider-val" id="slPres0">1.00 atm</span></div>
+            <input type="range" id="sliderPres0" min="3" max="500" value="100">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label-row"><span class="slider-name">Moles (n)</span><span class="slider-val" id="slMol0">1.00 mol</span></div>
+            <input type="range" id="sliderMol0" min="10" max="600" value="100">
+          </div>
+          <div class="link-toggle">
+            <input type="checkbox" id="linkCheck">
+            <label class="link-label" for="linkCheck">Link both containers (same T, P, n)</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section" id="panel1">
+        <div class="panel-section-head">Container B — Controls</div>
+        <div class="panel-section-body">
+          <div class="slider-row">
+            <div class="slider-label-row"><span class="slider-name">Temperature</span><span class="slider-val" id="slTemp1">25 °C</span></div>
+            <input type="range" id="sliderTemp1" min="-50" max="600" value="25">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label-row"><span class="slider-name">Pressure</span><span class="slider-val" id="slPres1">1.00 atm</span></div>
+            <input type="range" id="sliderPres1" min="3" max="500" value="100">
+          </div>
+          <div class="slider-row">
+            <div class="slider-label-row"><span class="slider-name">Moles (n)</span><span class="slider-val" id="slMol1">1.00 mol</span></div>
+            <input type="range" id="sliderMol1" min="10" max="600" value="100">
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="panel-section-head">Gas Library</div>
+        <div class="panel-section-body">
+          <div class="legend-grid">
+            <div class="legend-item"><div class="legend-swatch" style="background:#00d4c8"></div><div class="legend-name">Helium (He)</div><div class="legend-mass">4 g/mol</div></div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#facc15"></div><div class="legend-name">Neon (Ne)</div><div class="legend-mass">20 g/mol</div></div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#5b9fff"></div><div class="legend-name">Nitrogen (N₂)</div><div class="legend-mass">28 g/mol</div></div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#ff6b6b"></div><div class="legend-name">Oxygen (O₂)</div><div class="legend-mass">32 g/mol</div></div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#c084fc"></div><div class="legend-name">Argon (Ar)</div><div class="legend-mass">40 g/mol</div></div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#fb923c"></div><div class="legend-name">Carbon Dioxide (CO₂)</div><div class="legend-mass">44 g/mol</div></div>
+            <div class="legend-item"><div class="legend-swatch" style="background:#b45309;border-radius:3px;width:14px;height:8px"></div><div class="legend-name">Bromine (Br₂)</div><div class="legend-mass">160 g/mol</div></div>
+          </div>
+          <div style="padding:9px 10px;background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.12);border-radius:6px;font-size:.68rem;color:var(--text2);line-height:1.6;">
+            💡 Heavier molecules move <em>slower</em> at the same temperature. Yet the <strong style="color:var(--accent)">piston height stays the same</strong> — that's <strong style="color:var(--text)">Avogadro's Law</strong>.
+          </div>
+          <div style="padding:8px 10px;background:rgba(255,179,64,.05);border:1px solid rgba(255,179,64,.15);border-radius:6px;font-size:.67rem;color:var(--text2);line-height:1.6;">
+            🔍 <strong style="color:var(--gold)">Zoom tip:</strong> scroll on canvas or use +/− buttons. <em>FIT</em> auto-scales to fit the piston.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ══════════════════════════════════════════════════
+// GAS LIBRARY
+// ══════════════════════════════════════════════════
+const GASES = {
+  He:  { name:'Helium (He)',          color:'#00d4c8', mass:4,   r:3.5, diatomic:false, triatomic:false },
+  Ne:  { name:'Neon (Ne)',            color:'#facc15', mass:20,  r:4.5, diatomic:false, triatomic:false },
+  N2:  { name:'Nitrogen (N₂)',        color:'#5b9fff', mass:28,  r:4.0, diatomic:true,  triatomic:false },
+  O2:  { name:'Oxygen (O₂)',          color:'#ff6b6b', mass:32,  r:4.5, diatomic:true,  triatomic:false },
+  Ar:  { name:'Argon (Ar)',           color:'#c084fc', mass:40,  r:5.0, diatomic:false, triatomic:false },
+  CO2: { name:'Carbon Dioxide (CO₂)', color:'#fb923c', color2:'#ff9966', mass:44, r:4.0, diatomic:false, triatomic:true },
+  Br2: { name:'Bromine (Br₂)',        color:'#b45309', color2:'#78350f', mass:160, r:7.5, diatomic:true,  triatomic:false },
+};
+
+const R_GAS  = 8.314;
+const ATM_PA = 101325;
+
+// ══════════════════════════════════════════════════
+// STATE — one entry per container
+// zoom: current render scale applied via ctx.scale
+// targetZoom: smoothly lerped toward
+// manualZoom: true if user has overridden auto-fit
+// ══════════════════════════════════════════════════
+const state = [
+  { gasKey:'He', T:298, P:1.0, n:1.0, particles:[], collisions:0, colTimer:0,
+    pistonY:0, targetPistonY:0,
+    zoom:1, targetZoom:1, manualZoom:false },
+  { gasKey:'O2', T:298, P:1.0, n:1.0, particles:[], collisions:0, colTimer:0,
+    pistonY:0, targetPistonY:0,
+    zoom:1, targetZoom:1, manualZoom:false },
+];
+
+let paused = false, linked = false, predMode = false, lastTime = 0;
+const autoZoomTimers = [null, null];
+
+// ══════════════════════════════════════════════════
+// IDEAL GAS  V = nRT/P  [dm³]
+// ══════════════════════════════════════════════════
+function calcVolume(s) {
+  return (s.n * R_GAS * s.T) / (s.P * ATM_PA) * 1000;
+}
+
+// ══════════════════════════════════════════════════
+// CYLINDER GEOMETRY  (in "virtual" canvas coords)
+//
+// We draw everything in a fixed virtual space of
+// VW × VH pixels, then apply ctx.scale(zoom, zoom).
+// This means zooming just scales the whole scene —
+// at low zoom you see more, at high zoom you see less.
+//
+// Virtual canvas is always 500 × 625.
+// Floor is always at VH * 0.88, cylinder width always VW * 0.56.
+// Reference gasH at 24 dm³ (1 mol, RTP) = VH * 0.55.
+// gasH scales LINEARLY with volume (fixed bore cylinder).
+// ══════════════════════════════════════════════════
+const VW = 500, VH = 625;
+const CYL_W        = VW * 0.56;
+const CYL_X        = (VW - CYL_W) / 2;
+const WALL_T       = VW * 0.045;
+const CYL_BOTTOM   = VH * 0.88;
+const REF_GAS_H    = VH * 0.55;   // gas column height at 24 dm³
+
+function calcGasH(s) {
+  const vol = Math.max(0.001, calcVolume(s));
+  return REF_GAS_H * (vol / 24.0);   // fully unclamped
+}
+
+// ══════════════════════════════════════════════════
+// AUTO-ZOOM
+// Computes the zoom needed so the full cylinder fits
+// within the canvas (in device pixels → shown as CSS px).
+// The "viewable" region in virtual space is VW × VH.
+// We need pistonY (CYL_BOTTOM - gasH) ≥ some margin at top.
+// ══════════════════════════════════════════════════
+const TOP_MARGIN_V  = 50;   // virtual px of space above piston rod cap
+const BOT_MARGIN_V  = 20;   // virtual px below floor
+
+function computeAutoZoom(i) {
+  const gasH    = calcGasH(state[i]);
+  const pistonY = CYL_BOTTOM - gasH;
+  // Total virtual height needed = from rod cap top (TOP_MARGIN_V) to floor + BOT_MARGIN_V
+  const rodCapTop = 25;   // top of piston cap in virtual coords (matches draw code)
+  const totalNeeded = (CYL_BOTTOM + BOT_MARGIN_V) - rodCapTop;
+  const totalVisible = VH;
+  // If piston goes above rodCapTop we need to zoom out
+  const pistonSpace = CYL_BOTTOM + BOT_MARGIN_V - (pistonY - WALL_T * 1.4 - WALL_T * 0.55 - rodCapTop);
+  // simpler: zoom so everything fits vertically in VH
+  const zoomFit = totalVisible / (gasH + TOP_MARGIN_V + BOT_MARGIN_V + WALL_T * 3.5);
+  return Math.min(1.0, Math.max(0.08, zoomFit));
+}
+
+function flashAutoZoomBadge(i) {
+  const badge = document.getElementById(`autoZoomBadge${i}`);
+  badge.classList.add('show');
+  clearTimeout(autoZoomTimers[i]);
+  autoZoomTimers[i] = setTimeout(() => badge.classList.remove('show'), 1200);
+}
+
+// ══════════════════════════════════════════════════
+// CANVAS ELEMENTS
+// ══════════════════════════════════════════════════
+const canvases = [document.getElementById('canvas0'), document.getElementById('canvas1')];
+const ctxs     = canvases.map(c => c.getContext('2d'));
+
+function numParticles(n) { return Math.max(12, Math.min(160, Math.round(60 * n))); }
+
+function rmsSpeedPx(gas, T) {
+  const M = gas.mass * 1e-3;
+  return Math.sqrt(3 * R_GAS * T / M) / 500 * 1.35;
+}
+
+// ══════════════════════════════════════════════════
+// INIT / REINIT PARTICLES
+// Particle coords are in virtual space (0..VW, 0..VH)
+// ══════════════════════════════════════════════════
+function initParticles(i) {
+  const s = state[i];
+  const g = GASES[s.gasKey];
+  const gasH    = calcGasH(s);
+  const pistonY = CYL_BOTTOM - gasH;
+  const count   = numParticles(s.n);
+  const spd     = rmsSpeedPx(g, s.T);
+  s.particles   = [];
+  for (let k = 0; k < count; k++) {
+    const ang = Math.random() * Math.PI * 2;
+    const v   = spd * (0.4 + Math.random() * 1.1);
+    s.particles.push({
+      x: CYL_X + g.r + Math.random() * (CYL_W - g.r * 2),
+      y: pistonY + g.r + Math.random() * (gasH - g.r * 2),
+      vx: Math.cos(ang) * v, vy: Math.sin(ang) * v,
+      ang: Math.random() * Math.PI * 2,
+      dAng: (Math.random() - 0.5) * 0.08,
+    });
+  }
+  s.pistonY = s.targetPistonY = pistonY;
+  if (!s.manualZoom) {
+    s.zoom = s.targetZoom = computeAutoZoom(i);
+  }
+}
+
+function reInitParticles(i) {
+  const s   = state[i];
+  const g   = GASES[s.gasKey];
+  const gasH    = calcGasH(s);
+  const pistonY = CYL_BOTTOM - gasH;
+  const count   = numParticles(s.n);
+  const spd     = rmsSpeedPx(g, s.T);
+
+  s.targetPistonY = pistonY;
+
+  // Auto-zoom: compute needed zoom, update target if not manually overridden
+  const autoZ = computeAutoZoom(i);
+  if (!s.manualZoom) {
+    const prevTarget = s.targetZoom;
+    s.targetZoom = autoZ;
+    if (Math.abs(s.targetZoom - prevTarget) > 0.02) flashAutoZoomBadge(i);
+  } else {
+    // If auto needed zoom is significantly smaller than manual, override
+    // (user is zoomed in but piston would escape — force out)
+    if (autoZ < s.targetZoom * 0.85) {
+      s.targetZoom = autoZ;
+      s.manualZoom = false;
+      flashAutoZoomBadge(i);
+    }
+  }
+
+  // Resize particle array
+  while (s.particles.length < count) {
+    const ang = Math.random() * Math.PI * 2;
+    const v   = spd * (0.4 + Math.random() * 1.1);
+    s.particles.push({
+      x: CYL_X + g.r + Math.random() * (CYL_W - g.r * 2),
+      y: pistonY + g.r + Math.random() * (gasH - g.r * 2),
+      vx: Math.cos(ang) * v, vy: Math.sin(ang) * v,
+      ang: Math.random() * Math.PI * 2,
+      dAng: (Math.random() - 0.5) * 0.08,
+    });
+  }
+  while (s.particles.length > count) s.particles.pop();
+
+  for (const p of s.particles) {
+    const cur = Math.sqrt(p.vx**2 + p.vy**2) || spd;
+    const tgt = spd * (0.4 + Math.random() * 1.1);
+    p.vx *= tgt / cur; p.vy *= tgt / cur;
+    p.dAng = (Math.random() - 0.5) * 0.08;
+    p.x = Math.max(CYL_X + g.r, Math.min(CYL_X + CYL_W - g.r, p.x));
+    p.y = Math.max(pistonY + g.r, Math.min(CYL_BOTTOM - g.r, p.y));
+  }
+}
+
+// ══════════════════════════════════════════════════
+// PHYSICS — in virtual coords
+// ══════════════════════════════════════════════════
+function updateParticles(i, dt) {
+  const s  = state[i];
+  const g  = GASES[s.gasKey];
+  const py = s.pistonY;
+  const r  = g.r;
+  let hits = 0;
+
+  // Animate piston
+  s.pistonY    += (s.targetPistonY - s.pistonY) * 0.12;
+  // Animate zoom
+  s.zoom       += (s.targetZoom - s.zoom) * 0.10;
+
+  for (const p of s.particles) {
+    p.x += p.vx * dt; p.y += p.vy * dt; p.ang += p.dAng;
+    if (p.x - r < CYL_X)            { p.x = CYL_X + r;          p.vx =  Math.abs(p.vx); hits++; }
+    if (p.x + r > CYL_X + CYL_W)   { p.x = CYL_X + CYL_W - r;  p.vx = -Math.abs(p.vx); hits++; }
+    if (p.y + r > CYL_BOTTOM)       { p.y = CYL_BOTTOM - r;      p.vy = -Math.abs(p.vy); hits++; }
+    if (p.y - r < py)               { p.y = py + r;               p.vy =  Math.abs(p.vy); hits++; }
+  }
+
+  s.colTimer += dt;
+  if (s.colTimer > 16) { s.collisions = hits; s.colTimer = 0; }
+
+  const ps = s.particles;
+  for (let a = 0; a < ps.length; a++) {
+    for (let b = a + 1; b < Math.min(a + 7, ps.length); b++) {
+      const pa = ps[a], pb = ps[b];
+      const dx = pb.x - pa.x, dy = pb.y - pa.y;
+      const d  = Math.sqrt(dx*dx + dy*dy);
+      const mn = r * 2.1;
+      if (d < mn && d > 0.01) {
+        const nx = dx/d, ny = dy/d;
+        const dv = (pa.vx-pb.vx)*nx + (pa.vy-pb.vy)*ny;
+        if (dv > 0) { pa.vx -= dv*nx; pa.vy -= dv*ny; pb.vx += dv*nx; pb.vy += dv*ny; }
+        const ov = (mn-d)*0.5;
+        pa.x -= nx*ov; pa.y -= ny*ov; pb.x += nx*ov; pb.y += ny*ov;
+      }
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════
+// DRAW
+// We apply ctx.scale(zoom, zoom) around the centre of
+// the virtual canvas, so zooming scales the scene while
+// keeping the cylinder centred.
+// ══════════════════════════════════════════════════
+function drawContainer(i) {
+  const ctx  = ctxs[i];
+  const s    = state[i];
+  const g    = GASES[s.gasKey];
+  const cw   = canvases[i].width;
+  const ch   = canvases[i].height;
+  const zoom = s.zoom;
+  const vol  = calcVolume(s);
+
+  // Animate piston/zoom while paused too
+  s.pistonY += (s.targetPistonY - s.pistonY) * (paused ? 0.10 : 0.12);
+  s.zoom    += (s.targetZoom - s.zoom) * 0.10;
+
+  const py = s.pistonY;
+
+  // ── Full canvas background ──
+  ctx.fillStyle = '#04080f';
+  ctx.fillRect(0, 0, cw, ch);
+
+  // ── Apply zoom transform centred on virtual canvas ──
+  ctx.save();
+  // Scale virtual VW×VH to fit canvas with DPR, then apply zoom
+  const baseScaleX = cw / VW;
+  const baseScaleY = ch / VH;
+  // Pivot at virtual centre
+  const pivotX = cw / 2;
+  const pivotY = ch / 2;
+  ctx.translate(pivotX, pivotY);
+  ctx.scale(zoom * baseScaleX, zoom * baseScaleY);
+  ctx.translate(-VW / 2, -VH / 2);
+
+  // ── Gas chamber fill ──
+  const chamberGrad = ctx.createLinearGradient(CYL_X, py, CYL_X, CYL_BOTTOM);
+  chamberGrad.addColorStop(0,   'rgba(0,55,100,.18)');
+  chamberGrad.addColorStop(0.5, 'rgba(0,30,60,.28)');
+  chamberGrad.addColorStop(1,   'rgba(2,6,16,.55)');
+  ctx.fillStyle = chamberGrad;
+  ctx.fillRect(CYL_X, py, CYL_W, CYL_BOTTOM - py);
+
+  // Grid lines in chamber
+  const gasH = CYL_BOTTOM - py;
+  const lineCount = Math.max(2, Math.min(10, Math.round(gasH / 45)));
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,.025)'; ctx.lineWidth = 1;
+  for (let l = 1; l < lineCount; l++) {
+    const ly = py + (gasH / lineCount) * l;
+    ctx.beginPath(); ctx.moveTo(CYL_X, ly); ctx.lineTo(CYL_X + CYL_W, ly); ctx.stroke();
+  }
+  ctx.restore();
+
+  // ── Left wall ──
+  const wallL = CYL_X - WALL_T, wallR = CYL_X + CYL_W, wallRO = wallR + WALL_T;
+  const wgL = ctx.createLinearGradient(wallL, 0, CYL_X, 0);
+  wgL.addColorStop(0,'#1a2e46'); wgL.addColorStop(0.6,'#243a55'); wgL.addColorStop(1,'#2d4a68');
+  ctx.fillStyle = wgL;
+  ctx.fillRect(wallL, py - WALL_T*.5, WALL_T, CYL_BOTTOM - py + WALL_T*.5);
+  // Right wall
+  const wgR = ctx.createLinearGradient(wallR, 0, wallRO, 0);
+  wgR.addColorStop(0,'#2d4a68'); wgR.addColorStop(0.4,'#243a55'); wgR.addColorStop(1,'#1a2e46');
+  ctx.fillStyle = wgR;
+  ctx.fillRect(wallR, py - WALL_T*.5, WALL_T, CYL_BOTTOM - py + WALL_T*.5);
+  // Inner wall lines
+  ctx.strokeStyle = 'rgba(0,212,255,.45)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(CYL_X, py); ctx.lineTo(CYL_X, CYL_BOTTOM); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(CYL_X+CYL_W, py); ctx.lineTo(CYL_X+CYL_W, CYL_BOTTOM); ctx.stroke();
+
+  // ── Floor ──
+  const floorH = WALL_T * 1.2;
+  const fg = ctx.createLinearGradient(wallL, CYL_BOTTOM, wallL, CYL_BOTTOM+floorH);
+  fg.addColorStop(0,'#2d4a68'); fg.addColorStop(1,'#152234');
+  ctx.fillStyle = fg;
+  ctx.fillRect(wallL, CYL_BOTTOM, WALL_T*2+CYL_W, floorH);
+  ctx.strokeStyle='rgba(0,212,255,.35)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(CYL_X, CYL_BOTTOM); ctx.lineTo(CYL_X+CYL_W, CYL_BOTTOM); ctx.stroke();
+
+  // ── PISTON ──
+  const pistonH  = WALL_T * 1.4;
+  const pistonTop= py - pistonH;
+  const pistonW  = CYL_W + WALL_T * 0.3;
+  const pistonLX = CYL_X - WALL_T * 0.15;
+  const pr_      = WALL_T * 0.18;
+  const pg = ctx.createLinearGradient(pistonLX, pistonTop, pistonLX, py);
+  pg.addColorStop(0,'#3a5a7a'); pg.addColorStop(0.3,'#4a7090'); pg.addColorStop(0.7,'#2e4a65'); pg.addColorStop(1,'#1e3448');
+  ctx.fillStyle = pg;
+  ctx.beginPath();
+  ctx.roundRect(pistonLX, pistonTop, pistonW, pistonH, [pr_, pr_, 0, 0]);
+  ctx.fill();
+  // Bottom face glow
+  ctx.strokeStyle='rgba(0,212,255,.7)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(CYL_X, py); ctx.lineTo(CYL_X+CYL_W, py); ctx.stroke();
+  // Top rim
+  ctx.strokeStyle='rgba(100,180,230,.5)'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.roundRect(pistonLX, pistonTop, pistonW, pistonH, [pr_,pr_,0,0]); ctx.stroke();
+
+  // ── Rod ──
+  const rodW  = WALL_T * 0.38;
+  const rodX  = VW/2 - rodW/2;
+  const rodTop = 25;            // virtual px from virtual top
+  const rodG = ctx.createLinearGradient(rodX, 0, rodX+rodW, 0);
+  rodG.addColorStop(0,'#1e3448'); rodG.addColorStop(0.4,'#3a5a7a'); rodG.addColorStop(1,'#1e3448');
+  ctx.fillStyle = rodG;
+  ctx.fillRect(rodX, rodTop, rodW, pistonTop - rodTop);
+  ctx.strokeStyle='rgba(0,212,255,.22)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(rodX+rodW*.3, rodTop); ctx.lineTo(rodX+rodW*.3, pistonTop); ctx.stroke();
+
+  // ── Cap ──
+  const capW = rodW*3.2, capH = WALL_T*.55, capX = VW/2 - capW/2;
+  ctx.fillStyle='#2a4560'; ctx.strokeStyle='rgba(0,212,255,.4)'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.roundRect(capX, rodTop-capH, capW, capH, 4); ctx.fill(); ctx.stroke();
+
+  // ── Volume arrow ──
+  const arrowX = wallL - WALL_T * 0.7;
+  drawVolumeArrow(ctx, arrowX, py, CYL_BOTTOM, vol);
+
+  // ── Particles ──
+  for (const p of s.particles) drawParticle(ctx, p, g);
+
+  ctx.restore();   // end zoom transform
+
+  // ── Zoom level overlay (drawn in CSS pixels space, outside transform) ──
+  const pct = Math.round(s.zoom * 100);
+  document.getElementById(`zoomInd${i}`).textContent = `${pct}%`;
+}
+
+function drawVolumeArrow(ctx, x, pistonY, floorY, vol) {
+  const midY = (pistonY + floorY) / 2;
+  const tip  = 6;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,212,255,.55)';
+  ctx.fillStyle   = 'rgba(0,212,255,.55)';
+  ctx.lineWidth   = 1.2;
+  ctx.beginPath(); ctx.moveTo(x, pistonY+tip); ctx.lineTo(x, floorY-tip); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, pistonY); ctx.lineTo(x-4,pistonY+9); ctx.lineTo(x+4,pistonY+9); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x, floorY);  ctx.lineTo(x-4,floorY-9);  ctx.lineTo(x+4,floorY-9);  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(0,212,255,.75)';
+  ctx.font = `bold 11px "Space Mono", monospace`;
+  ctx.textAlign = 'center';
+  ctx.save(); ctx.translate(x-10, midY); ctx.rotate(-Math.PI/2);
+  ctx.fillText(`${vol.toFixed(1)} dm³`, 0, 0);
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawParticle(ctx, p, gas) {
+  if (gas.triatomic) {
+    const dx=Math.cos(p.ang)*gas.r*1.85, dy=Math.sin(p.ang)*gas.r*1.85;
+    ctx.beginPath(); ctx.moveTo(p.x-dx,p.y-dy); ctx.lineTo(p.x+dx,p.y+dy);
+    ctx.strokeStyle=gas.color+'44'; ctx.lineWidth=gas.r*.9; ctx.stroke();
+    drawSphere(ctx,p.x-dx,p.y-dy,gas.r*.75,gas.color2||'#ff9966');
+    drawSphere(ctx,p.x,p.y,gas.r*.88,gas.color);
+    drawSphere(ctx,p.x+dx,p.y+dy,gas.r*.75,gas.color2||'#ff9966');
+  } else if (gas.diatomic) {
+    const dx=Math.cos(p.ang)*gas.r, dy=Math.sin(p.ang)*gas.r;
+    ctx.beginPath(); ctx.moveTo(p.x-dx,p.y-dy); ctx.lineTo(p.x+dx,p.y+dy);
+    ctx.strokeStyle=gas.color+'55'; ctx.lineWidth=gas.r*.9; ctx.stroke();
+    drawSphere(ctx,p.x-dx,p.y-dy,gas.r,gas.color);
+    drawSphere(ctx,p.x+dx,p.y+dy,gas.r,gas.color2||gas.color);
+  } else {
+    drawSphere(ctx,p.x,p.y,gas.r,gas.color);
+  }
+}
+
+function drawSphere(ctx, x, y, r, col) {
+  ctx.save();
+  const g = ctx.createRadialGradient(x-r*.32,y-r*.32,r*.08,x,y,r);
+  g.addColorStop(0,col+'ff'); g.addColorStop(0.55,col+'cc'); g.addColorStop(1,col+'22');
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+  ctx.fillStyle=g; ctx.shadowColor=col; ctx.shadowBlur=7; ctx.fill(); ctx.restore();
+}
+
+// ══════════════════════════════════════════════════
+// UI UPDATE
+// ══════════════════════════════════════════════════
+function updateUI(i) {
+  const s    = state[i];
+  const vol  = calcVolume(s);
+  const mvol = vol / s.n;
+  const isRTP = mvol > 23.4 && mvol < 24.6;
+
+  document.getElementById(`vol${i}`).innerHTML  = `${vol.toFixed(1)} <small>dm³</small>`;
+  document.getElementById(`mol${i}`).innerHTML  = `${s.n.toFixed(2)} <small>mol</small>`;
+  document.getElementById(`temp${i}`).innerHTML = `${(s.T-273).toFixed(0)} <small>°C</small>`;
+  document.getElementById(`pres${i}`).innerHTML = `${s.P.toFixed(2)} <small>atm</small>`;
+  document.getElementById(`mvol${i}`).innerHTML = `${mvol.toFixed(1)} <small>dm³/mol</small>`;
+
+  const badge = document.getElementById(`badge${i}`);
+  badge.textContent = isRTP ? '= 24 dm³/mol ✓' : '≠ 24 dm³/mol';
+  badge.className   = 'eq-badge' + (isRTP ? '' : ' off');
+
+  document.getElementById(`dot${i}`).style.background  = GASES[s.gasKey].color;
+  document.getElementById(`gasName${i}`).textContent   = GASES[s.gasKey].name;
+
+  const hits = paused ? Math.round(s.particles.length * 0.28) : s.collisions;
+  document.getElementById(`gauge${i}`).style.width     = Math.min(hits/40*100,100) + '%';
+  document.getElementById(`gaugeVal${i}`).textContent  = paused ? 'paused' : `${s.collisions}/frame`;
+}
+
+// ══════════════════════════════════════════════════
+// MAIN LOOP
+// ══════════════════════════════════════════════════
+function loop(ts) {
+  const dt = paused ? 0 : Math.min(ts - lastTime, 30);
+  if (!paused) lastTime = ts;
+  for (let i = 0; i < 2; i++) {
+    if (!paused) updateParticles(i, dt);
+    drawContainer(i);
+    updateUI(i);
+  }
+  requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════════════════
+// ZOOM CONTROLS
+// ══════════════════════════════════════════════════
+const ZOOM_STEP  = 0.15;
+const ZOOM_MIN   = 0.06;
+const ZOOM_MAX   = 1.5;
+
+function adjustZoom(i, delta) {
+  const s = state[i];
+  s.manualZoom  = true;
+  s.targetZoom  = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, s.targetZoom * (1 + delta)));
+}
+
+function fitZoom(i) {
+  state[i].manualZoom = false;
+  state[i].targetZoom = computeAutoZoom(i);
+}
+
+for (let i = 0; i < 2; i++) {
+  document.getElementById(`zoomIn${i}`).addEventListener('click', () => adjustZoom(i,  ZOOM_STEP));
+  document.getElementById(`zoomOut${i}`).addEventListener('click', () => adjustZoom(i, -ZOOM_STEP));
+  document.getElementById(`zoomFit${i}`).addEventListener('click', () => fitZoom(i));
+
+  // Scroll wheel on canvas
+  canvases[i].addEventListener('wheel', e => {
+    e.preventDefault();
+    const dir = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+    adjustZoom(i, dir);
+  }, { passive: false });
+}
+
+// ══════════════════════════════════════════════════
+// SLIDER WIRING
+// ══════════════════════════════════════════════════
+function wireSlider(i) {
+  const tEl = document.getElementById(`sliderTemp${i}`);
+  const pEl = document.getElementById(`sliderPres${i}`);
+  const nEl = document.getElementById(`sliderMol${i}`);
+
+  const update = () => {
+    const Tc = parseInt(tEl.value);
+    const P  = parseInt(pEl.value) / 100;
+    const n  = parseInt(nEl.value) / 100;
+    document.getElementById(`slTemp${i}`).textContent = `${Tc} °C`;
+    document.getElementById(`slPres${i}`).textContent = `${P.toFixed(2)} atm`;
+    document.getElementById(`slMol${i}`).textContent  = `${n.toFixed(2)} mol`;
+    state[i].T = Math.max(20, Tc+273);
+    state[i].P = Math.max(0.03, P);
+    state[i].n = Math.max(0.1, n);
+    reInitParticles(i);
+    if (linked && i === 0) {
+      document.getElementById('sliderTemp1').value = tEl.value;
+      document.getElementById('sliderPres1').value = pEl.value;
+      document.getElementById('sliderMol1').value  = nEl.value;
+      document.getElementById('slTemp1').textContent = `${Tc} °C`;
+      document.getElementById('slPres1').textContent = `${P.toFixed(2)} atm`;
+      document.getElementById('slMol1').textContent  = `${n.toFixed(2)} mol`;
+      state[1].T = state[0].T; state[1].P = state[0].P; state[1].n = state[0].n;
+      reInitParticles(1);
+    }
+  };
+
+  tEl.addEventListener('input', update);
+  pEl.addEventListener('input', update);
+  nEl.addEventListener('input', update);
+}
+
+wireSlider(0); wireSlider(1);
+
+// ══════════════════════════════════════════════════
+// GAS SELECTS
+// ══════════════════════════════════════════════════
+['gasSel0','gasSel1'].forEach((id,i) => {
+  document.getElementById(id).addEventListener('change', e => {
+    state[i].gasKey = e.target.value;
+    initParticles(i);
+  });
+});
+
+// ══════════════════════════════════════════════════
+// TOOLBAR
+// ══════════════════════════════════════════════════
+document.getElementById('rtpBtn').addEventListener('click', () => {
+  for (let i = 0; i < 2; i++) {
+    document.getElementById(`sliderTemp${i}`).value = 25;
+    document.getElementById(`sliderPres${i}`).value = 100;
+    document.getElementById(`sliderMol${i}`).value  = 100;
+    document.getElementById(`slTemp${i}`).textContent = '25 °C';
+    document.getElementById(`slPres${i}`).textContent = '1.00 atm';
+    document.getElementById(`slMol${i}`).textContent  = '1.00 mol';
+    state[i].T=298; state[i].P=1.0; state[i].n=1.0;
+    reInitParticles(i);
+  }
+});
+
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  const btn = document.getElementById('pauseBtn');
+  btn.textContent = paused ? '▶ Resume' : '⏸ Pause';
+  btn.classList.toggle('btn-gold', paused);
+  document.getElementById('pauseIndicator').classList.toggle('visible', paused);
+  if (!paused) lastTime = performance.now();
+});
+
+document.getElementById('swapBtn').addEventListener('click', () => {
+  [state[0].gasKey,state[1].gasKey] = [state[1].gasKey,state[0].gasKey];
+  document.getElementById('gasSel0').value = state[0].gasKey;
+  document.getElementById('gasSel1').value = state[1].gasKey;
+  initParticles(0); initParticles(1);
+});
+
+function applyLinked(val) {
+  linked = val;
+  document.getElementById('linkCondBtn').textContent = linked ? '🔗 Linked!' : '🔗 Link Conditions';
+  document.getElementById('linkCondBtn').classList.toggle('btn-primary', linked);
+  document.getElementById('linkCheck').checked = linked;
+  const p1 = document.getElementById('panel1');
+  p1.style.opacity = linked ? '0.38' : '1';
+  p1.style.pointerEvents = linked ? 'none' : '';
+}
+document.getElementById('linkCondBtn').addEventListener('click', () => applyLinked(!linked));
+document.getElementById('linkCheck').addEventListener('change', e => applyLinked(e.target.checked));
+
+document.getElementById('predBtn').addEventListener('click', () => {
+  predMode = !predMode;
+  document.getElementById('predOverlay1').classList.toggle('active', predMode);
+  document.getElementById('predBtn').textContent = predMode ? '👁 Reveal Volume' : '👁 Prediction Mode';
+  document.getElementById('predBtn').classList.toggle('btn-gold', predMode);
+});
+
+// ══════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════
+function resizeCanvases() {
+  canvases.forEach((c,i) => {
+    const rect = c.getBoundingClientRect();
+    const dpr  = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.round(rect.width * dpr);
+    const h = Math.round(rect.height * dpr);
+    if (c.width !== w || c.height !== h) {
+      c.width = w; c.height = h;
+      reInitParticles(i);
+    }
+  });
+}
+
+for (let i = 0; i < 2; i++) initParticles(i);
+lastTime = performance.now();
+requestAnimationFrame(loop);
+window.addEventListener('resize', () => setTimeout(resizeCanvases, 80));
+setTimeout(resizeCanvases, 60);
+</script>
+</body>
+</html>

@@ -15,6 +15,12 @@ export default function VirtualLabHub() {
       description: 'Simulate Zn + HCl producing H₂ and collect gas in a syringe; plot volume against time.',
       href: '/virtualLab/syringevol.html',
     },
+    {
+      id: 'molar-volume-simulation',
+      title: 'Molar Volume Simulation',
+      description: 'Explore molar volume relationships for gases under different conditions.',
+      href: '/virtualLab/desktop/molar-volume-simulation.html',
+    },
   ];
 
   return (
