@@ -544,6 +544,7 @@ class Sim{
     const dpr=window.devicePixelRatio||1;
     this.cv.width=this.W*dpr;this.cv.height=this.H*dpr;
     this.cv.style.width=this.W+'px';this.cv.style.height=this.H+'px';
+    this.ctx.setTransform(1,0,0,1,0,0);
     this.ctx.scale(dpr,dpr);
   }
   _pop(mode){
@@ -719,7 +720,31 @@ class Sim{
       ctx.fillText('✓ Reaction complete — all acid neutralised',W/2,cy);
     }
   }
-  resize(){this._resize();this._pop(this.mode)}
+  resize(){
+    const prevW=this.W,prevH=this.H;
+    this._resize();
+    const sx=prevW?this.W/prevW:1;
+    const sy=prevH?this.H/prevH:1;
+    const clamp=(p)=>{
+      const r=p.cfg.r;
+      if(p.x<r)p.x=r;
+      if(p.x>this.W-r)p.x=this.W-r;
+      if(p.y<r)p.y=r;
+      if(p.y>this.H-r)p.y=this.H-r;
+    };
+    this.ps.forEach(p=>{
+      p.W=this.W;p.H=this.H;
+      p.x*=sx;p.y*=sy;
+      p.vx*=sx;p.vy*=sy;
+      clamp(p);
+    });
+    this.sparks.forEach(p=>{
+      p.W=this.W;p.H=this.H;
+      p.x*=sx;p.y*=sy;
+      p.vx*=sx;p.vy*=sy;
+      clamp(p);
+    });
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -749,6 +774,7 @@ function resizeFocusCanvas(cv,ctx){
   const rect=cv.parentElement.getBoundingClientRect();
   const W=rect.width,H=rect.height||190,dpr=window.devicePixelRatio||1;
   cv.width=W*dpr;cv.height=H*dpr;cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(1,0,0,1,0,0);
   ctx.scale(dpr,dpr);
 }
 
@@ -1289,13 +1315,24 @@ window.addEventListener('load',()=>{
   overlay.addEventListener('click',closeFocusModal);
   window.addEventListener('keydown',(e)=>{if(e.key==='Escape') closeFocusModal();});
 });
+let __resizeRaf=0;
+let __lastResizeW=0;
 window.addEventListener('resize',()=>{
-  sL.resize();sR.resize();
-  if(document.getElementById('focusSection').style.display!=='none'){
-    fWL=fCanL.parentElement.getBoundingClientRect().width;fHL=fCanL.parentElement.getBoundingClientRect().height||190;
-    fWR=fCanR.parentElement.getBoundingClientRect().width;fHR=fCanR.parentElement.getBoundingClientRect().height||190;
-    resizeFocusCanvas(fCanL,fCtxL);resizeFocusCanvas(fCanR,fCtxR);
-  }
+  if(__resizeRaf)cancelAnimationFrame(__resizeRaf);
+  __resizeRaf=requestAnimationFrame(()=>{
+    __resizeRaf=0;
+    const wNow=document.documentElement.clientWidth;
+    if(__lastResizeW && Math.abs(wNow-__lastResizeW)<2) return;
+    __lastResizeW=wNow;
+    sL.resize();sR.resize();
+    if(document.getElementById('focusSection').style.display!=='none'){
+      fWL=fCanL.parentElement.getBoundingClientRect().width;fHL=fCanL.parentElement.getBoundingClientRect().height||190;
+      fWR=fCanR.parentElement.getBoundingClientRect().width;fHR=fCanR.parentElement.getBoundingClientRect().height||190;
+      resizeFocusCanvas(fCanL,fCtxL);
+      resizeFocusCanvas(fCanR,fCtxR);
+      renderFocusFrame();
+    }
+  });
 });
 </script>
 </body>
