@@ -7,6 +7,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: 'index.html',
+        chemicalBonding: 'chemical-bonding.html',
         neutralizationExothermic: 'neutralization-exothermic.html',
       },
     },

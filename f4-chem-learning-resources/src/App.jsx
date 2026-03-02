@@ -1,6 +1,8 @@
 import React from 'react';
 
 export default function App() {
+  const [activeLevel, setActiveLevel] = React.useState('F4');
+
   return (
     <div style={{ minHeight: '100vh', width: '100%', position: 'relative', overflow: 'hidden', background: '#0a1a18' }}>
       <style>{`
@@ -104,6 +106,44 @@ export default function App() {
           color: rgba(10,26,24,0.95);
           white-space: nowrap;
           box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+        }
+
+        .level-toggle {
+          display: inline-flex;
+          gap: 8px;
+          padding: 6px;
+          border-radius: 999px;
+          border: 1.5px solid rgba(197,215,181,0.55);
+          background: rgba(118,168,165,0.12);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          box-shadow: 0 10px 34px rgba(0,0,0,0.4);
+        }
+
+        .level-btn {
+          appearance: none;
+          border: 0;
+          cursor: pointer;
+          border-radius: 999px;
+          padding: 8px 14px;
+          font-family: 'Quicksand', sans-serif;
+          font-weight: 800;
+          font-size: 12px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.85);
+          background: transparent;
+          transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+        }
+
+        .level-btn:hover {
+          transform: translateY(-1px);
+          color: rgba(255,255,255,0.95);
+        }
+
+        .level-btn.active {
+          background: linear-gradient(135deg, rgba(197,215,181,0.9), rgba(118,168,165,0.85));
+          color: rgba(10,26,24,0.95);
         }
       `}</style>
 
@@ -228,14 +268,45 @@ export default function App() {
           Curated notes, practice, and tools for HKDSE Chemistry.
         </p>
 
+        <div style={{ marginTop: 24 }}>
+          <div className="level-toggle" role="tablist" aria-label="Select level">
+            <button
+              type="button"
+              className={`level-btn ${activeLevel === 'F1' ? 'active' : ''}`}
+              onClick={() => setActiveLevel('F1')}
+              aria-pressed={activeLevel === 'F1'}
+            >
+              F1
+            </button>
+            <button
+              type="button"
+              className={`level-btn ${activeLevel === 'F4' ? 'active' : ''}`}
+              onClick={() => setActiveLevel('F4')}
+              aria-pressed={activeLevel === 'F4'}
+            >
+              F4
+            </button>
+          </div>
+        </div>
+
         <div style={{ width: 'min(680px, 100%)', marginTop: 26 }}>
-          <a className="landing-widget" href="neutralization-exothermic.html" aria-label="Open Neutralization: Exothermic nature">
-            <div style={{ textAlign: 'left' }}>
-              <p className="landing-widget-title">Neutralization: Exothermic nature</p>
-              <p className="landing-widget-subtitle">Interactive notes / explanation page</p>
-            </div>
-            <span className="landing-widget-chip">Open</span>
-          </a>
+          {activeLevel === 'F1' ? (
+            <a className="landing-widget" href="chemical-bonding.html" aria-label="Open Chemical Bonding">
+              <div style={{ textAlign: 'left' }}>
+                <p className="landing-widget-title">Chemical Bonding</p>
+                <p className="landing-widget-subtitle">Interactive learning page</p>
+              </div>
+              <span className="landing-widget-chip">Open</span>
+            </a>
+          ) : (
+            <a className="landing-widget" href="neutralization-exothermic.html" aria-label="Open Neutralization: Exothermic nature">
+              <div style={{ textAlign: 'left' }}>
+                <p className="landing-widget-title">Neutralization: Exothermic nature</p>
+                <p className="landing-widget-subtitle">Interactive notes / explanation page</p>
+              </div>
+              <span className="landing-widget-chip">Open</span>
+            </a>
+          )}
         </div>
 
         <p
