@@ -212,7 +212,7 @@ export default function App() {
                 letterSpacing: '-0.01em',
               }}
             >
-              F4 Chemistry Learning Resources
+              Chemistry Learning Resources
             </span>
             <span
               style={{
@@ -245,11 +245,11 @@ export default function App() {
         }}
       >
         <div className="pill-badge" style={{ marginBottom: 28 }}>
-          F4 Chemistry
+          {activeLevel} Chemistry
         </div>
 
         <h1 className="brand-script" style={{ fontSize: 'clamp(2.6rem, 8vw, 5.2rem)', lineHeight: 1.08, margin: 0 }}>
-          F4 Chemistry Learning Resources
+          Chemistry Learning Resources
         </h1>
 
         <p
@@ -272,11 +272,11 @@ export default function App() {
           <div className="level-toggle" role="tablist" aria-label="Select level">
             <button
               type="button"
-              className={`level-btn ${activeLevel === 'F1' ? 'active' : ''}`}
-              onClick={() => setActiveLevel('F1')}
-              aria-pressed={activeLevel === 'F1'}
+              className={`level-btn ${activeLevel === 'F3' ? 'active' : ''}`}
+              onClick={() => setActiveLevel('F3')}
+              aria-pressed={activeLevel === 'F3'}
             >
-              F1
+              F3
             </button>
             <button
               type="button"
@@ -290,7 +290,7 @@ export default function App() {
         </div>
 
         <div style={{ width: 'min(680px, 100%)', marginTop: 26 }}>
-          {activeLevel === 'F1' ? (
+          {activeLevel === 'F3' ? (
             <a className="landing-widget" href="chemical-bonding.html" aria-label="Open Chemical Bonding">
               <div style={{ textAlign: 'left' }}>
                 <p className="landing-widget-title">Chemical Bonding</p>
