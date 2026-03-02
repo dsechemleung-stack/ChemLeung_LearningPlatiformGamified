@@ -75,6 +75,8 @@ body.focusModalOpen{overflow:hidden}
 .hnum{font-family:'Space Mono',monospace;font-size:.76rem;font-weight:700;min-width:36px;text-align:right;transition:color .3s}
 .pl .hnum{color:var(--hcl)}.pr .hnum{color:var(--ace)}
 .bnum{color:var(--purple)!important}
+.hmeta{min-width:140px;display:flex;align-items:baseline;justify-content:flex-end;gap:10px}
+.hcount{font-family:'Space Mono',monospace;font-size:.65rem;font-weight:700;color:rgba(230,245,230,0.78);text-align:right;white-space:nowrap}
 .bond-row{opacity:0;transition:opacity .5s}
 .bond-row.vis{opacity:1}
 
@@ -257,7 +259,10 @@ input[type=range]#focusScrubber::-webkit-slider-thumb{
       <div class="hrow">
         <span class="hlbl">Heat released</span>
         <div class="htrack"><div class="hfill" id="hL" style="width:0%"></div></div>
-        <span class="hnum" id="hnL">0%</span>
+        <div class="hmeta">
+          <span class="hnum" id="hnL">0%</span>
+          <span class="hcount" id="wL">0/0 H₂O formed</span>
+        </div>
       </div>
     </div>
   </div>
@@ -279,13 +284,18 @@ input[type=range]#focusScrubber::-webkit-slider-thumb{
       <div class="hrow">
         <span class="hlbl">Heat released</span>
         <div class="htrack"><div class="hfill" id="hR" style="width:0%"></div></div>
-        <span class="hnum" id="hnR">0%</span>
+        <div class="hmeta">
+          <span class="hnum" id="hnR">0%</span>
+          <span class="hcount" id="wR">0/0 H₂O formed</span>
+        </div>
       </div>
       <div class="hrow bond-row" id="brow">
         <span class="hlbl" style="color:var(--purple)">Heat absorbed</span>
         <div class="htrack btrack"><div class="hfill bfill" id="bF" style="width:0%"></div></div>
-        <span class="hnum bnum" id="bN">0%</span>
-        <span class="hnum" id="bondCount" style="color:var(--purple);margin-left:8px;font-size:0.65rem">0 bonds</span>
+        <div class="hmeta">
+          <span class="hnum bnum" id="bN">0%</span>
+          <span class="hcount" id="bondCount" style="color:var(--purple)">0 bonds</span>
+        </div>
       </div>
     </div>
   </div>
@@ -579,6 +589,12 @@ class Sim{
       }
     }
     else{this.pouring=false;this.pourRemaining=0;this.pourT=0;}
+
+    const wEl=document.getElementById(this.strong?'wL':'wR');
+    if(wEl){
+      const total=this.totalAcid||0;
+      wEl.textContent=`0/${total} H₂O formed`;
+    }
   }
   _startPour(){
     const target=this.strong
@@ -694,6 +710,11 @@ class Sim{
       if(hNum) hNum.textContent=heatReleasedPct+'%';
       if(!this.strong&&bFill) bFill.style.width=heatAbsorbedPct+'%';
       if(!this.strong&&bNum) bNum.textContent=heatAbsorbedPct+'%';
+
+      const wEl=document.getElementById(this.strong?'wL':'wR');
+      if(wEl){
+        wEl.textContent=`${this.h2oFormed}/${total} H₂O formed`;
+      }
       // Update bond count display
       const bondCountEl=document.getElementById('bondCount');
       if(bondCountEl){
@@ -1215,8 +1236,18 @@ function setScene2Speed(spd){
 
 function goStep(i){
   cur=i;const s=STEPS[i];
-  document.getElementById('ns').textContent=s.scene;
-  document.getElementById('nt').innerHTML=s.text;
+  const TITLES=[
+    'Scene 1: Before neutralisation',
+    'Scene 2: During neutralization',
+    'Scene 3: After neutralization',
+    'Scene 4: Addressing misconception',
+  ];
+  document.getElementById('ns').textContent=TITLES[i]||s.scene;
+  const ntEl=document.getElementById('nt');
+  if(ntEl){
+    ntEl.innerHTML='';
+    ntEl.style.display='none';
+  }
   const nc=document.getElementById('nc');
   nc.className='narr-card '+s.theme+' anim';
   setTimeout(()=>nc.classList.remove('anim'),500);
