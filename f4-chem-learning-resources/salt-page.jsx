@@ -145,6 +145,36 @@ const styles = `
     overflow: hidden;
   }
 
+  .back-btn {
+    position: fixed;
+    top: 18px;
+    left: 18px;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.05);
+    color: rgba(232,237,245,0.92);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-weight: 800;
+    font-size: 0.82rem;
+    text-decoration: none;
+    transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+    backdrop-filter: blur(12px);
+  }
+  .back-btn:hover {
+    transform: translateY(-1px);
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.24);
+  }
+  .back-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(0,220,180,0.25);
+  }
+
   .grid-bg {
     position: fixed; inset: 0; z-index: 0;
     background-image:
@@ -418,6 +448,9 @@ export default function App() {
     <>
       <style>{styles}</style>
       <div className="quiz-root">
+        <a className="back-btn" href="index.html" aria-label="Back to landing page">
+          ← Back
+        </a>
         <div className="grid-bg" />
         <div className="blob blob-1" />
         <div className="blob blob-2" />
