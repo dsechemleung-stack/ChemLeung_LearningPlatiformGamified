@@ -90,6 +90,42 @@ canvas{display:block;width:100%;aspect-ratio:600/340;}
 
 <script>
 // ============================================================
+// ADMIN LOCK (shared via localStorage)
+// ============================================================
+(() => {
+  const LS = {
+    admin: 'chem_admin',
+    lockWidgetF3: 'chem_lock_widget_f3',
+  };
+  const readBool = (key, def) => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw === null || raw === undefined || raw === '') {
+        window.localStorage.setItem(key, def ? '1' : '0');
+        return def;
+      }
+      return raw === '1' || raw === 'true';
+    } catch {
+      return def;
+    }
+  };
+
+  const enforce = () => {
+    const isAdmin = readBool(LS.admin, false);
+    const isLocked = readBool(LS.lockWidgetF3, true);
+    if (!isAdmin && isLocked) {
+      window.location.replace('index.html');
+    }
+  };
+
+  enforce();
+  window.addEventListener('storage', (e) => {
+    if (!e || !e.key) return;
+    if (e.key === LS.admin || e.key === LS.lockWidgetF3) enforce();
+  });
+})();
+
+// ============================================================
 // DATA
 // ============================================================
 const DATA={
