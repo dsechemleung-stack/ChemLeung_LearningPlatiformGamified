@@ -1,93 +1,7 @@
 import React from 'react';
 
 export default function App() {
-  const ADMIN_CODE = 'hugochem';
-  const LS = {
-    admin: 'chem_admin',
-    lockToggle: 'chem_lock_level_toggle',
-    lockWidgetF3: 'chem_lock_widget_f3',
-    lockWidgetF4: 'chem_lock_widget_f4',
-  };
-
-  const readBool = React.useCallback((key, defaultValue) => {
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (raw === null || raw === undefined || raw === '') {
-        window.localStorage.setItem(key, defaultValue ? '1' : '0');
-        return defaultValue;
-      }
-      return raw === '1' || raw === 'true';
-    } catch {
-      return defaultValue;
-    }
-  }, []);
-
-  const writeBool = React.useCallback((key, value) => {
-    try {
-      window.localStorage.setItem(key, value ? '1' : '0');
-    } catch {
-      // ignore
-    }
-  }, []);
-
   const [activeLevel, setActiveLevel] = React.useState('F4');
-  const [isAdmin, setIsAdmin] = React.useState(() => {
-    if (typeof window === 'undefined') return false;
-    return readBool(LS.admin, false);
-  });
-  const [lockToggle, setLockToggle] = React.useState(() => {
-    if (typeof window === 'undefined') return true;
-    return readBool(LS.lockToggle, true);
-  });
-  const [lockWidgetF3, setLockWidgetF3] = React.useState(() => {
-    if (typeof window === 'undefined') return true;
-    return readBool(LS.lockWidgetF3, true);
-  });
-  const [lockWidgetF4, setLockWidgetF4] = React.useState(() => {
-    if (typeof window === 'undefined') return true;
-    return readBool(LS.lockWidgetF4, true);
-  });
-
-  React.useEffect(() => {
-    const onStorage = (e) => {
-      if (!e || !e.key) return;
-      if (e.key === LS.admin) setIsAdmin(readBool(LS.admin, false));
-      if (e.key === LS.lockToggle) setLockToggle(readBool(LS.lockToggle, true));
-      if (e.key === LS.lockWidgetF3) setLockWidgetF3(readBool(LS.lockWidgetF3, true));
-      if (e.key === LS.lockWidgetF4) setLockWidgetF4(readBool(LS.lockWidgetF4, true));
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [LS.admin, LS.lockToggle, LS.lockWidgetF3, LS.lockWidgetF4, readBool]);
-
-  const promptAdmin = React.useCallback(() => {
-    const code = window.prompt('Enter admin code');
-    if (code === null) return;
-    if (String(code).trim() === ADMIN_CODE) {
-      writeBool(LS.admin, true);
-      setIsAdmin(true);
-      return;
-    }
-    window.alert('Incorrect code');
-  }, [ADMIN_CODE, LS.admin, writeBool]);
-
-  const exitAdmin = React.useCallback(() => {
-    writeBool(LS.admin, false);
-    setIsAdmin(false);
-  }, [LS.admin, writeBool]);
-
-  const toggleLock = React.useCallback(
-    (key, valueSetter, currentValue) => {
-      const next = !currentValue;
-      writeBool(key, next);
-      valueSetter(next);
-    },
-    [writeBool]
-  );
-
-  const isToggleDisabled = !isAdmin && lockToggle;
-  const isF3Locked = !isAdmin && lockWidgetF3;
-  const isF4Locked = !isAdmin && lockWidgetF4;
 
   return (
     <div style={{ minHeight: '100vh', width: '100%', position: 'relative', overflow: 'hidden', background: '#0a1a18' }}>
@@ -231,90 +145,6 @@ export default function App() {
           background: linear-gradient(135deg, rgba(197,215,181,0.9), rgba(118,168,165,0.85));
           color: rgba(10,26,24,0.95);
         }
-
-        .level-btn:disabled {
-          cursor: not-allowed;
-          opacity: 0.5;
-        }
-
-        .admin-btn {
-          appearance: none;
-          border: 1.5px solid rgba(197,215,181,0.55);
-          background: rgba(118,168,165,0.12);
-          color: rgba(255,255,255,0.9);
-          border-radius: 999px;
-          padding: 8px 12px;
-          font-family: 'Quicksand', sans-serif;
-          font-weight: 800;
-          font-size: 12px;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          cursor: pointer;
-          transition: transform 140ms ease, border-color 140ms ease;
-        }
-
-        .admin-btn:hover {
-          transform: translateY(-1px);
-          border-color: rgba(197,215,181,0.8);
-        }
-
-        .admin-panel {
-          margin-top: 16px;
-          width: min(680px, 100%);
-          border-radius: 18px;
-          padding: 14px 16px;
-          background: rgba(118,168,165,0.10);
-          border: 1.5px solid rgba(197,215,181,0.35);
-          box-shadow: 0 16px 50px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          text-align: left;
-        }
-
-        .admin-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-          padding: 10px 0;
-          border-top: 1px solid rgba(255,255,255,0.08);
-        }
-
-        .admin-row:first-of-type {
-          border-top: none;
-          padding-top: 0;
-        }
-
-        .admin-label {
-          font-family: 'Quicksand', sans-serif;
-          font-weight: 800;
-          font-size: 13px;
-          color: rgba(255,255,255,0.92);
-        }
-
-        .admin-sub {
-          font-family: 'Quicksand', sans-serif;
-          font-weight: 600;
-          font-size: 12px;
-          color: rgba(230,245,230,0.78);
-          margin-top: 3px;
-        }
-
-        .admin-toggle {
-          appearance: none;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: linear-gradient(135deg, rgba(197,215,181,0.9), rgba(118,168,165,0.85));
-          color: rgba(10,26,24,0.95);
-          border-radius: 999px;
-          padding: 8px 12px;
-          font-family: 'Quicksand', sans-serif;
-          font-weight: 900;
-          font-size: 11px;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          cursor: pointer;
-          white-space: nowrap;
-        }
       `}</style>
 
       <div
@@ -399,18 +229,6 @@ export default function App() {
             </span>
           </div>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {isAdmin ? (
-            <button type="button" className="admin-btn" onClick={exitAdmin}>
-              Exit Admin
-            </button>
-          ) : (
-            <button type="button" className="admin-btn" onClick={promptAdmin}>
-              Admin
-            </button>
-          )}
-        </div>
       </nav>
 
       <div
@@ -455,24 +273,16 @@ export default function App() {
             <button
               type="button"
               className={`level-btn ${activeLevel === 'F3' ? 'active' : ''}`}
-              onClick={() => {
-                if (isToggleDisabled) return;
-                setActiveLevel('F3');
-              }}
+              onClick={() => setActiveLevel('F3')}
               aria-pressed={activeLevel === 'F3'}
-              disabled={isToggleDisabled}
             >
               F3
             </button>
             <button
               type="button"
               className={`level-btn ${activeLevel === 'F4' ? 'active' : ''}`}
-              onClick={() => {
-                if (isToggleDisabled) return;
-                setActiveLevel('F4');
-              }}
+              onClick={() => setActiveLevel('F4')}
               aria-pressed={activeLevel === 'F4'}
-              disabled={isToggleDisabled}
             >
               F4
             </button>
@@ -481,98 +291,23 @@ export default function App() {
 
         <div style={{ width: 'min(680px, 100%)', marginTop: 26 }}>
           {activeLevel === 'F3' ? (
-            <a
-              className="landing-widget"
-              href={isF3Locked ? undefined : 'chemical-bonding.html'}
-              aria-label="Open Chemical Bonding"
-              onClick={(e) => {
-                if (!isAdmin && lockWidgetF3) {
-                  e.preventDefault();
-                  return;
-                }
-              }}
-              style={isF3Locked ? { opacity: 0.55, cursor: 'not-allowed', pointerEvents: 'auto' } : undefined}
-            >
+            <a className="landing-widget" href="chemical-bonding.html" aria-label="Open Chemical Bonding">
               <div style={{ textAlign: 'left' }}>
                 <p className="landing-widget-title">Chemical Bonding</p>
                 <p className="landing-widget-subtitle">Interactive learning page</p>
               </div>
-              <span className="landing-widget-chip">{isF3Locked ? 'Locked' : 'Open'}</span>
+              <span className="landing-widget-chip">Open</span>
             </a>
           ) : (
-            <a
-              className="landing-widget"
-              href={isF4Locked ? undefined : 'neutralization-exothermic.html'}
-              aria-label="Open Neutralization: Exothermic nature"
-              onClick={(e) => {
-                if (!isAdmin && lockWidgetF4) {
-                  e.preventDefault();
-                  return;
-                }
-              }}
-              style={isF4Locked ? { opacity: 0.55, cursor: 'not-allowed', pointerEvents: 'auto' } : undefined}
-            >
+            <a className="landing-widget" href="neutralization-exothermic.html" aria-label="Open Neutralization: Exothermic nature">
               <div style={{ textAlign: 'left' }}>
                 <p className="landing-widget-title">Neutralization: Exothermic nature</p>
                 <p className="landing-widget-subtitle">Interactive notes / explanation page</p>
               </div>
-              <span className="landing-widget-chip">{isF4Locked ? 'Locked' : 'Open'}</span>
+              <span className="landing-widget-chip">Open</span>
             </a>
           )}
         </div>
-
-        {isAdmin ? (
-          <div className="admin-panel">
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-              <div>
-                <div className="admin-label">Admin controls</div>
-                <div className="admin-sub">Locks apply immediately to all open tabs/pages.</div>
-              </div>
-            </div>
-
-            <div className="admin-row">
-              <div>
-                <div className="admin-label">Lock F3/F4 toggle</div>
-                <div className="admin-sub">Prevents switching level.</div>
-              </div>
-              <button
-                type="button"
-                className="admin-toggle"
-                onClick={() => toggleLock(LS.lockToggle, setLockToggle, lockToggle)}
-              >
-                {lockToggle ? 'Locked' : 'Unlocked'}
-              </button>
-            </div>
-
-            <div className="admin-row">
-              <div>
-                <div className="admin-label">Lock F3 widget</div>
-                <div className="admin-sub">Blocks entry to Chemical Bonding.</div>
-              </div>
-              <button
-                type="button"
-                className="admin-toggle"
-                onClick={() => toggleLock(LS.lockWidgetF3, setLockWidgetF3, lockWidgetF3)}
-              >
-                {lockWidgetF3 ? 'Locked' : 'Unlocked'}
-              </button>
-            </div>
-
-            <div className="admin-row">
-              <div>
-                <div className="admin-label">Lock F4 widget</div>
-                <div className="admin-sub">Blocks entry to Neutralization.</div>
-              </div>
-              <button
-                type="button"
-                className="admin-toggle"
-                onClick={() => toggleLock(LS.lockWidgetF4, setLockWidgetF4, lockWidgetF4)}
-              >
-                {lockWidgetF4 ? 'Locked' : 'Unlocked'}
-              </button>
-            </div>
-          </div>
-        ) : null}
 
         <p
           className="hero-tagline"
