@@ -299,13 +299,23 @@ export default function App() {
               <span className="landing-widget-chip">Open</span>
             </a>
           ) : (
-            <a className="landing-widget" href="neutralization-exothermic.html" aria-label="Open Neutralization: Exothermic nature">
-              <div style={{ textAlign: 'left' }}>
-                <p className="landing-widget-title">Neutralization: Exothermic nature</p>
-                <p className="landing-widget-subtitle">Interactive notes / explanation page</p>
-              </div>
-              <span className="landing-widget-chip">Open</span>
-            </a>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <a className="landing-widget" href="neutralization-exothermic.html" aria-label="Open Neutralization: Exothermic nature">
+                <div style={{ textAlign: 'left' }}>
+                  <p className="landing-widget-title">Neutralization: Exothermic nature</p>
+                  <p className="landing-widget-subtitle">Interactive notes / explanation page</p>
+                </div>
+                <span className="landing-widget-chip">Open</span>
+              </a>
+
+              <a className="landing-widget" href="salt-page.html" aria-label="Open Salt Quiz">
+                <div style={{ textAlign: 'left' }}>
+                  <p className="landing-widget-title">Salt Quiz</p>
+                  <p className="landing-widget-subtitle">Salt solubility rules + preparation method practice</p>
+                </div>
+                <span className="landing-widget-chip">Open</span>
+              </a>
+            </div>
           )}
         </div>
 
