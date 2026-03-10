@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Archive, Shirt, Image as ImageIcon, Search, Check, X, BookOpen, LayoutGrid, Sparkles, ShoppingBag } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useChemCityStore } from '../store/chemcityStore';
+import { useLanguage } from '../contexts/LanguageContext';
 import ChemistryLoading from '../components/ChemistryLoading';
 import { callChemCityEquipCosmetics } from '../lib/chemcity/cloudFunctions';
 import { ProfileCard } from '../components/chemcity/gacha/ProfileCard';
@@ -72,7 +73,7 @@ function ProgressRing({ pct, size = 36 }) {
   );
 }
 
-function ChemCardsPanel({ showAlbum }) {
+function ChemCardsPanel({ showAlbum, t, tf }) {
   const user = useChemCityStore((s) => s.user);
   const slimItems = useChemCityStore((s) => s.slimItems);
   const places = useChemCityStore((s) => s.places);
@@ -127,7 +128,7 @@ function ChemCardsPanel({ showAlbum }) {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search cards by name or formula..."
+              placeholder={t('chemcity.inventory.searchPlaceholder')}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border-2 border-slate-200 font-bold text-slate-800 focus:outline-none focus:border-lab-blue"
             />
           </div>
@@ -137,7 +138,7 @@ function ChemCardsPanel({ showAlbum }) {
               onClick={() => setPlaceId('all')}
               className={`px-3 py-1.5 rounded-full text-xs font-black border-2 transition-all ${placeId === 'all' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
             >
-              All
+              {t('chemcity.inventory.allPlaces')}
             </button>
             {(places || []).map((p) => (
               <button
@@ -231,7 +232,7 @@ function ChemCardsPanel({ showAlbum }) {
               const pct = total > 0 ? collected / total : 0;
               colEntries.push({
                 id: 'uncategorized',
-                label: 'Uncategorized',
+                label: t('chemcity.inventory.uncategorized'),
                 groups,
                 collected,
                 total,
@@ -244,7 +245,7 @@ function ChemCardsPanel({ showAlbum }) {
               .map((e) => [e.label, e]);
 
             if (entries.length === 0) {
-              return <div className="text-center text-slate-500 font-bold py-10">No cards found.</div>;
+              return <div className="text-center text-slate-500 font-bold py-10">{t('chemcity.inventory.noCardsFound')}</div>;
             }
 
             return entries.map(([label, entry]) => {
@@ -272,7 +273,7 @@ function ChemCardsPanel({ showAlbum }) {
 
                         <div className="min-w-0 flex-1">
                           <div className="font-black text-slate-900 truncate">{label}</div>
-                          <div className="text-xs font-bold text-slate-500">{entry.collected}/{entry.total} collected</div>
+                          <div className="text-xs font-bold text-slate-500">{tf('chemcity.inventory.collectedCount', { collected: String(entry.collected), total: String(entry.total) })}</div>
                         </div>
                       </div>
 
@@ -302,7 +303,7 @@ function ChemCardsPanel({ showAlbum }) {
                                   onClick={() => bumpSkin(key, items.length, -1)}
                                   disabled={!canSwitch}
                                   className={`absolute left-2 top-1/2 -translate-y-1/2 w-7 h-10 rounded-xl font-black border-2 ${canSwitch ? 'bg-white/90 border-slate-200 text-slate-700 hover:bg-white' : 'bg-white/60 border-slate-200 text-slate-300 cursor-not-allowed'}`}
-                                  title="Previous skin"
+                                  title={t('chemcity.inventory.previousSkin')}
                                 >
                                   {'<'}
                                 </button>
@@ -330,7 +331,7 @@ function ChemCardsPanel({ showAlbum }) {
                                   onClick={() => bumpSkin(key, items.length, +1)}
                                   disabled={!canSwitch}
                                   className={`absolute right-2 top-1/2 -translate-y-1/2 w-7 h-10 rounded-xl font-black border-2 ${canSwitch ? 'bg-white/90 border-slate-200 text-slate-700 hover:bg-white' : 'bg-white/60 border-slate-200 text-slate-300 cursor-not-allowed'}`}
-                                  title="Next skin"
+                                  title={t('chemcity.inventory.nextSkin')}
                                 >
                                   {'>'}
                                 </button>
@@ -418,7 +419,7 @@ function ChemCardsPanel({ showAlbum }) {
           </div>
 
           {filtered.length === 0 && (
-            <div className="text-center text-slate-500 font-bold py-10">No cards found.</div>
+            <div className="text-center text-slate-500 font-bold py-10">{t('chemcity.inventory.noCardsFound')}</div>
           )}
         </>
       )}
@@ -426,7 +427,7 @@ function ChemCardsPanel({ showAlbum }) {
   );
 }
 
-function CosmeticsGrid({ type, showAlbum }) {
+function CosmeticsGrid({ type, showAlbum, t, tf }) {
   const cosmeticsMap = useChemCityStore((s) => (s).cosmeticsMap);
   const user = useChemCityStore((s) => s.user);
   const { currentUser, userProfile } = useAuth();
@@ -540,12 +541,12 @@ function CosmeticsGrid({ type, showAlbum }) {
               />
             </div>
             <div className="font-black text-slate-900 truncate">
-              {previewItem?.name || 'Select an item to preview'}
+              {previewItem?.name || t('chemcity.inventory.selectToPreview')}
             </div>
             <div className="text-[11px] font-bold text-slate-500 capitalize">
               {previewItem
-                ? (getCollectionLabel(previewItem) || (type === 'wardrobe' ? 'Wardrobe' : 'Background'))
-                : 'Tap an item on the right'}
+                ? (getCollectionLabel(previewItem) || (type === 'wardrobe' ? t('chemcity.inventory.wardrobe') : t('chemcity.inventory.background')))
+                : t('chemcity.inventory.tapItemRight')}
             </div>
             {previewId && (
               <div className="grid grid-cols-2 gap-2">
@@ -554,11 +555,11 @@ function CosmeticsGrid({ type, showAlbum }) {
                   onClick={() => setPreviewId(null)}
                   className="px-3 py-2 rounded-xl font-black border-2 border-slate-200 text-slate-700 bg-white hover:bg-slate-50"
                   disabled={!!equippingId}
-                  title="Cancel preview"
+                  title={t('chemcity.inventory.cancelPreview')}
                 >
                   <span className="inline-flex items-center justify-center gap-2">
                     <X size={16} />
-                    Cancel
+                    {t('common.cancel')}
                   </span>
                 </button>
                 <button
@@ -566,11 +567,11 @@ function CosmeticsGrid({ type, showAlbum }) {
                   onClick={handleConfirm}
                   className="px-3 py-2 rounded-xl font-black bg-lab-blue text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={!previewItem || effectivePreviewId === equippedId || !!equippingId}
-                  title="Confirm equip"
+                  title={t('chemcity.inventory.confirmEquip')}
                 >
                   <span className="inline-flex items-center justify-center gap-2">
                     <Check size={16} />
-                    Confirm
+                    {t('common.confirm')}
                   </span>
                 </button>
               </div>
@@ -585,7 +586,7 @@ function CosmeticsGrid({ type, showAlbum }) {
             onClick={() => setRarity('all')}
             className={`px-3 py-1.5 rounded-full text-xs font-black border-2 transition-all ${rarity === 'all' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
           >
-            All
+            {t('chemcity.inventory.allRarities')}
           </button>
           {rarityOptions.map((r) => (
             <button
@@ -617,7 +618,7 @@ function CosmeticsGrid({ type, showAlbum }) {
                 })
                 .sort((a, b) => (b.pct - a.pct) || String(a.label).localeCompare(String(b.label)));
               if (entries.length === 0) {
-                return <div className="text-center text-slate-500 font-bold py-10">No items yet.</div>;
+                return <div className="text-center text-slate-500 font-bold py-10">{t('chemcity.inventory.noItemsYet')}</div>;
               }
 
               return entries.map(({ label, items, collected, total, pct }) => {
@@ -761,7 +762,7 @@ function CosmeticsGrid({ type, showAlbum }) {
                   </div>
                 </div>
                 {isEquipped && (
-                  <div className="absolute top-2 left-2 bg-lab-blue text-white text-[10px] font-black px-2 py-1 rounded-full">Equipped</div>
+                  <div className="absolute top-2 left-2 bg-lab-blue text-white text-[10px] font-black px-2 py-1 rounded-full">{t('chemcity.inventory.equipped')}</div>
                 )}
                 <div className="absolute top-2 right-2">
                   <RarityPill rarity={String(c.rarity || '').toLowerCase()} />
@@ -774,7 +775,7 @@ function CosmeticsGrid({ type, showAlbum }) {
           })}
 
           {list.length === 0 && (
-            <div className="col-span-full text-center text-slate-500 font-bold py-10">No items yet.</div>
+            <div className="col-span-full text-center text-slate-500 font-bold py-10">{t('chemcity.inventory.noItemsYet')}</div>
           )}
           </div>
         )}
@@ -784,6 +785,7 @@ function CosmeticsGrid({ type, showAlbum }) {
 }
 
 export default function InventoryPage() {
+  const { t, tf } = useLanguage();
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -794,6 +796,12 @@ export default function InventoryPage() {
   const loadAll = useChemCityStore((s) => s.loadAll);
   const teardown = useChemCityStore((s) => s.teardown);
   const loadGachaStatic = useChemCityStore((s) => s.loadGachaStatic);
+
+  const TABS = [
+    { id: 'chemcards', label: t('chemcity.inventory.chemcards'), Icon: Archive },
+    { id: 'wardrobe', label: t('chemcity.inventory.wardrobe'), Icon: Shirt },
+    { id: 'background', label: t('chemcity.inventory.background'), Icon: ImageIcon },
+  ];
 
   const initialTab = useMemo(() => {
     const st = location?.state;
@@ -843,7 +851,7 @@ export default function InventoryPage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: BG }}>
         <div className="bg-white rounded-2xl shadow-2xl border-2 border-slate-200 p-6 text-center">
-          <div className="font-black text-slate-900">Please sign in</div>
+          <div className="font-black text-slate-900">{t('chemcity.inventory.pleaseSignIn')}</div>
         </div>
       </div>
     );
@@ -852,7 +860,7 @@ export default function InventoryPage() {
   if (isLoading && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: BG }}>
-        <ChemistryLoading persistKey="inventory" className="text-center" textOverride="Loading Inventory..." />
+        <ChemistryLoading persistKey="inventory" className="text-center" textOverride={t('chemcity.inventory.loadingInventory')} />
       </div>
     );
   }
@@ -866,7 +874,7 @@ export default function InventoryPage() {
             onClick={() => window.location.reload()}
             className="mt-4 px-4 py-2 rounded-xl font-black bg-slate-900 text-white"
           >
-            Retry
+            {t('common.retry')}
           </button>
         </div>
       </div>
@@ -886,8 +894,8 @@ export default function InventoryPage() {
             <ArrowLeft size={18} className="text-slate-700" />
           </button>
           <div className="flex-1 bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-4">
-            <div className="font-black text-slate-900 text-xl">Inventory</div>
-            <div className="text-xs font-bold text-slate-500">ChemCards · Wardrobe · Background</div>
+            <div className="font-black text-slate-900 text-xl">{t('chemcity.inventory.title')}</div>
+            <div className="text-xs font-bold text-slate-500">{t('chemcity.inventory.subtitle')}</div>
           </div>
         </div>
 
@@ -909,7 +917,7 @@ export default function InventoryPage() {
                 type="button"
                 onClick={() => navigate('/store')}
                 className="px-4 py-2 rounded-xl font-black transition-all active:scale-[0.99] bg-white border-2 border-slate-200 text-slate-800 hover:bg-slate-50"
-                title="Open ChemStore"
+                title={t('chemcity.inventory.openChemStore')}
               >
                 <span className="inline-flex items-center gap-2">
                   <ShoppingBag size={16} />
@@ -923,7 +931,7 @@ export default function InventoryPage() {
                 type="button"
                 onClick={() => navigate('/gacha')}
                 className="px-4 py-2 rounded-xl font-black transition-all active:scale-[0.99] bg-white border-2 border-slate-200 text-slate-800 hover:bg-slate-50"
-                title="Open Gacha"
+                title={t('chemcity.inventory.openGacha')}
               >
                 <span className="inline-flex items-center gap-2">
                   <Sparkles size={16} />
@@ -937,20 +945,20 @@ export default function InventoryPage() {
                 type="button"
                 onClick={toggleAlbum}
                 className="px-4 py-2 rounded-xl font-black transition-all active:scale-[0.99] bg-white border-2 border-slate-200 text-slate-800 hover:bg-slate-50"
-                title={showAlbum ? 'Show grid' : 'Show collection album'}
+                title={showAlbum ? t('chemcity.inventory.showGrid') : t('chemcity.inventory.showAlbum')}
               >
                 <span className="inline-flex items-center gap-2">
                   {showAlbum ? <LayoutGrid size={16} /> : <BookOpen size={16} />}
-                  {showAlbum ? 'Grid View' : 'Collection Album'}
+                  {showAlbum ? t('chemcity.inventory.gridView') : t('chemcity.inventory.collectionAlbum')}
                 </span>
               </button>
             )}
           </div>
         </div>
 
-        {tab === 'chemcards' && <ChemCardsPanel showAlbum={showAlbum} />}
-        {tab === 'wardrobe' && <CosmeticsGrid type="wardrobe" showAlbum={showAlbum} />}
-        {tab === 'background' && <CosmeticsGrid type="background" showAlbum={false} />}
+        {tab === 'chemcards' && <ChemCardsPanel showAlbum={showAlbum} t={t} tf={tf} />}
+        {tab === 'wardrobe' && <CosmeticsGrid type="wardrobe" showAlbum={showAlbum} t={t} tf={tf} />}
+        {tab === 'background' && <CosmeticsGrid type="background" showAlbum={false} t={t} tf={tf} />}
       </div>
 
       <CardDetail />

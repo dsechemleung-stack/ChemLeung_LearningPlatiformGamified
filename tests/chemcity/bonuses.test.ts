@@ -19,7 +19,8 @@ import type { SlimItemDocument, ActiveBonuses } from "../../src/lib/chemcity/typ
 function makeItem(
   id: string,
   placeId: SlimItemDocument["placeId"],
-  skillContribution: number
+  skillContribution: number,
+  rarityValue: 1 | 2 | 3 | 4 = 1
 ): SlimItemDocument {
   return {
     id,
@@ -27,7 +28,7 @@ function makeItem(
     chemicalFormula: "X",
     emoji: "🧪",
     rarity: "common",
-    rarityValue: 1,
+    rarityValue,
     placeId,
     validSlots: [`${placeId}_slot_1`],
     shopData: { coinCost: 100 },
@@ -82,17 +83,12 @@ describe("Gas Station extra slots", () => {
   it("bonus 16 = 16 slots", () => expect(calcGasStationExtraSlots(16)).toBe(16));
 });
 
-describe("Boutique discount (capped at 50%)", () => {
+describe("Boutique discount (no cap)", () => {
   it("0 bonus = 0%", () => expect(calcBoutiqueDiscount(0)).toBe(0));
-  it("bonus 10 = 20%", () => expect(calcBoutiqueDiscount(10)).toBe(20));
-  it("bonus 24 = 48%", () => expect(calcBoutiqueDiscount(24)).toBe(48));
-  it("bonus 25 = 50% (exactly at cap)", () => expect(calcBoutiqueDiscount(25)).toBe(50));
-  it("bonus 30 = 50% (cap enforced)", () => expect(calcBoutiqueDiscount(30)).toBe(50));
-  it("never exceeds 50%", () => {
-    for (let b = 0; b <= 100; b++) {
-      expect(calcBoutiqueDiscount(b)).toBeLessThanOrEqual(50);
-    }
-  });
+  it("bonus 1 = 10%", () => expect(calcBoutiqueDiscount(1)).toBe(10));
+  it("bonus 5 = 50%", () => expect(calcBoutiqueDiscount(5)).toBe(50));
+  it("bonus 10 = 100%", () => expect(calcBoutiqueDiscount(10)).toBe(100));
+  it("can exceed 50%", () => expect(calcBoutiqueDiscount(6)).toBe(60));
 });
 
 describe("computeActiveBonuses", () => {
@@ -128,16 +124,20 @@ describe("computeActiveBonuses", () => {
     expect(bonuses.passiveMultiplier).toBe(2.0);
   });
 
-  it("boutique discount is capped at 50", () => {
-    const items: SlimItemDocument[] = [];
-    const equipped: Record<string, string> = {};
-    for (let i = 1; i <= 26; i++) {
-      const id = `item_b${i}`;
-      items.push(makeItem(id, "lifestyle_boutique", 1));
-      equipped[`lifestyle_boutique_test_slot_${i}`] = id;
-    }
+  it("boutique discount uses rarityValue sum (rarity 1 → 10%, rarity 2 → 20%, etc.)", () => {
+    const items: SlimItemDocument[] = [
+      makeItem("b1", "lifestyle_boutique", 0.2, 1),
+      makeItem("b2", "lifestyle_boutique", 0.2, 2),
+      makeItem("b3", "lifestyle_boutique", 0.2, 4),
+    ];
+    const equipped: Record<string, string> = {
+      lifestyle_boutique_poseur_table_1: "b1",
+      lifestyle_boutique_service_desk: "b2",
+      lifestyle_boutique_jewellery_display: "b3",
+    };
     const bonuses = computeActiveBonuses(equipped, items);
-    expect(bonuses.shopDiscountPercent).toBe(50);
+    // rarityValue sum = 1 + 2 + 4 = 7 → 70%
+    expect(bonuses.shopDiscountPercent).toBe(70);
   });
 
   it("deprecated cards do not contribute", () => {
@@ -204,7 +204,7 @@ describe("computeQuizDiamonds", () => {
 });
 
 describe("getShopPrice", () => {
-  it("diamonds not discounted", () => {
+  it("diamonds also discounted", () => {
     const ab: ActiveBonuses = {
       passiveBaseCoinsPerHour: 0,
       passiveMultiplier: 1,
@@ -215,7 +215,7 @@ describe("getShopPrice", () => {
       extraSlotsTotal: 0,
       shopDiscountPercent: 50,
     };
-    expect(getShopPrice(200, "diamonds", ab)).toBe(200);
+    expect(getShopPrice(200, "diamonds", ab)).toBe(100);
   });
 
   it("50% discount halves coin price", () => {

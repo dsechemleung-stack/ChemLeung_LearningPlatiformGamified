@@ -57,7 +57,7 @@ export default function HistoryPage() {
     try {
       setError(null);
       setLoading(true);
-      const userAttempts = await quizService.getUserAttempts(currentUser.uid, 100);
+      const userAttempts = await quizService.getUserAttempts(currentUser.uid, 20);
       setAttempts(userAttempts);
     } catch (err) {
       setError(err.message);
@@ -302,7 +302,7 @@ export default function HistoryPage() {
                           <Clock size={14} /> {formatTime(attempt.timeSpent)}
                         </div>
                         <div className="text-xs text-slate-400">
-                          {formatTime(attempt.timeSpent / attempt.totalQuestions)}/Q
+                          {formatTime(attempt.timeSpent / attempt.totalQuestions)}{t('history.perQuestionShort')}
                         </div>
                       </div>
                     )}

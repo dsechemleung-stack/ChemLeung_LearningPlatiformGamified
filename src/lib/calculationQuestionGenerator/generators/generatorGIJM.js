@@ -519,8 +519,8 @@ export function generateM1(ramOn) {
     title: 'Enthalpy of Neutralisation',
     description: 'Calorimetric measurement of ΔHneut using polystyrene cup',
     problemStatement:
-      `A student mixed ${volAcid} cm³ of ${pair.acidName} (${pair.acid}) of concentration ${concAcid} mol/dm³ ` +
-      `with ${volBase} cm³ of ${pair.baseName} (${pair.base}) of concentration ${concBase} mol/dm³ ` +
+      `A student mixed ${volAcid} cm³ of ${concAcid} mol/dm³ ${pair.acidName} (${pair.acid}) ` +
+      `with ${volBase} cm³ of ${concBase} mol/dm³ ${pair.baseName} (${pair.base}) ` +
       `in a polystyrene cup. The initial temperature of both solutions was ${tempInitial} °C. ` +
       `The maximum temperature reached was ${tempFinal} °C. ` +
       `(Assume specific heat capacity = 4.18 J g⁻¹ K⁻¹, density of all solutions = 1.00 g cm⁻³, ` +

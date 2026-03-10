@@ -105,8 +105,8 @@
     "emoji": "🛍️",
     "unlockCost": 400,
     "skill": {
-      "description": "Percentage discount in ChemStore (capped at 50%)",
-      "formula": "discount% = min(totalBonus × 2, 50)"
+      "description": "Percentage discount in ChemStore (no cap)",
+      "formula": "discount% = totalBonus × 10"
     },
     "slots": [
       { "slotId": "lifestyle_boutique_poseur_table_1" },

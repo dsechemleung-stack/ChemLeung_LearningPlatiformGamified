@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { CheckCircle2, XCircle, BarChart3, RotateCcw, Info, Clock, Share2, MessageSquare } from 'lucide-react';
 import ShareableReport from './ShareableReport';
 import QuestionForum from './QuestionForum';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function ResultsSummary({ questions, userAnswers, questionTimes, onRestart }) {
   const [showShareReport, setShowShareReport] = useState(false);
   const [forumQuestion, setForumQuestion] = useState(null);
   const [showChineseExplanation, setShowChineseExplanation] = useState(() => ({}));
+  const { t, tf } = useLanguage();
 
   const normalizeLiteralNewlinesToBr = (html) => {
     if (!html) return '';
@@ -75,24 +77,24 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
       {/* Hero Score Section */}
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
         <div className="bg-lab-blue p-8 text-center text-white">
-          <h2 className="text-xl opacity-90 mb-2">Your Performance</h2>
+          <h2 className="text-xl opacity-90 mb-2">{t('results.yourPerformance')}</h2>
           <div className="text-6xl font-black mb-2">{percentage}%</div>
           <p className="text-blue-100">
-            {correctCount} out of {total} questions correct
+            {tf('results.correctOutOfTotalQuestions', { correct: correctCount, total })}
           </p>
           {!!totalTime && (
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-blue-100">
               <div className="bg-blue-700 bg-opacity-50 rounded-lg p-4">
                 <div className="flex items-center justify-center gap-2 mb-1">
                   <Clock size={18} />
-                  <span className="text-sm font-semibold">Total Time</span>
+                  <span className="text-sm font-semibold">{t('results.totalTime')}</span>
                 </div>
                 <div className="text-2xl font-bold">{formatTime(totalTime)}</div>
               </div>
               <div className="bg-blue-700 bg-opacity-50 rounded-lg p-4">
                 <div className="flex items-center justify-center gap-2 mb-1">
                   <Clock size={18} />
-                  <span className="text-sm font-semibold">Average per MCQ</span>
+                  <span className="text-sm font-semibold">{t('results.averagePerQuestion')}</span>
                 </div>
                 <div className="text-2xl font-bold">{formatTime(averageTimePerQuestion)}</div>
               </div>
@@ -104,7 +106,7 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50">
           <div className="bg-white p-4 rounded-xl border border-slate-200">
             <h3 className="flex items-center gap-2 font-bold text-chemistry-green mb-3">
-              <CheckCircle2 size={18} /> Strengths
+              <CheckCircle2 size={18} /> {t('results.strengths')}
             </h3>
             {strengths.length > 0 ? (
               strengths.map(s => (
@@ -113,12 +115,12 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
                   <span className="font-bold">{s.percent}%</span>
                 </div>
               ))
-            ) : <p className="text-sm text-slate-400 italic">Keep practicing to build strengths!</p>}
+            ) : <p className="text-sm text-slate-400 italic">{t('results.keepPracticingToBuildStrengths')}</p>}
           </div>
 
           <div className="bg-white p-4 rounded-xl border border-slate-200">
             <h3 className="flex items-center gap-2 font-bold text-amber-600 mb-3">
-              <BarChart3 size={18} /> Needs Focus
+              <BarChart3 size={18} /> {t('results.needsFocus')}
             </h3>
             {weaknesses.length > 0 ? (
               weaknesses.map(w => (
@@ -127,7 +129,7 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
                   <span className="font-bold text-amber-700">{w.percent}%</span>
                 </div>
               ))
-            ) : <p className="text-sm text-slate-400 italic">No major weaknesses detected!</p>}
+            ) : <p className="text-sm text-slate-400 italic">{t('results.noMajorWeaknessesDetected')}</p>}
           </div>
         </div>
       </div>
@@ -139,7 +141,7 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
           className="w-full py-4 flex items-center justify-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-xl font-bold hover:opacity-90 transition-all shadow-lg"
         >
           <Share2 size={20} />
-          Share Report Card
+          {t('results.shareReport')}
         </button>
 
         <button
@@ -147,14 +149,14 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
           className="w-full py-4 flex items-center justify-center gap-2 bg-carbon-grey text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg"
         >
           <RotateCcw size={20} />
-          Start New Session
+          {t('results.startNewSession')}
         </button>
       </div>
 
       {/* Detailed Review List */}
       <div className="space-y-4">
         <h3 className="text-xl font-bold flex items-center gap-2">
-          <Info className="text-lab-blue" /> Detailed Review
+          <Info className="text-lab-blue" /> {t('results.detailedReview')}
         </h3>
         {questions.map((q, index) => {
           const isCorrect = userAnswers[q.ID] === q.CorrectOption;
@@ -165,7 +167,7 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
             <div key={q.ID} className={`p-6 rounded-xl border-l-4 bg-white shadow-sm ${isCorrect ? 'border-chemistry-green' : 'border-red-500'}`}>
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl font-black text-slate-700">Question {index + 1}</span>
+                  <span className="text-2xl font-black text-slate-700">{tf('results.questionNumber', { number: index + 1 })}</span>
                   {timeSpent && (
                     <div className="text-sm text-slate-500 flex items-center gap-1 bg-slate-100 px-3 py-1 rounded-full">
                       <Clock size={14} />
@@ -178,10 +180,10 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
                   <button
                     onClick={() => setForumQuestion(q)}
                     className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg font-bold hover:bg-purple-200 transition-all"
-                    title="Discuss this question"
+                    title={t('results.discussThisQuestion')}
                   >
                     <MessageSquare size={16} />
-                    <span className="hidden sm:inline">Discuss</span>
+                    <span className="hidden sm:inline">{t('results.discuss')}</span>
                   </button>
                   
                   {/* Status Icon */}
@@ -227,9 +229,9 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
                       </div>
                       {(isUser || isCorrectOpt) && (
                         <div className="mt-2 text-xs font-black">
-                          {isCorrectOpt && isUser && <span className="text-green-700">Correct</span>}
-                          {isCorrectOpt && !isUser && <span className="text-green-700">Correct answer</span>}
-                          {!isCorrectOpt && isUser && <span className="text-red-700">Your answer</span>}
+                          {isCorrectOpt && isUser && <span className="text-green-700">{t('results.correct')}</span>}
+                          {isCorrectOpt && !isUser && <span className="text-green-700">{t('results.correctAnswer')}</span>}
+                          {!isCorrectOpt && isUser && <span className="text-red-700">{t('results.yourAnswer')}</span>}
                         </div>
                       )}
                     </div>
@@ -239,17 +241,17 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
                 <div className={`p-3 rounded-lg text-sm border ${userAnswers[q.ID] === q.CorrectOption ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-                  <strong>Your Answer:</strong> {userAnswers[q.ID] || 'None'}
+                  <strong>{t('results.yourAnswer')}:</strong> {userAnswers[q.ID] || t('results.none')}
                 </div>
                 <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm">
-                  <strong>Correct Answer:</strong> {q.CorrectOption}
+                  <strong>{t('results.correctAnswer')}:</strong> {q.CorrectOption}
                 </div>
               </div>
 
               {q.Explanation && (
                 <div className="mt-4 p-4 bg-slate-100 rounded-lg text-sm border border-slate-200">
                   <strong className="block mb-2 text-slate-700 flex items-center gap-1">
-                    <Info size={14}/> Explanation:
+                    <Info size={14}/> {t('results.explanation')}:
                   </strong>
                   <div dangerouslySetInnerHTML={{ __html: q.Explanation }} className="leading-relaxed text-slate-600" />
 
@@ -263,7 +265,7 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
                         }))}
                         className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 transition-all"
                       >
-                        {showCn ? 'Hide Chinese explanation' : 'Show Chinese explanation'}
+                        {showCn ? t('results.hideChineseExplanation') : t('results.showChineseExplanation')}
                       </button>
 
                       {showCn && (

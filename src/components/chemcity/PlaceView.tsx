@@ -2,9 +2,12 @@
 // FILE: src/components/chemcity/PlaceView.tsx
 // ==============================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Coins } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import { ChemCard } from './ChemCard';
+import { computeActiveBonuses } from '../../lib/chemcity/bonuses';
 
 function needsAnonymousCrossOrigin(url?: string | null): boolean {
   if (!url) return false;
@@ -200,7 +203,8 @@ interface StripSlotProps {
   isLocked: boolean;
   isUnlocking: boolean;
   canAfford: boolean;
-  costLabel: string;
+  costLabel: React.ReactNode;
+  costLabelText: string;
   slimItem: { id: string; name: string; emoji: string; imageUrl?: string } | undefined;
   onEquip: () => void;
   onUnlock: () => void;
@@ -214,11 +218,13 @@ const StripSlot: React.FC<StripSlotProps> = ({
   isUnlocking,
   canAfford,
   costLabel,
+  costLabelText,
   slimItem,
   onEquip,
   onUnlock,
   onDetail,
 }) => {
+  const { t, tf } = useLanguage();
   if (isLocked) {
     return (
       <div className="flex flex-col items-center gap-1 shrink-0">
@@ -233,10 +239,12 @@ const StripSlot: React.FC<StripSlotProps> = ({
               : 'bg-slate-900/60 border-slate-700 cursor-not-allowed opacity-60'
             }
           `}
-          title={`Unlock for ${costLabel}`}
+          title={tf('chemcity.placeView.unlockForCost', { cost: costLabelText })}
         >
           <span className="text-base leading-none">{isUnlocking ? '⏳' : '🔒'}</span>
-          <span className="text-[9px] text-slate-400 leading-none">{costLabel}</span>
+          <span className="text-[9px] text-slate-400 leading-none" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {costLabel}
+          </span>
         </button>
         <span className="text-[10px] text-slate-600 max-w-[3.5rem] truncate text-center leading-tight">
           {label}
@@ -308,7 +316,7 @@ const StripSlot: React.FC<StripSlotProps> = ({
           text-slate-500 hover:text-indigo-400
           transition-all active:scale-95
         "
-        title={`Equip card to ${label}`}
+        title={tf('chemcity.placeView.equipCardTo', { label })}
       >
         <span className="text-xl font-bold leading-none">+</span>
       </button>
@@ -322,6 +330,7 @@ const StripSlot: React.FC<StripSlotProps> = ({
 // ─── Main PlaceView ───────────────────────────────────────────────────────────
 export const PlaceView: React.FC = () => {
   const { userProfile } = useAuth() as any;
+  const { t, tf } = useLanguage();
   const user = useChemCityStore((s) => s.user);
   const slimItems = useChemCityStore((s) => s.slimItems);
   const places = useChemCityStore((s) => s.places);
@@ -356,6 +365,16 @@ export const PlaceView: React.FC = () => {
   );
 
   if (!place || !user) return null;
+
+  const handleUnlockSlot = async (slotId: string) => {
+    if (unlockingSlotId) return;
+    setUnlockingSlotId(slotId);
+    try {
+      await unlockSlot(place.id, slotId);
+    } finally {
+      setUnlockingSlotId(null);
+    }
+  };
 
   const fixedLayout = FIXED_SLOT_LAYOUTS[place.id] ?? null;
 
@@ -444,32 +463,86 @@ export const PlaceView: React.FC = () => {
   const diamonds = Number(userProfile?.tokens ?? 0);
   const isPlaceUnlocked = place.unlockCost === 0 || user.unlockedPlaces.includes(place.id);
 
-  const handleUnlockSlot = async (slotId: string) => {
-    const slot = place.slots.find((s) => s.slotId === slotId);
-    if (slot?.budgetOnly) {
-      navigateToGasStationDistributor();
-      return;
-    }
+  const computedBonuses = useMemo(() => {
+    if (!user) return null;
+    if (!Array.isArray(slimItems) || slimItems.length === 0) return null;
+    const equipped = user.equipped && typeof user.equipped === 'object' ? user.equipped : {};
+    return computeActiveBonuses(equipped as any, slimItems);
+  }, [slimItems, user]);
 
-    setUnlockingSlotId(slotId);
-    try {
-      await unlockSlot(place.id, slotId);
-    } finally {
-      setUnlockingSlotId(null);
-    }
+  const effectiveBonuses = computedBonuses ?? user?.activeBonuses;
+
+  const placeNameKeyByPlaceId: Record<string, string> = {
+    school: 'school',
+    beach: 'beach',
+    lifestyle_boutique: 'boutique',
+    gas_station: 'gasStation',
+    home: 'home',
+    toilet: 'toilet',
+    kitchen: 'kitchen',
+    garden: 'garden',
+    lab: 'lab',
+  };
+
+  const getPlaceLabel = (placeId: string, fallback?: string) => {
+    const key = placeNameKeyByPlaceId[String(placeId || '')];
+    if (key) return t(`chemcity.places.${key}`);
+    return fallback ?? String(placeId || '');
+  };
+
+  const skillDescKeyByPlaceId: Record<string, string> = {
+    beach: 'beach',
+    garden: 'garden',
+    gas_station: 'gasStation',
+    kitchen: 'kitchen',
+    lab: 'lab',
+    lifestyle_boutique: 'boutique',
+    school: 'school',
+    toilet: 'toilet',
+  };
+
+  const getSkillDescription = (placeId: string, fallback?: string) => {
+    const key = skillDescKeyByPlaceId[String(placeId || '')];
+    if (key) return t(`chemcity.skillBoosts.descriptions.${key}`);
+    return fallback ?? t('common.ellipsis');
   };
 
   const skillValue = (() => {
     switch (place.id) {
-      case 'garden':     return `${user.activeBonuses.passiveBaseCoinsPerHour.toLocaleString()} 🪙/hr`;
-      case 'lab':        return `${user.activeBonuses.passiveMultiplier.toFixed(1)}× multiplier`;
-      case 'kitchen':    return `+${user.activeBonuses.quizFlatDiamondBonus} 💎 max bonus`;
-      case 'school':     return `${user.activeBonuses.quizDiamondMultiplier.toFixed(1)}× quiz diamonds`;
-      case 'beach':      return `${user.activeBonuses.quizDoubleChancePercent}% double chance`;
-      case 'toilet':     return `${user.activeBonuses.dailyLoginDiamonds} 💎 daily`;
-      case 'gas_station': return `${user.activeBonuses.extraSlotsTotal} bonus slots`;
-      case 'lifestyle_boutique': return `${user.activeBonuses.shopDiscountPercent}% store discount`;
-      default:           return '—';
+      case 'garden':
+        return tf('chemcity.placeView.skill.gardenRate', {
+          rate: effectiveBonuses.passiveBaseCoinsPerHour.toLocaleString(),
+        });
+      case 'lab':
+        return tf('chemcity.placeView.skill.labMultiplier', {
+          multiplier: effectiveBonuses.passiveMultiplier.toFixed(1),
+        });
+      case 'kitchen':
+        return tf('chemcity.placeView.skill.kitchenMaxBonus', {
+          bonus: String(effectiveBonuses.quizFlatDiamondBonus),
+        });
+      case 'school':
+        return tf('chemcity.placeView.skill.schoolQuizDiamonds', {
+          multiplier: effectiveBonuses.quizDiamondMultiplier.toFixed(1),
+        });
+      case 'beach':
+        return tf('chemcity.placeView.skill.beachDoubleChance', {
+          percent: String(effectiveBonuses.quizDoubleChancePercent),
+        });
+      case 'toilet':
+        return tf('chemcity.placeView.skill.toiletDailyDiamonds', {
+          diamonds: String(effectiveBonuses.dailyLoginDiamonds),
+        });
+      case 'gas_station':
+        return tf('chemcity.placeView.skill.gasStationBonusSlots', {
+          count: String(effectiveBonuses.extraSlotsTotal),
+        });
+      case 'lifestyle_boutique':
+        return tf('chemcity.placeView.skill.boutiqueStoreDiscount', {
+          percent: String(effectiveBonuses.shopDiscountPercent),
+        });
+      default:
+        return t('common.ellipsis');
     }
   })();
 
@@ -635,17 +708,24 @@ export const PlaceView: React.FC = () => {
                 <span className="text-2xl leading-none">{place.emoji}</span>
                 <div className="min-w-0">
                   <h2 className="text-white font-bold text-sm leading-tight truncate">
-                    {place.displayName}
+                    {getPlaceLabel(place.id, place.displayName)}
                   </h2>
                   <p className="text-slate-400 text-xs truncate leading-tight">
-                    {place.skill.description}
+                    {getSkillDescription(place.id, place.skill?.description)}
                   </p>
                 </div>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-indigo-300 font-bold text-sm leading-tight">{skillValue}</p>
+                {place.id === 'garden' ? (
+                  <p className="text-indigo-300 font-bold text-sm leading-tight" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Coins size={14} />
+                    <span>{skillValue}</span>
+                  </p>
+                ) : (
+                  <p className="text-indigo-300 font-bold text-sm leading-tight">{skillValue}</p>
+                )}
                 <p className="text-slate-500 text-xs leading-tight">
-                  {equippedCount}/{place.slots.length} cards
+                  {tf('chemcity.placeView.equippedCount', { equipped: String(equippedCount), total: String(place.slots.length) })}
                 </p>
               </div>
             </div>
@@ -658,8 +738,8 @@ export const PlaceView: React.FC = () => {
                 pointer-events-none
               ">
                 <div className="bg-slate-900/90 border border-slate-600 rounded-xl px-4 py-3 text-center">
-                  <p className="text-slate-300 text-sm font-semibold">Place Locked</p>
-                  <p className="text-slate-500 text-xs mt-1">Return to the map to unlock it.</p>
+                  <p className="text-slate-300 text-sm font-semibold">{t('chemcity.placeView.placeLockedTitle')}</p>
+                  <p className="text-slate-500 text-xs mt-1">{t('chemcity.placeView.placeLockedBody')}</p>
                 </div>
               </div>
             )}
@@ -668,7 +748,7 @@ export const PlaceView: React.FC = () => {
       ) : (
         // Fallback if no image
         <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
-          No image available
+          {t('chemcity.placeView.noImageAvailable')}
         </div>
       )}
 
@@ -692,7 +772,7 @@ export const PlaceView: React.FC = () => {
                 : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
             }`}
           >
-            {editSlotsMode ? 'Editing Slots' : 'Edit slots'}
+            {editSlotsMode ? t('chemcity.placeView.dev.editingSlots') : t('chemcity.placeView.dev.editSlots')}
           </button>
           {editSlotsMode && (
             <button
@@ -700,7 +780,7 @@ export const PlaceView: React.FC = () => {
               onClick={exportSlotCoords}
               className="text-xs font-bold rounded-lg px-3 py-1.5 border bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200 transition-colors"
             >
-              Export coords
+              {t('chemcity.placeView.dev.exportCoords')}
             </button>
           )}
           {editSlotsMode && (
@@ -751,7 +831,24 @@ export const PlaceView: React.FC = () => {
             ? '1⛽'
             : slot.unlockCurrency === 'diamonds'
               ? `${slot.unlockCost?.toLocaleString() ?? 0}💎`
-              : `${slot.unlockCost?.toLocaleString() ?? 0}🪙`;
+              : `${slot.unlockCost?.toLocaleString() ?? 0}`;
+
+          const costLabelNode = slot.budgetOnly
+            ? '1⛽'
+            : slot.unlockCurrency === 'diamonds'
+              ? `${slot.unlockCost?.toLocaleString() ?? 0}💎`
+              : (
+                  <>
+                    <Coins size={10} />
+                    <span>{costLabel}</span>
+                  </>
+                );
+
+          const costLabelText = slot.budgetOnly
+            ? '1⛽'
+            : slot.unlockCurrency === 'diamonds'
+              ? `${slot.unlockCost?.toLocaleString() ?? 0} diamonds`
+              : `${slot.unlockCost?.toLocaleString() ?? 0} coins`;
 
           const label =
             (effectiveSlotLabels[slotId]?.trim() ? effectiveSlotLabels[slotId] : slotId);
@@ -764,7 +861,8 @@ export const PlaceView: React.FC = () => {
               isLocked={isLocked}
               isUnlocking={unlockingSlotId === slotId}
               canAfford={canAfford}
-              costLabel={costLabel}
+              costLabel={costLabelNode}
+              costLabelText={costLabelText}
               slimItem={slimItem}
               onEquip={() => openCardPicker(slotId)}
               onUnlock={() => handleUnlockSlot(slotId)}

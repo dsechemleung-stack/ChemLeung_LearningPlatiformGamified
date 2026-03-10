@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Coins, Gem, CheckCircle, FlaskConical, Star, BookOpen, Zap, MapPin } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
-import { getEffectiveCoinPrice } from '../../lib/chemcity/shop';
+import { getEffectiveCoinPrice, getEffectiveDiamondPrice } from '../../lib/chemcity/shop';
 import { useAuth } from '../../contexts/AuthContext';
 
 const SLOT_LABELS: Record<string, string> = {
@@ -138,10 +138,11 @@ export const PurchaseConfirmModal: React.FC = () => {
   const rawCoin  = slim?.shopData?.coinCost;
   const rawDiamond = slim?.shopData?.diamondCost;
   const effCoin  = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
+  const effDiamond = rawDiamond != null ? getEffectiveDiamondPrice(rawDiamond, user?.activeBonuses ?? null) : null;
   const coins    = user?.currencies.coins ?? 0;
   const diamonds = Number(userProfile?.tokens ?? 0);
   const canAffordCoins    = effCoin != null && coins >= effCoin;
-  const canAffordDiamonds = rawDiamond != null && diamonds >= rawDiamond;
+  const canAffordDiamonds = effDiamond != null && diamonds >= effDiamond;
 
   const placementSlots = useMemo(() => {
     const raw = (full as any)?.validSlots ?? (slim as any)?.validSlots;
@@ -454,14 +455,33 @@ export const PurchaseConfirmModal: React.FC = () => {
                           </div>
                         )}
                         {purchaseCurrency === 'diamonds' && rawDiamond != null && (
-                          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-                            <Gem size={14} color="#67e8f9" />
-                            <span style={{ color:'#67e8f9', fontWeight:800, fontSize:16 }}>{rawDiamond.toLocaleString()}</span>
+                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                              <Gem size={14} color="#67e8f9" />
+                              <span style={{ color:'#67e8f9', fontWeight:800, fontSize:16 }}>{(effDiamond ?? rawDiamond).toLocaleString()}</span>
+                            </div>
+                            {effDiamond != null && rawDiamond != null && rawDiamond !== effDiamond && (
+                              <span style={{ color:'rgba(255,255,255,0.25)', fontSize:12, textDecoration:'line-through' }}>{rawDiamond.toLocaleString()}</span>
+                            )}
+                            {discount > 0 && (
+                              <span style={{ background:'rgba(52,211,153,0.2)', border:'1px solid rgba(52,211,153,0.4)', borderRadius:20, padding:'1px 7px', fontSize:10, color:'#34d399', fontWeight:800 }}>{discount}% OFF</span>
+                            )}
                           </div>
                         )}
                       </div>
-                      <span style={{ color:'rgba(255,255,255,0.3)', fontSize:11, fontWeight:600 }}>
-                        You have: {purchaseCurrency === 'coins' ? `${coins.toLocaleString()} 🪙` : `${diamonds.toLocaleString()} 💎`}
+                      <span style={{ color:'rgba(255,255,255,0.3)', fontSize:11, fontWeight:600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span>You have:</span>
+                        {purchaseCurrency === 'coins' ? (
+                          <>
+                            <Coins size={12} color="#fbbf24" />
+                            <span>{coins.toLocaleString()}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Gem size={12} color="#67e8f9" />
+                            <span>{diamonds.toLocaleString()}</span>
+                          </>
+                        )}
                       </span>
                     </div>
 
@@ -473,16 +493,16 @@ export const PurchaseConfirmModal: React.FC = () => {
                         Need {(effCoin - coins).toLocaleString()} more coins
                       </p>
                     )}
-                    {purchaseCurrency === 'diamonds' && rawDiamond != null && !canAffordDiamonds && (
+                    {purchaseCurrency === 'diamonds' && effDiamond != null && !canAffordDiamonds && (
                       <p style={{ color:'rgba(103,232,249,0.7)', fontSize:11, textAlign:'center', marginBottom:8 }}>
-                        Need {(rawDiamond - diamonds).toLocaleString()} more diamonds
+                        Need {(effDiamond - diamonds).toLocaleString()} more diamonds
                       </p>
                     )}
 
                     <button onClick={handlePurchase} disabled={
                       purchasing ||
                       (purchaseCurrency==='coins' && (!canAffordCoins || effCoin==null)) ||
-                      (purchaseCurrency==='diamonds' && (!canAffordDiamonds || rawDiamond==null))
+                      (purchaseCurrency==='diamonds' && (!canAffordDiamonds || effDiamond==null))
                     } style={{
                       width:'100%', padding:'13px',
                       borderRadius:12, border:'none',
@@ -501,8 +521,8 @@ export const PurchaseConfirmModal: React.FC = () => {
                         <div style={{ width:16, height:16, border:'2px solid rgba(255,255,255,0.2)', borderTopColor:'#fff', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
                       ) : purchaseCurrency==='coins' && effCoin != null ? (
                         <><Coins size={16} />Buy for {effCoin.toLocaleString()} coins</>
-                      ) : rawDiamond != null ? (
-                        <><Gem size={15} />Buy for {rawDiamond.toLocaleString()} diamonds</>
+                      ) : effDiamond != null ? (
+                        <><Gem size={15} />Buy for {effDiamond.toLocaleString()} diamonds</>
                       ) : 'Not for sale'}
                     </button>
                   </>

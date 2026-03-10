@@ -308,6 +308,14 @@ export default function App() {
                 <span className="landing-widget-chip">Open</span>
               </a>
 
+              <a className="landing-widget" href="titration.html" aria-label="Open Acid-Base Titration">
+                <div style={{ textAlign: 'left' }}>
+                  <p className="landing-widget-title">Acid–Base Titration</p>
+                  <p className="landing-widget-subtitle">Interactive titration simulation</p>
+                </div>
+                <span className="landing-widget-chip">Open</span>
+              </a>
+
               <a className="landing-widget" href="salt-page.html" aria-label="Open Salt Quiz">
                 <div style={{ textAlign: 'left' }}>
                   <p className="landing-widget-title">Salt Quiz</p>

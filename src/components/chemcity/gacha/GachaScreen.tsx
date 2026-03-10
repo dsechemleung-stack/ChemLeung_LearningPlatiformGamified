@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Coins } from 'lucide-react';
 import { useChemCityStore } from '../../../store/chemcityStore';
 import { GachaResultsModal } from './GachaResultsModal';
 import { PityBar } from './PityBar';
@@ -173,8 +174,8 @@ export function GachaScreen() {
       {/* Top bar with tickets/coins */}
       <div className="relative z-30 flex items-center justify-between gap-3 px-4 py-4">
         <div className="flex gap-3">
-          <CurrencyBadge emoji="🎟️" label="Tickets" value={(currencies as any).tickets ?? 0} />
-          <CurrencyBadge emoji="🪙" label="Coins" value={currencies.coins} />
+          <CurrencyBadge icon={<span className="text-lg">🎟️</span>} label="Tickets" value={(currencies as any).tickets ?? 0} />
+          <CurrencyBadge icon={<Coins size={18} />} label="Coins" value={currencies.coins} />
         </div>
         {effectiveBanners.length > 1 && hasBanner ? (
           <select
@@ -272,10 +273,10 @@ export function GachaScreen() {
   );
 }
 
-function CurrencyBadge({ emoji, label, value }: { emoji: string; label: string; value: number }) {
+function CurrencyBadge({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
   return (
     <div className="flex items-center gap-1.5 bg-gray-800 rounded-xl px-3 py-2">
-      <span className="text-lg">{emoji}</span>
+      <span className="text-lg" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</span>
       <div>
         <p className="text-[10px] text-gray-500 leading-none">{label}</p>
         <p className="text-sm font-bold leading-tight">{value.toLocaleString()}</p>

@@ -11,12 +11,34 @@
 //   Beach:        chance% = min(total_bonus × 5, 100)
 //   Toilet:       diamonds = 5 + (total_bonus × 2)
 //   Gas Station:  extra_slots_count = total_bonus
-//   Boutique:     discount% = min(total_bonus × 2, 50)  [capped at 50%]
+//   Boutique:     discount% = total_bonus × 10  [no cap]
 // ============================================================
 
 import type { ActiveBonuses, SlimItemDocument } from './types';
 
 // ─── Place Skill Totals ───────────────────────────────────────
+
+function slotIdToPlaceId(slotId: string): string | null {
+  const s = String(slotId || '').trim();
+  if (!s) return null;
+  if (s.startsWith('gas_station_')) return 'gas_station';
+  if (s.startsWith('lifestyle_boutique_')) return 'lifestyle_boutique';
+
+  const idx = s.indexOf('_');
+  if (idx <= 0) return null;
+  const prefix = s.slice(0, idx);
+  if (
+    prefix === 'garden' ||
+    prefix === 'lab' ||
+    prefix === 'kitchen' ||
+    prefix === 'school' ||
+    prefix === 'beach' ||
+    prefix === 'toilet'
+  ) {
+    return prefix;
+  }
+  return null;
+}
 
 /**
  * Given the equipped map { slotId → itemId } and the full slim item
@@ -29,14 +51,30 @@ function sumBonusByPlace(
   const itemMap = new Map(slimItems.map((i) => [i.id, i]));
   const totals: Record<string, number> = {};
 
-  for (const itemId of Object.values(equipped)) {
+  for (const [slotId, itemId] of Object.entries(equipped)) {
     const item = itemMap.get(itemId);
     if (!item || item.deprecated) continue;
-    const place = item.placeId;
+    const place = slotIdToPlaceId(slotId) ?? item.placeId;
     totals[place] = (totals[place] ?? 0) + item.skillContribution;
   }
 
   return totals;
+}
+
+function sumBoutiqueRarityBonus(
+  equipped: Record<string, string>,
+  slimItems: SlimItemDocument[],
+): number {
+  const itemMap = new Map(slimItems.map((i) => [i.id, i]));
+  let total = 0;
+  for (const [slotId, itemId] of Object.entries(equipped)) {
+    const place = slotIdToPlaceId(slotId);
+    if (place !== 'lifestyle_boutique') continue;
+    const item = itemMap.get(itemId);
+    if (!item || item.deprecated) continue;
+    total += Number(item.rarityValue || 0);
+  }
+  return total;
 }
 
 // ─── Individual Skill Formulas ────────────────────────────────
@@ -89,9 +127,9 @@ export function calcGasStationExtraSlots(totalBonus: number): number {
   return totalBonus;
 }
 
-/** Boutique — shop discount % (capped at 50%) */
+/** Boutique — shop discount % (each power = -10%, no cap) */
 export function calcBoutiqueDiscount(totalBonus: number): number {
-  return Math.min(totalBonus * 2, 50);
+  return totalBonus * 10;
 }
 
 // ─── Quiz Diamond Chain ───────────────────────────────────────
@@ -149,7 +187,7 @@ export function computeActiveBonuses(
   const beachBonus = totals['beach'] ?? 0;
   const toiletBonus = totals['toilet'] ?? 0;
   const gasStationBonus = totals['gas_station'] ?? 0;
-  const boutiqueBonus = totals['lifestyle_boutique'] ?? 0;
+  const boutiqueBonus = sumBoutiqueRarityBonus(equipped, slimItems);
 
   const gardenBase = calcGardenCoinsPerHour(gardenBonus);
   const labMult = calcLabMultiplier(labBonus);
@@ -177,7 +215,7 @@ export function getShopPrice(
   currency: 'coins' | 'diamonds',
   bonuses: ActiveBonuses,
 ): number {
-  if (currency === 'diamonds') return baseCost; // diamonds never discounted
-  const discount = bonuses.shopDiscountPercent / 100;
+  const discount = Number(bonuses.shopDiscountPercent || 0) / 100;
+  if (!Number.isFinite(discount) || discount <= 0) return baseCost;
   return Math.max(1, Math.floor(baseCost * (1 - discount)));
 }

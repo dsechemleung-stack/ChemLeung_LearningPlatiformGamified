@@ -283,6 +283,18 @@ function normalizeChemNotationInText(s) {
     out = out.replace(re, `${formula}(s)`);
   }
 
+  // Reorder: "27 cm³ of CH₃COOH(aq) of 0.41 mol dm⁻³" → "27 cm³ of 0.41 mol dm⁻³ CH₃COOH(aq)"
+  // (This can occur when we convert "ethanoic acid (CH₃COOH)" → "CH₃COOH(aq)" but the original template used "... (CH₃COOH) of <conc>".)
+  out = out
+    .replace(
+      /(cm\u2060?³\s+of\s+)([^\s]+\(aq\))(\s+of\s+)([0-9]+(?:\.[0-9]+)?\s+mol\s+dm\u2060?⁻³)/g,
+      '$1$4 $2'
+    )
+    .replace(
+      /(cm\u2060?³\s+of\s+)([^\s]+\(aq\))(\s+of\s+)([0-9]+(?:\.[0-9]+)?\s+mol\s*\/\s*dm\u2060?³)/g,
+      '$1$4 $2'
+    );
+
   return out;
 }
 

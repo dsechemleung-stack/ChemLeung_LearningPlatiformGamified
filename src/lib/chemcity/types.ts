@@ -171,7 +171,7 @@ export interface ActiveBonuses {
   quizDoubleChancePercent: number;      // Beach:  min(total_bonus × 5, 100)
   dailyLoginDiamonds: number;           // Toilet: 5 + (total_bonus × 2)
   extraSlotsTotal: number;              // Gas Station: total_bonus
-  shopDiscountPercent: number;          // Boutique: min(total_bonus × 2, 50) — capped at 50%
+  shopDiscountPercent: number;          // Boutique: total_bonus × 10 (each power = -10%, no cap)
 }
 
 // ─── Cache ────────────────────────────────────────────────────
@@ -383,9 +383,15 @@ export interface QuizRewardResult {
   diamondsAwarded: number;
   didDouble?: boolean;
   breakdown?: {
-    flatBonus: number;
+    baseDiamonds: number;
+    baseCoins: number;
+    kitchenFlatBonus: number;
+    afterKitchen: number;
+    schoolMultiplier: number;
     afterSchool: number;
     afterBeach: number;
+    correctAnswers: number;
+    totalQuestions: number;
   };
   ok?: boolean;
 }

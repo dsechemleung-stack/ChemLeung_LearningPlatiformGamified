@@ -26,15 +26,15 @@ export function generateC1(ramOn) {
   return {
     category: 'C',
     variant: 'C1',
-    title: 'Salt Preparation — Acid + Metal Oxide (Find Salt Mass)',
+    title: 'Acid + Insoluble Oxide — Mass of Salt Formed',
     description: 'Excess insoluble oxide with fixed volume of acid; acid is limiting',
     problemStatement:
       `Excess solid ${rxn.oxideName} (${rxn.oxideFormula}) is added to ${volAcid}.0 cm³ of ` +
-      `${rxn.acidName} of concentration ${concAcid} mol/dm³. The mixture is heated until all the ` +
+      `${concAcid} mol/dm³ ${rxn.acidName}. The mixture is heated until all the ` +
       `black solid dissolves, then filtered to remove any excess solid. ` +
       `The filtrate is evaporated to dryness.` +
       (ramInfo ? ` ${ramInfo}` : '') +
-      `\n\nCalculate the maximum mass of anhydrous ${rxn.saltName} (${rxn.salt}) that can be obtained.`,
+      `\n\nCalculate the maximum mass of the salt obtained.`,
     equation: rxn.equation,
     solution: [
       {
@@ -112,7 +112,7 @@ export function generateC2(ramOn) {
     description: 'Determine limiting reagent; calculate volume of hydrogen gas at r.t.p.',
     problemStatement:
       `A student adds ${massMetal} g of ${rxn.metalName} (${rxn.metal}) powder to ` +
-      `${volAcid} cm³ of ${rxn.acidName} (${rxn.acidFormula}) of concentration ${concAcid} mol/dm³. ` +
+      `${volAcid} cm³ of ${concAcid} mol/dm³ ${rxn.acidName} (${rxn.acidFormula}). ` +
       `The hydrogen gas evolved is collected over water at room temperature and pressure (r.t.p.).` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\n(a) Determine which reactant is the limiting reagent.` +
@@ -208,11 +208,11 @@ export function generateC3(ramOn) {
     description: 'Determine limiting reagent; calculate volume of CO₂ at r.t.p.',
     problemStatement:
       `A student adds ${massCarbonate} g of ${rxn.carbonateName} (${rxn.carbonate}) to ` +
-      `${volAcid} cm³ of ${rxn.acidName} of concentration ${concAcid} mol/dm³. ` +
+      `${volAcid} cm³ of ${concAcid} mol/dm³ ${rxn.acidName}. ` +
       `The carbon dioxide gas produced is collected at r.t.p.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\n(a) Determine the limiting reagent, showing your working clearly.` +
-      `\n(b) Calculate the volume of CO₂ produced at r.t.p. (molar volume = ${MOLAR_VOL} dm³/mol).`,
+      `\n(b) Calculate the volume of carbon dioxide gas produced at r.t.p. (molar volume = ${MOLAR_VOL} dm³/mol).`,
     equation: rxn.equation,
     solution: [
       {

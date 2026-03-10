@@ -23,7 +23,6 @@ import SRSReviewPage from './pages/SRSReviewPage';
 import { useQuizData } from './hooks/useQuizData';
 import ChemistryLoading from './components/ChemistryLoading';
 import UnifiedChemStore from './components/UnifiedChemStore';
-import TokenLog from './components/TokenLog';
 import { ChemCityRoot } from './components/chemcity/ChemCityRoot';
 import LandingPage from './pages/LandingPage';
 import VisionPage from './pages/VisionPage';
@@ -32,6 +31,7 @@ import GachaPage from './pages/GachaPage';
 import InventoryPage from './pages/InventoryPage';
 import CalculatorPage from './pages/CalculatorPage';
 import VirtualLabHub from './pages/VirtualLabHub';
+import { QuizRewardModal } from './components/chemcity/QuizRewardModal';
 
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
 
@@ -258,16 +258,6 @@ function AppContent() {
             }
           />
 
-          {/* Token Log - FIXED: Now inside Routes */}
-          <Route
-            path="/token-log"
-            element={
-              <PrivateRoute>
-                <TokenLog />
-              </PrivateRoute>
-            }
-          />
-
           {/* Firebase Test Page - for debugging */}
           <Route
             path="/test-firebase"
@@ -304,6 +294,7 @@ function AppShell() {
   return (
     <div className={useNoShell ? 'min-h-screen' : 'min-h-screen bg-gray-50'}>
       <AppContent />
+      <QuizRewardModal />
     </div>
   );
 }

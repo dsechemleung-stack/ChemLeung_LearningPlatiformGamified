@@ -4,9 +4,19 @@ export function getEffectiveCoinPrice(
   rawCoinPrice: number,
   bonuses: ActiveBonuses | null | undefined,
 ): number {
-  const discount = bonuses?.shopDiscountPercent ?? 0;
-  if (discount <= 0) return rawCoinPrice;
+  const discount = Number(bonuses?.shopDiscountPercent ?? 0);
+  if (!Number.isFinite(discount) || discount <= 0) return rawCoinPrice;
   const discounted = rawCoinPrice * (1 - discount / 100);
+  return Math.max(1, Math.floor(discounted));
+}
+
+export function getEffectiveDiamondPrice(
+  rawDiamondPrice: number,
+  bonuses: ActiveBonuses | null | undefined,
+): number {
+  const discount = Number(bonuses?.shopDiscountPercent ?? 0);
+  if (!Number.isFinite(discount) || discount <= 0) return rawDiamondPrice;
+  const discounted = rawDiamondPrice * (1 - discount / 100);
   return Math.max(1, Math.floor(discounted));
 }
 
@@ -20,7 +30,8 @@ export function getDisplayPrice(
     if (rawCoinPrice == null) return null;
     return getEffectiveCoinPrice(rawCoinPrice, bonuses);
   }
-  return rawDiamondPrice ?? null;
+  if (rawDiamondPrice == null) return null;
+  return getEffectiveDiamondPrice(rawDiamondPrice, bonuses);
 }
 
 export function canAffordItem(
@@ -36,5 +47,5 @@ export function canAffordItem(
     return userCoins >= getEffectiveCoinPrice(rawCoinPrice, bonuses);
   }
   if (rawDiamondPrice == null) return false;
-  return userDiamonds >= rawDiamondPrice;
+  return userDiamonds >= getEffectiveDiamondPrice(rawDiamondPrice, bonuses);
 }

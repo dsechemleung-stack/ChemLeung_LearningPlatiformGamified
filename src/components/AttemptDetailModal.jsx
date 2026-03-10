@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { X, CheckCircle2, XCircle, Clock, Info, Share2, BarChart3, MessageSquare } from 'lucide-react';
 import ShareableReport from './ShareableReport';
 import QuestionForum from './QuestionForum';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function AttemptDetailModal({ attempt, onClose }) {
   const [showShareReport, setShowShareReport] = useState(false);
   const [forumQuestion, setForumQuestion] = useState(null);
+
+  const { t, tf, isEnglish } = useLanguage();
 
   const { questions, answers, questionTimes, correctAnswers, totalQuestions, percentage, topics, timestamp, timeSpent } = attempt;
 
@@ -13,17 +16,17 @@ export default function AttemptDetailModal({ attempt, onClose }) {
   const hasFullData = questions && questions.length > 0 && answers;
 
   const formatTime = (ms) => {
-    if (!ms) return 'N/A';
+    if (!ms) return t('common.notAvailable');
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
     const hrs = Math.floor(minutes / 60);
-    if (hrs > 0) return `${hrs}h ${minutes % 60}m ${seconds % 60}s`;
-    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-    return `${seconds}s`;
+    if (hrs > 0) return tf('history.timeHrsMins', { h: hrs, m: minutes % 60 });
+    if (minutes > 0) return tf('history.timeMinsSecs', { m: minutes, s: seconds % 60 });
+    return tf('history.timeSecs', { s: seconds });
   };
 
   const formatDate = (iso) => {
-    return new Date(iso).toLocaleDateString('en-GB', {
+    return new Date(iso).toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK', {
       timeZone: 'Asia/Hong_Kong',
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
@@ -61,7 +64,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
           {/* Header */}
           <div className="sticky top-0 bg-white border-b-2 border-slate-200 p-5 rounded-t-2xl z-10 flex justify-between items-center">
             <div>
-              <h2 className="text-2xl font-black text-slate-800">Attempt Detail</h2>
+              <h2 className="text-2xl font-black text-slate-800">{t('history.attemptDetailTitle')}</h2>
               <p className="text-sm text-slate-500 mt-0.5">{formatDate(timestamp)}</p>
             </div>
             <div className="flex items-center gap-2">
@@ -71,7 +74,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
                   className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition-all"
                 >
                   <Share2 size={16} />
-                  Share
+                  {t('history.share')}
                 </button>
               )}
               <button
@@ -87,13 +90,13 @@ export default function AttemptDetailModal({ attempt, onClose }) {
             {/* Score Banner */}
             <div className={`bg-gradient-to-r ${scoreColor} rounded-2xl p-8 text-white text-center`}>
               <div className="text-6xl font-black mb-1">{percentage}%</div>
-              <div className="text-xl opacity-90">{correctAnswers} / {totalQuestions} correct</div>
+              <div className="text-xl opacity-90">{tf('history.correctOutOfTotal', { correct: correctAnswers, total: totalQuestions })}</div>
               {timeSpent && (
                 <div className="mt-3 flex items-center justify-center gap-2 text-white/80 text-sm">
                   <Clock size={16} />
-                  <span>Total time: {formatTime(timeSpent)}</span>
+                  <span>{t('history.totalTimeLabel')}: {formatTime(timeSpent)}</span>
                   <span>·</span>
-                  <span>Avg: {formatTime(timeSpent / totalQuestions)} / question</span>
+                  <span>{t('history.avgTimeLabel')}: {formatTime(timeSpent / totalQuestions)} {t('history.perQuestionUnit')}</span>
                 </div>
               )}
               {topics && topics.length > 0 && (
@@ -110,7 +113,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-white p-4 rounded-xl border-2 border-slate-200">
                   <h3 className="flex items-center gap-2 font-bold text-emerald-600 mb-3">
-                    <CheckCircle2 size={18} /> Strengths
+                    <CheckCircle2 size={18} /> {t('history.strengths')}
                   </h3>
                   {strengths.length > 0
                     ? strengths.map(s => (
@@ -119,11 +122,11 @@ export default function AttemptDetailModal({ attempt, onClose }) {
                           <span className="font-bold text-emerald-700">{s.percent}%</span>
                         </div>
                       ))
-                    : <p className="text-sm text-slate-400 italic">Keep practicing!</p>}
+                    : <p className="text-sm text-slate-400 italic">{t('history.keepPracticing')}</p>}
                 </div>
                 <div className="bg-white p-4 rounded-xl border-2 border-slate-200">
                   <h3 className="flex items-center gap-2 font-bold text-amber-600 mb-3">
-                    <BarChart3 size={18} /> Needs Focus
+                    <BarChart3 size={18} /> {t('history.needsFocus')}
                   </h3>
                   {weaknesses.length > 0
                     ? weaknesses.map(w => (
@@ -132,7 +135,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
                           <span className="font-bold text-amber-700">{w.percent}%</span>
                         </div>
                       ))
-                    : <p className="text-sm text-slate-400 italic">No major weaknesses!</p>}
+                    : <p className="text-sm text-slate-400 italic">{t('history.noMajorWeaknesses')}</p>}
                 </div>
               </div>
             )}
@@ -140,7 +143,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
             {/* No full data notice */}
             {!hasFullData && (
               <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 text-amber-800 text-sm font-semibold">
-                ℹ️ Full question data is only available for attempts made after this feature was added.
+                {t('history.fullDataNotice')}
               </div>
             )}
 
@@ -148,7 +151,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
             {hasFullData && (
               <div className="space-y-4">
                 <h3 className="text-xl font-bold flex items-center gap-2">
-                  <Info className="text-lab-blue" /> Detailed Review
+                  <Info className="text-lab-blue" /> {t('history.detailedReview')}
                 </h3>
                 {questions.map((q, index) => {
                   const isCorrect = answers[q.ID] === q.CorrectOption;
@@ -180,7 +183,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
                             onClick={() => setForumQuestion(q)}
                             className="flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-lg text-xs font-bold hover:bg-purple-200 transition-all"
                           >
-                            <MessageSquare size={12} /> Discuss
+                            <MessageSquare size={12} /> {t('history.discuss')}
                           </button>
                           {isCorrect
                             ? <CheckCircle2 className="text-emerald-500" size={22} />
@@ -215,7 +218,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
                       />
                       {q.Pictureurl && (
                         <div className="mb-3 flex justify-center">
-                          <img src={q.Pictureurl} alt="Diagram" className="max-h-[180px] object-contain rounded-lg border border-slate-200" />
+                          <img src={q.Pictureurl} alt={t('history.diagramAlt')} className="max-h-[180px] object-contain rounded-lg border border-slate-200" />
                         </div>
                       )}
 
@@ -251,7 +254,7 @@ export default function AttemptDetailModal({ attempt, onClose }) {
                       {q.Explanation && (
                         <div className="p-3 bg-slate-50 rounded-lg text-sm border border-slate-200">
                           <strong className="block mb-1 text-slate-700 flex items-center gap-1">
-                            <Info size={13} /> Explanation:
+                            <Info size={13} /> {t('history.explanation')}
                           </strong>
                           <div dangerouslySetInnerHTML={{ __html: q.Explanation }} className="text-slate-600 leading-relaxed" />
                         </div>

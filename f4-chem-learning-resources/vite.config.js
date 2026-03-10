@@ -9,6 +9,7 @@ export default defineConfig({
         main: 'index.html',
         chemicalBonding: 'chemical-bonding.html',
         neutralizationExothermic: 'neutralization-exothermic.html',
+        titration: 'titration.html',
         saltQuiz: 'salt-page.html',
       },
     },

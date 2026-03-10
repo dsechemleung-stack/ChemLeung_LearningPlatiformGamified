@@ -4,10 +4,12 @@ import { useLanguage } from '../contexts/LanguageContext';
 import QuestionCard from '../components/QuestionCard';
 import { ChevronLeft, ChevronRight, Send, Timer, FlaskConical, Flag, Clock, X, Home, Menu } from 'lucide-react';
 import { quizStorage } from '../utils/quizStorage';
+import { useChemCityStore } from '../store/chemcityStore';
 
 export default function QuizPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const awardQuizReward = useChemCityStore((s) => s.awardQuizReward);
   const swipeStartRef = useRef(null);
   
   const [questions] = useState(() => quizStorage.getSelectedQuestions());
@@ -235,6 +237,48 @@ export default function QuizPage() {
     recordQuestionTime();
     quizStorage.saveUserAnswers(answers);
     quizStorage.saveQuestionTimes(questionTimes);
+
+    // Trigger reward popup ASAP after finishing quiz.
+    // If the "Add to SRS?" prompt will show on ResultsPage (ask + has mistakes), defer to ResultsPage.
+    try {
+      const mode = localStorage.getItem('quiz_mode') || 'practice';
+      const mistakesToSrsMode = localStorage.getItem('practice_mistakes_to_srs_mode') || 'ask';
+
+      const totalQuestions = questions.length;
+      const correctAnswers = questions.reduce((acc, q) => acc + (answers[q.ID] === q.CorrectOption ? 1 : 0), 0);
+      const percentage = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+      const wrongCount = totalQuestions - correctAnswers;
+
+      const shouldDeferForSrsPrompt =
+        mode !== 'spaced-repetition' && mistakesToSrsMode === 'ask' && wrongCount > 0;
+
+      if (!shouldDeferForSrsPrompt) {
+        const topics = [...new Set(questions.map((q) => q.Topic))].filter(Boolean);
+        const perQuestionDiamonds = Math.floor(Number(correctAnswers || 0) / 2);
+        const completionDiamonds =
+          Number(totalQuestions || 0) >= 10
+            ? percentage === 100
+              ? 20
+              : percentage >= 80
+                ? 15
+                : percentage >= 50
+                  ? 10
+                  : 0
+            : 0;
+        const baseDiamonds = Math.max(0, perQuestionDiamonds + completionDiamonds);
+
+        // Fire-and-forget: popup is global; do not block navigation.
+        awardQuizReward({
+          baseCoins: correctAnswers * 10,
+          baseDiamonds,
+          topicId: topics?.[0],
+          correctAnswers,
+          totalQuestions,
+        }).catch(() => {});
+      }
+    } catch (e) {
+      // ignore
+    }
     navigate('/results');
   };
 

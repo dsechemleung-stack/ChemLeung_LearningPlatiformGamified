@@ -61,7 +61,7 @@ export function generateA2(ramOn) {
       `A student pipetted ${vinVol}.0 cm³ of vinegar (containing ethanoic acid, CH₃COOH) ` +
       `into a ${flaskVol}.0 cm³ volumetric flask and made the solution up to the mark with distilled water. ` +
       `A ${aliquot}.0 cm³ aliquot of this diluted solution was pipetted into a conical flask and ` +
-      `titrated with sodium hydroxide (NaOH) of concentration ${concNaOH} mol/dm³ using ` +
+      `titrated with ${concNaOH} mol/dm³ sodium hydroxide (NaOH) using ` +
       `phenolphthalein indicator. The average titre was ${titre} cm³. ` +
       `The pH of the original vinegar was measured as ${pH_measured}.` +
       (ramInfo ? ` ${ramInfo}` : '') +
@@ -164,7 +164,7 @@ export function generateA4(ramOn) {
       `A student dissolved ${massSample} g of an unknown dibasic acid (H₂X) in distilled water ` +
       `and made the solution up to ${flaskVol}.0 cm³ in a volumetric flask. ` +
       `A ${aliquot}.0 cm³ portion of this solution was titrated with sodium hydroxide (NaOH) ` +
-      `of concentration ${concNaOH} mol/dm³ using phenolphthalein indicator. ` +
+      `of ${concNaOH} mol/dm³ using phenolphthalein indicator. ` +
       `The average titre was ${titre} cm³.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\nCalculate the molar mass of the unknown dibasic acid.`,
@@ -254,12 +254,12 @@ export function generateB3(ramOn) {
     description: 'Limestone dissolved in excess HCl; excess titrated with NaOH',
     problemStatement:
       `A ${massSample} g sample of limestone was reacted with ${volExcessHCl}.0 cm³ of ` +
-      `hydrochloric acid (HCl) of concentration ${concHCl} mol/dm³ (in excess). ` +
+      `${concHCl} mol/dm³ hydrochloric acid (HCl) (in excess). ` +
       `After the reaction was complete and CO₂ had been expelled by heating, ` +
       `the mixture was filtered and the filtrate transferred to a ${flaskVol}.0 cm³ volumetric flask ` +
       `and made up to the mark. ` +
       `A ${aliquot}.0 cm³ portion of this solution required ${titre} cm³ of NaOH ` +
-      `of concentration ${concNaOH} mol/dm³ for neutralisation using phenolphthalein indicator.` +
+      `of ${concNaOH} mol/dm³ for neutralisation using phenolphthalein indicator.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\nCalculate the percentage by mass of calcium carbonate (CaCO₃) in the limestone.`,
     equation:
@@ -353,7 +353,7 @@ export function generateC4(ramOn) {
     description: 'Both reactant quantities given; identify limiting reagent and mass of salt',
     problemStatement:
       `A student adds ${massOxide} g of ${rxn.oxideName} (${rxn.oxideFormula}) ` +
-      `to ${volAcid} cm³ of ${rxn.acidName} of concentration ${concAcid} mol/dm³. ` +
+      `to ${volAcid} cm³ of ${concAcid} mol/dm³ ${rxn.acidName}. ` +
       `The mixture is heated until no further change is observed.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\n(a) Determine the limiting reagent, showing your working clearly.` +
@@ -669,7 +669,7 @@ export function generateE4(ramOn) {
     description: 'Calculate mass of displaced metal; explain colour change; write ionic equation',
     problemStatement:
       `Excess ${rxn.activeMetalName} (${rxn.activeMetal}) powder is stirred into ${vol} cm³ of ` +
-      `${rxn.ionSource} solution of concentration ${conc} mol/dm³ ` +
+      `${conc} mol/dm³ ${rxn.ionSource} solution ` +
       `until the colour of the solution disappears completely.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\n(a) Write the ionic equation for this reaction.` +
@@ -756,7 +756,7 @@ export function generateF3(ramOn) {
       `A student dissolved ${massSample} g of hydrated iron(II) sulphate (FeSO₄·xH₂O) ` +
       `in dilute sulphuric acid and made the solution up to ${flaskVol}.0 cm³. ` +
       `A ${aliquot}.0 cm³ aliquot of this solution required ${titre} cm³ of acidified ` +
-      `potassium manganate(VII) (KMnO₄) of concentration ${concKMnO4} mol/dm³ for complete reaction. ` +
+      `potassium manganate(VII) (KMnO₄) of ${concKMnO4} mol/dm³ for complete reaction. ` +
       `The endpoint was detected when a permanent pale pink colour persisted.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\nDetermine the value of x in FeSO₄·xH₂O.`,
@@ -847,15 +847,15 @@ export function generateF5(ramOn) {
       `A sample of hydrogen peroxide solution was analysed by pipetting ${volSample}.0 cm³ into ` +
       `a ${flaskVol}.0 cm³ volumetric flask and making up to the mark with distilled water. ` +
       `A ${aliquot}.0 cm³ aliquot of the diluted solution was acidified with dilute sulphuric acid ` +
-      `and titrated with potassium manganate(VII) (KMnO₄) of concentration ${concKMnO4} mol/dm³. ` +
-      `The average titre was ${titre} cm³.` +
+      `and titrated with ${concKMnO4} mol/dm³ potassium manganate(VII) (KMnO₄). ` +
+      `The average titre was ${randTitre()} cm³.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\nCalculate the original concentration of H₂O₂ in mol/dm³.`,
     equation: '2MnO₄⁻(aq) + 5H₂O₂(aq) + 6H⁺(aq) → 2Mn²⁺(aq) + 5O₂(g) + 8H₂O(l)',
     solution: [
       {
         step: 1,
-        title: 'Write ionic equation; identify mole ratio KMnO₄ : H₂O₂ = 2 : 5',
+        title: 'Write equation; identify mole ratio KMnO₄ : H₂O₂ = 2 : 5',
         content:
           `2MnO₄⁻(aq) + 5H₂O₂(aq) + 6H⁺(aq) → 2Mn²⁺(aq) + 5O₂(g) + 8H₂O(l)\n` +
           `Mole ratio KMnO₄ : H₂O₂ = 2 : 5`,
@@ -864,7 +864,7 @@ export function generateF5(ramOn) {
         step: 2,
         title: 'Moles of KMnO₄ used',
         content:
-          `n(KMnO₄) = ${concKMnO4} × ${sf(titre / 1000, 4)} = ${sfStr(molKMnO4, 4)} mol`,
+          `n(KMnO₄) = ${concKMnO4} × ${sf(randTitre() / 1000, 4)} = ${sfStr(molKMnO4, 4)} mol`,
       },
       {
         step: 3,
@@ -925,7 +925,7 @@ export function generateF6(ramOn) {
     problemStatement:
       `To determine the concentration of an iron(II) sulphate solution, ${volSample} cm³ ` +
       `of the solution was acidified with dilute sulphuric acid and titrated with ` +
-      `acidified potassium dichromate(VI) (K₂Cr₂O₇) of concentration ${concK2Cr2O7} mol/dm³. ` +
+      `${concK2Cr2O7} mol/dm³ acidified potassium dichromate(VI) (K₂Cr₂O₇). ` +
       `The average titre was ${titre} cm³. ` +
       `The endpoint was detected when the solution changed from orange to green.` +
       (ramInfo ? ` ${ramInfo}` : '') +
@@ -958,7 +958,7 @@ export function generateF6(ramOn) {
         step: 4,
         title: 'Concentration of Fe²⁺',
         content:
-          `[Fe²⁺] = ${sfStr(molFe2, 4)} / ${sf(volSample / 1000, 4)} = ${sfStr(concFe2, 3)} mol/dm³\n\n` +
+          `[Fe²⁺] = ${sfStr(molFe2, 4)} / ${sf(volSample / 1000, 4)}\n\n` +
           `In g/dm³: M(Fe) = ${RAM.Fe} g/mol\n` +
           `Concentration = ${sfStr(concFe2, 3)} × ${RAM.Fe} = ${sfStr(concFe2_g, 3)} g/dm³`,
       },
@@ -976,21 +976,28 @@ export function generateF6(ramOn) {
 }
 
 // ============================================================
-// G3 — Acid Concentration from H₂ Gas Volume
+// G4 — Limiting Reagent: Metal + Acid (Combined)
 // ============================================================
 export function generateG3(ramOn) {
   const METAL_ACID_REACTIONS = [
     { metal: 'Mg', metalName: 'magnesium', M_metal: RAM.Mg, acidFormula: 'HCl', acidName: 'hydrochloric acid', metalRatio: 1, acidRatio: 2, H2Ratio: 1, equation: 'Mg(s) + 2HCl(aq) → MgCl₂(aq) + H₂(g)', ramElems: 'H = 1.0, Mg = 24.3, Cl = 35.5' },
     { metal: 'Zn', metalName: 'zinc', M_metal: RAM.Zn, acidFormula: 'HCl', acidName: 'hydrochloric acid', metalRatio: 1, acidRatio: 2, H2Ratio: 1, equation: 'Zn(s) + 2HCl(aq) → ZnCl₂(aq) + H₂(g)', ramElems: 'H = 1.0, Cl = 35.5, Zn = 65.4' },
-    { metal: 'Fe', metalName: 'iron', M_metal: RAM.Fe, acidFormula: 'HCl', acidName: 'hydrochloric acid', metalRatio: 1, acidRatio: 2, H2Ratio: 1, equation: 'Fe(s) + 2HCl(aq) → FeCl₂(aq) + H₂(g)', ramElems: 'H = 1.0, Cl = 35.5, Fe = 55.8' },
-    { metal: 'Mg', metalName: 'magnesium', M_metal: RAM.Mg, acidFormula: 'H₂SO₄', acidName: 'dilute sulphuric acid', metalRatio: 1, acidRatio: 1, H2Ratio: 1, equation: 'Mg(s) + H₂SO₄(aq) → MgSO₄(aq) + H₂(g)', ramElems: 'H = 1.0, O = 16.0, Mg = 24.3, S = 32.1' },
+    { metal: 'Zn', metalName: 'zinc', M_metal: RAM.Zn, acidFormula: 'H₂SO₄', acidName: 'dilute sulphuric acid', metalRatio: 1, acidRatio: 1, H2Ratio: 1, equation: 'Zn(s) + H₂SO₄(aq) → ZnSO₄(aq) + H₂(g)', ramElems: 'H = 1.0, O = 16.0, S = 32.1, Zn = 65.4' },
   ];
+
   const rxn = randChoice(METAL_ACID_REACTIONS);
+
   const volAcid = parseFloat(sfStr(randAliquot(), 4));
-  const concActual = randConc(0.10, 2.00);
-  const molAcid = concActual * (volAcid / 1000);
+  const concAcid = randConc(0.10, 2.00);
+
+  // Choose a realistic excess mass of metal to ensure acid is limiting
+  const molAcid = concAcid * (volAcid / 1000);
+  const molMetalNeeded = molAcid * (rxn.metalRatio / rxn.acidRatio);
+  const massMetal = parseFloat(sfStr(Math.max(randMass(0.20, 4.00), molMetalNeeded * rxn.M_metal * 1.6 + 0.2), 4));
+
   const molH2 = molAcid * (rxn.H2Ratio / rxn.acidRatio);
-  const volH2_cm3 = sfStr(molH2 * MOLAR_VOL * 1000, 3);
+  const volH2_dm3 = molH2 * MOLAR_VOL;
+  const volH2_cm3 = volH2_dm3 * 1000;
 
   const ramInfo = ramOn
     ? `(Relative atomic masses: ${rxn.ramElems})`
@@ -1000,55 +1007,56 @@ export function generateG3(ramOn) {
     category: 'G',
     variant: 'G3',
     title: 'Metal + Acid — Find Acid Concentration from H₂ Volume',
-    description: 'Excess metal reacts with acid of unknown concentration; [acid] found from H₂ volume',
+    description: 'Excess metal reacts with a fixed volume of acid; use collected H₂ volume at r.t.p. to find acid concentration',
     problemStatement:
-      `Excess ${rxn.metalName} (${rxn.metal}) is added to ${volAcid} cm³ of ${rxn.acidName} ` +
-      `of unknown concentration. The hydrogen gas produced occupies ${volH2_cm3} cm³ at r.t.p.` +
+      `Excess ${rxn.metalName} (${rxn.metal}) is added to ${volAcid} cm³ of a solution of ${rxn.acidName}. ` +
+      `The mass of ${rxn.metalName} used is ${massMetal} g. ` +
+      `The volume of hydrogen gas collected at r.t.p. is ${sfStr(volH2_cm3, 3)} cm³. ` +
       (ramInfo ? ` ${ramInfo}` : '') +
-      `\n\nCalculate the original concentration of the ${rxn.acidName}.`,
+      `\n\nCalculate the concentration of ${rxn.acidName} in mol/dm³. (Molar volume at r.t.p. = ${MOLAR_VOL} dm³/mol)`,
     equation: rxn.equation,
     solution: [
       {
         step: 1,
-        title: 'Write equation; acid is the limiting reagent (metal is excess)',
+        title: 'Write balanced equation and identify the limiting reagent',
         content:
           `${rxn.equation}\n` +
-          `Since ${rxn.metal} is in excess, ALL the acid reacts.\n` +
-          `Mole ratio ${rxn.acidFormula} : H₂ = ${rxn.acidRatio} : ${rxn.H2Ratio}`,
+          `${rxn.metalName} is in excess → ${rxn.acidName} is the limiting reagent.`,
       },
       {
         step: 2,
         title: 'Calculate moles of H₂ collected',
         content:
-          `n(H₂) = V / molar volume = ${sf(parseFloat(volH2_cm3) / 1000, 4)} dm³ / ${MOLAR_VOL}\n` +
+          `V(H₂) = ${sfStr(volH2_cm3, 3)} cm³ = ${sf(volH2_cm3 / 1000, 4)} dm³\n` +
+          `n(H₂) = V / molar volume = ${sf(volH2_cm3 / 1000, 4)} / ${MOLAR_VOL}\n` +
           `= ${sfStr(molH2, 4)} mol`,
       },
       {
         step: 3,
-        title: `Calculate moles of ${rxn.acidFormula}`,
+        title: `Calculate moles of ${rxn.acidFormula} reacted`,
         content:
-          `Ratio ${rxn.acidFormula} : H₂ = ${rxn.acidRatio} : ${rxn.H2Ratio}\n` +
-          `n(${rxn.acidFormula}) = ${sfStr(molH2, 4)} × (${rxn.acidRatio}/${rxn.H2Ratio}) = ${sfStr(molAcid, 4)} mol`,
+          `From the equation, ratio ${rxn.acidFormula} : H₂ = ${rxn.acidRatio} : ${rxn.H2Ratio}\n` +
+          `n(${rxn.acidFormula}) = ${sfStr(molH2, 4)} × (${rxn.acidRatio}/${rxn.H2Ratio})\n` +
+          `= ${sfStr(molAcid, 4)} mol`,
       },
       {
         step: 4,
         title: 'Calculate concentration of acid',
         content:
-          `[${rxn.acidFormula}] = ${sfStr(molAcid, 4)} / ${sf(volAcid / 1000, 4)}\n` +
-          `= ${sfStr(concActual, 3)} mol/dm³`,
+          `Volume of acid = ${volAcid} cm³ = ${sf(volAcid / 1000, 4)} dm³\n` +
+          `Concentration = n / V = ${sfStr(molAcid, 4)} / ${sf(volAcid / 1000, 4)}\n` +
+          `= ${sfStr(concAcid, 3)} mol/dm³`,
       },
     ],
-    finalAnswer: `Concentration of ${rxn.acidName} = ${sfStr(concActual, 3)} mol/dm³`,
+    finalAnswer: `Concentration of ${rxn.acidName} = ${sfStr(concAcid, 3)} mol/dm³`,
     notes: [
-      'Metal in excess guarantees all acid reacts, making the acid the limiting reagent and the basis for calculation.',
+      `Molar volume at r.t.p. = ${MOLAR_VOL} dm³/mol (HKDSE convention).`,
+      'Excess metal ensures all the acid is completely used up, so moles of acid can be found from the amount of H₂ formed.',
     ],
     ramInfo,
   };
 }
 
-// ============================================================
-// G4 — Limiting Reagent: Metal + Acid (Combined)
-// ============================================================
 export function generateG4(ramOn) {
   const METAL_ACID_REACTIONS = [
     { metal: 'Mg', metalName: 'magnesium', M_metal: RAM.Mg, acidFormula: 'HCl', acidName: 'hydrochloric acid', metalRatio: 1, acidRatio: 2, H2Ratio: 1, equation: 'Mg(s) + 2HCl(aq) → MgCl₂(aq) + H₂(g)', ramElems: 'H = 1.0, Mg = 24.3, Cl = 35.5' },
@@ -1082,7 +1090,7 @@ export function generateG4(ramOn) {
     description: 'Both reactant amounts given; identify limiting reagent and H₂ volume',
     problemStatement:
       `A student adds ${massMetal} g of ${rxn.metalName} (${rxn.metal}) powder to ` +
-      `${volAcid} cm³ of ${rxn.acidName} of concentration ${concAcid} mol/dm³. ` +
+      `${volAcid} cm³ of ${concAcid} mol/dm³ ${rxn.acidName}. ` +
       `The hydrogen gas evolved is collected over water at r.t.p.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\n(a) Determine the limiting reagent, showing your working.` +

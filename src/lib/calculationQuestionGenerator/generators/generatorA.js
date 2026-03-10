@@ -39,8 +39,8 @@ export function generateA1(ramOn) {
     title: 'Acid-Base Titration — Find Concentration of Base',
     description: 'Direct titration: acid (known) titrated against base (unknown)',
     problemStatement:
-      `In a titration experiment, a student finds that ${titre} cm³ of ${pair.acidName} ` +
-      `(${pair.acidFormula}) of concentration ${concAcid} mol/dm³ is required to completely ` +
+      `In a titration experiment, a student finds that ${titre} cm³ of ${concAcid} mol/dm³ ${pair.acidName} ` +
+      `(${pair.acidFormula}) is required to completely ` +
       `neutralise ${volBase} cm³ of a solution containing ${pair.baseName} (${pair.baseFormula}) ` +
       `using ${indicator} as indicator.` +
       (ramInfo ? ` ${ramInfo}` : '') +
@@ -131,9 +131,8 @@ export function generateA3(ramOn) {
     title: 'Acid-Base Titration — Mass of Salt Obtained',
     description: 'Calculate mass of dry salt after evaporation to dryness',
     problemStatement:
-      `A student titrated ${volAcid} cm³ of ${pair.acidName} (${pair.acidFormula}) ` +
-      `of concentration ${concAcid} mol/dm³ with ${pair.baseName} (${pair.baseFormula}) ` +
-      `of concentration ${concBase} mol/dm³. At the endpoint (using ${indicator} indicator), ` +
+      `A student titrated ${volAcid} cm³ of ${concAcid} mol/dm³ ${pair.acidName} (${pair.acidFormula}) ` +
+      `with ${concBase} mol/dm³ ${pair.baseName} (${pair.baseFormula}). At the endpoint (using ${indicator} indicator), ` +
       `the solution was evaporated to dryness.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\n(a) Calculate the volume of ${pair.baseName} solution required to reach the endpoint.` +
@@ -234,8 +233,8 @@ export function generateA5(ramOn) {
     problemStatement:
       `A student dissolved ${sfStr(massSample, 4)} g of hydrated sodium carbonate (Na₂CO₃·xH₂O) ` +
       `in water and made the solution up to ${flaskVol}.0 cm³ in a volumetric flask. ` +
-      `A ${aliquot}.0 cm³ portion of this solution required ${titre} cm³ of hydrochloric acid ` +
-      `of concentration ${concHCl} mol/dm³ for neutralisation using methyl orange indicator.` +
+      `A ${aliquot}.0 cm³ portion of this solution required ${titre} cm³ of ${concHCl} mol/dm³ hydrochloric acid ` +
+      `for neutralisation using methyl orange indicator.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\nDetermine the value of x in Na₂CO₃·xH₂O.`,
     equation: 'Na₂CO₃(aq) + 2HCl(aq) → 2NaCl(aq) + H₂O(l) + CO₂(g)',

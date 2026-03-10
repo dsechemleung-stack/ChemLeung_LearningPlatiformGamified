@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acid-Base Titration — NaOH + HCl</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Playfair+Display:ital,wght@0,700;1,400&family=Quicksand:wght@500;600;700&display=swap');
+
+  :root {
+    --bg: #0a0d14;
+    --panel: #111520;
+    --border: #1e2535;
+    --text: #c8d4e8;
+    --dim: #5a6a85;
+    --acid: #e8453c;
+    --neutral: #f5a623;
+    --base: #f5e642;
+    --eq: #4af5a0;
+    --glow: rgba(74, 245, 160, 0.15);
+    --swirlDur: 650ms;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+    overflow-x: hidden;
+  }
+
+  h1 {
+    font-family: 'Quicksand', system-ui, -apple-system, sans-serif;
+    font-size: clamp(1.4rem, 3vw, 2rem);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #e8f0ff;
+    margin-bottom: 4px;
+    text-align: center;
+  }
+  .subtitle {
+    font-size: 0.72rem;
+    color: var(--dim);
+    letter-spacing: 0.03em;
+    margin-bottom: 28px;
+    text-align: center;
+  }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 20px;
+    width: 100%;
+    max-width: 960px;
+  }
+
+  /* ── Lab apparatus ── */
+  .lab-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 16px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+  }
+
+  .apparatus-wrap {
+    position: relative;
+    width: 200px;
+    height: 380px;
+  }
+
+  /* Burette */
+  .burette-body {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 0;
+    width: 28px;
+    height: 200px;
+    background: linear-gradient(90deg, rgba(180,220,255,0.15) 0%, rgba(180,220,255,0.05) 40%, rgba(180,220,255,0.18) 100%);
+    border: 1.5px solid rgba(160,200,255,0.35);
+    border-radius: 4px 4px 2px 2px;
+    overflow: hidden;
+  }
+  .burette-liquid {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.22),
+      rgba(220, 235, 255, 0.12)
+    );
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+    transition: height 0.4s ease;
+    border-radius: 0 0 2px 2px;
+  }
+  .burette-tip {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 200px;
+    width: 0;
+    height: 0;
+    border-left: 14px solid transparent;
+    border-right: 14px solid transparent;
+    border-top: 22px solid rgba(160,200,255,0.35);
+  }
+  .burette-tip::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 22px;
+    width: 5px;
+    height: 30px;
+    background: rgba(160,200,255,0.3);
+    border-radius: 0 0 3px 3px;
+  }
+  .burette-label {
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    color: rgba(220, 235, 255, 0.85);
+    white-space: nowrap;
+    text-transform: uppercase;
+  }
+
+  /* Drop animation */
+  .drop {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 7px;
+    border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+    background: rgba(235, 245, 255, 0.78);
+    box-shadow: 0 0 8px rgba(210, 230, 255, 0.35);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .drop.falling {
+    animation: dropFall 0.55s ease-in forwards;
+  }
+  @keyframes dropFall {
+    0% { top: 250px; height: 7px; opacity: 0.9; }
+    80% { opacity: 0.8; }
+    100% { top: 340px; height: 5px; opacity: 0; }
+  }
+
+  /* Conical Flask */
+  .flask-svg-wrap {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 160px;
+    height: 175px;
+  }
+
+  .flask-motion {
+    width: 100%;
+    height: 100%;
+    transform-origin: 50% 78%;
+  }
+
+  .flask-svg-wrap.is-swirling .flask-motion {
+    animation: flaskWobble var(--swirlDur) ease-in-out;
+  }
+
+  .flask-svg-wrap.is-auto .flask-motion {
+    animation: flaskWobble var(--swirlDur) ease-in-out infinite;
+  }
+
+  #liquidGroup {
+    transform-box: fill-box;
+    transform-origin: 50% 78%;
+  }
+
+  .flask-svg-wrap.is-swirling #liquidGroup {
+    animation: liquidWobble var(--swirlDur) ease-in-out;
+    filter: url(#liquidSwirl);
+  }
+
+  .flask-svg-wrap.is-auto #liquidGroup {
+    animation: liquidWobble var(--swirlDur) ease-in-out infinite;
+    filter: url(#liquidSwirl);
+  }
+
+  @keyframes flaskWobble {
+    0% { transform: rotate(0deg); }
+    20% { transform: rotate(-2.4deg); }
+    45% { transform: rotate(2.1deg); }
+    70% { transform: rotate(-1.4deg); }
+    100% { transform: rotate(0deg); }
+  }
+
+  @keyframes liquidWobble {
+    0% { transform: rotate(0deg); }
+    20% { transform: rotate(-3.4deg); }
+    45% { transform: rotate(3.1deg); }
+    70% { transform: rotate(-2.0deg); }
+    100% { transform: rotate(0deg); }
+  }
+
+  .flask-swirl {
+    opacity: 0;
+    transform-origin: 50% 75%;
+  }
+
+  .flask-svg-wrap.is-swirling .flask-swirl {
+    opacity: 1;
+    animation: swirlSpin var(--swirlDur) ease-in-out;
+  }
+
+  .flask-svg-wrap.is-auto .flask-swirl {
+    opacity: 1;
+    animation: swirlSpin var(--swirlDur) ease-in-out infinite;
+  }
+
+  @keyframes swirlSpin {
+    0% { transform: rotate(0deg) scale(0.98); opacity: 0; }
+    15% { opacity: 0.55; }
+    100% { transform: rotate(18deg) scale(1.02); opacity: 0; }
+  }
+
+  /* Splash ripple */
+  .ripple {
+    position: absolute;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 6px;
+    height: 3px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255,255,255,0.5);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .ripple.splash {
+    animation: rippleOut 0.5s ease-out forwards;
+  }
+  @keyframes rippleOut {
+    0% { width: 6px; height: 3px; opacity: 0.8; }
+    100% { width: 50px; height: 16px; opacity: 0; }
+  }
+
+  /* pH readout */
+  .ph-readout {
+    margin-top: 18px;
+    background: #0d1018;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 12px;
+    text-align: center;
+    width: 100%;
+  }
+  .ph-label { font-size: 0.64rem; color: rgba(232,240,255,0.78); letter-spacing: 0.18em; text-transform: uppercase; }
+  .ph-value {
+    font-size: 3.35rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-top: 6px;
+    transition: color 0.25s ease;
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.42);
+    border: 1px solid rgba(232,240,255,0.16);
+    box-shadow: 0 10px 22px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(0,0,0,0.45);
+    text-shadow:
+      0 2px 0 rgba(0,0,0,0.55),
+      0 0 14px rgba(0,0,0,0.75);
+    -webkit-text-stroke: 1px rgba(0,0,0,0.55);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Indicator legend */
+  .indicator-legend {
+    margin-top: 14px;
+    width: 100%;
+  }
+  .ind-title { font-size: 0.58rem; color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; }
+  .ind-bar {
+    height: 10px;
+    border-radius: 5px;
+    background: linear-gradient(90deg, #e8453c 0%, #e8453c 30%, #f07030 45%, #f5a623 55%, #f5e642 100%);
+    position: relative;
+    margin-bottom: 6px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .ind-cursor {
+    position: absolute;
+    top: -4px;
+    width: 4px;
+    height: 18px;
+    background: white;
+    border-radius: 2px;
+    box-shadow: 0 0 6px rgba(255,255,255,0.7);
+    transform: translateX(-50%);
+    transition: left 0.5s ease;
+  }
+  .ind-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.55rem;
+    color: var(--dim);
+  }
+
+  /* ── Right panel ── */
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .info-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .info-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .info-card .lbl { font-size: 0.55rem; color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 4px; }
+  .info-card .val { font-size: 1.1rem; font-weight: 500; color: #e8f0ff; }
+  .info-card .unit { font-size: 0.6rem; color: var(--dim); }
+
+  /* Graph */
+  .graph-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 18px 14px;
+    flex: 1;
+  }
+  .graph-title {
+    font-size: 0.6rem;
+    color: var(--dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  canvas#curve {
+    width: 100%;
+    border-radius: 6px;
+  }
+
+  /* Controls */
+  .controls {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .select-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .select-label { font-size: 0.62rem; color: var(--dim); white-space: nowrap; min-width: 80px; }
+
+  select {
+    flex: 1;
+    appearance: none;
+    background: #0d1018;
+    color: #e8f0ff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 10px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    outline: none;
+  }
+
+  select:focus { border-color: rgba(232,240,255,0.4); }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .slider-label { font-size: 0.62rem; color: var(--dim); white-space: nowrap; min-width: 80px; }
+  input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--eq);
+    box-shadow: 0 0 8px rgba(74,245,160,0.5);
+    cursor: pointer;
+  }
+  .slider-val { font-size: 0.7rem; min-width: 50px; text-align: right; color: #e8f0ff; }
+
+  .btn-row { display: flex; gap: 10px; }
+  button {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-primary {
+    background: var(--eq);
+    color: #081210;
+    font-weight: 500;
+    flex: 1;
+  }
+  .btn-primary:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-secondary {
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--border);
+    flex: 1;
+  }
+  .btn-secondary:hover { border-color: var(--text); color: var(--text); }
+  .btn-add {
+    background: rgba(60,180,120,0.15);
+    color: rgba(60,220,130,0.9);
+    border: 1px solid rgba(60,180,120,0.3);
+    flex: 1;
+  }
+  .btn-add:hover { background: rgba(60,180,120,0.25); transform: translateY(-1px); }
+
+  /* Equivalence badge */
+  .eq-badge {
+    display: none;
+    background: rgba(74,245,160,0.12);
+    border: 1px solid rgba(74,245,160,0.3);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.65rem;
+    color: var(--eq);
+    letter-spacing: 0.08em;
+    text-align: center;
+    animation: fadeIn 0.5s ease;
+  }
+  .eq-badge.visible { display: block; }
+
+  .ind-badge {
+    display: none;
+    background: rgba(255,79,216,0.10);
+    border: 1px solid rgba(255,79,216,0.28);
+    padding: 10px 12px;
+    border-radius: 10px;
+    color: rgba(255,255,255,0.82);
+    font-size: 0.66rem;
+    letter-spacing: 0.02em;
+    text-align: center;
+    animation: fadeIn 0.5s ease;
+  }
+  .ind-badge.visible { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Equation */
+  .equation {
+    text-align: center;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    color: var(--dim);
+    padding: 8px;
+    border-top: 1px solid var(--border);
+    margin-top: 4px;
+  }
+  .equation span { color: var(--text); }
+
+  /* Auto-run indicator */
+  .auto-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--eq);
+    display: inline-block;
+    margin-right: 6px;
+    animation: pulse 1s ease infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  @media (max-width: 700px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .info-row { grid-template-columns: 1fr 1fr; }
+    .apparatus-wrap { height: 320px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Acid–Base Titration</h1>
+<p class="subtitle" id="subtitle">NaOH(aq) into HCl(aq) - Methyl Orange Indicator</p>
+
+<div class="main-grid">
+  <!-- Left: Lab apparatus -->
+  <div class="lab-panel">
+    <div class="apparatus-wrap" id="apparatus">
+      <!-- Burette -->
+      <div class="burette-label" id="buretteLabel">0.1 M NaOH</div>
+      <div class="burette-body" id="buretteBody">
+        <div class="burette-liquid" id="buretteLiquid" style="height:100%"></div>
+      </div>
+      <div class="burette-tip"></div>
+
+      <!-- Drop -->
+      <div class="drop" id="drop"></div>
+      <!-- Ripple -->
+      <div class="ripple" id="ripple"></div>
+
+      <!-- Flask SVG -->
+      <div class="flask-svg-wrap">
+        <div class="flask-motion">
+          <svg viewBox="0 0 160 175" fill="none" xmlns="http://www.w3.org/2000/svg" width="160" height="175">
+            <!-- Flask solution (masked) -->
+            <defs>
+            <mask id="flaskMask" maskUnits="userSpaceOnUse">
+              <rect x="0" y="0" width="160" height="175" fill="black" />
+              <path d="M58 8 L58 58 L8 158 Q6 162 10 164 L150 164 Q154 162 152 158 L102 58 L102 8 Z" fill="white" />
+            </mask>
+            <radialGradient id="liquidSheen" cx="35%" cy="40%" r="60%">
+              <stop offset="0%" stop-color="rgba(255,255,255,0.12)"/>
+              <stop offset="100%" stop-color="rgba(0,0,0,0.0)"/>
+            </radialGradient>
+
+            <filter id="liquidSwirl" x="-20%" y="-20%" width="140%" height="140%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="2" result="noise" />
+              <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+          </defs>
+          <!-- Solution fill -->
+          <g id="liquidGroup" mask="url(#flaskMask)">
+            <rect id="flaskLiquid" x="0" y="80" width="160" height="100" fill="#e8453c" style="transition: fill 0.8s ease"/>
+            <!-- Sheen -->
+            <rect x="0" y="80" width="160" height="100" fill="url(#liquidSheen)" opacity="0.6"/>
+            <g class="flask-swirl" aria-hidden="true">
+              <path d="M26 134 C46 122, 72 118, 94 124 C118 130, 130 143, 134 153" stroke="rgba(255,255,255,0.42)" stroke-width="1.5" stroke-linecap="round" />
+              <path d="M24 146 C48 138, 74 140, 98 150 C116 158, 126 166, 132 172" stroke="rgba(255,255,255,0.28)" stroke-width="1.4" stroke-linecap="round" />
+              <path d="M38 156 C58 150, 78 152, 96 160" stroke="rgba(255,255,255,0.20)" stroke-width="1.2" stroke-linecap="round" />
+            </g>
+          </g>
+          <!-- Flask glass outline -->
+            <path d="M58 8 L58 58 L8 158 Q6 162 10 164 L150 164 Q154 162 152 158 L102 58 L102 8 Z"
+                  stroke="rgba(160,200,255,0.4)" stroke-width="2" fill="rgba(160,200,255,0.04)"/>
+          <!-- Neck highlight -->
+            <line x1="62" y1="10" x2="62" y2="58" stroke="rgba(200,230,255,0.18)" stroke-width="1.5"/>
+          <!-- Rim -->
+            <rect x="52" y="4" width="56" height="8" rx="2" fill="rgba(160,200,255,0.08)" stroke="rgba(160,200,255,0.35)" stroke-width="1.5"/>
+          <!-- Tick marks -->
+            <line x1="30" y1="140" x2="38" y2="140" stroke="rgba(160,200,255,0.3)" stroke-width="1"/>
+            <line x1="22" y1="120" x2="32" y2="120" stroke="rgba(160,200,255,0.3)" stroke-width="1"/>
+            <line x1="16" y1="100" x2="28" y2="100" stroke="rgba(160,200,255,0.3)" stroke-width="1"/>
+          <!-- Stand -->
+            <rect x="40" y="164" width="80" height="6" rx="3" fill="rgba(80,100,140,0.4)"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- pH display -->
+    <div class="ph-readout">
+      <div class="ph-label">pH</div>
+      <div class="ph-value" id="phValue">1.00</div>
+    </div>
+
+    <!-- Methyl orange indicator scale -->
+    <div class="indicator-legend" style="margin-top:14px">
+      <div class="ind-title" id="indTitle">Methyl Orange Indicator</div>
+      <div class="ind-bar" id="indBar">
+        <div class="ind-cursor" id="indCursor" style="left:0%"></div>
+      </div>
+      <div class="ind-labels" id="indLabels">
+        <span style="color:#e8453c">Red (pH&lt;3.1)</span>
+        <span style="color:#f5a623">Orange (3.1–4.4)</span>
+        <span style="color:#f5e642">Yellow (&gt;4.4)</span>
+      </div>
+    </div>
+
+    <div class="equation">
+      <span id="eqLeft">NaOH</span> + <span id="eqRight">HCl</span> → <span>NaCl</span> + <span>H₂O</span>
+    </div>
+  </div>
+
+  <!-- Right: data & graph -->
+  <div class="right-panel">
+    <div class="info-row">
+      <div class="info-card">
+        <div class="lbl" id="volLbl">Volume NaOH added</div>
+        <div class="val" id="volAdded">0.00</div>
+        <div class="unit">mL</div>
+      </div>
+      <div class="info-card">
+        <div class="lbl" id="remainLbl">HCl remaining</div>
+        <div class="val" id="hclRemain">2.50</div>
+        <div class="unit">mmol</div>
+      </div>
+      <div class="info-card">
+        <div class="lbl" id="addedLbl">NaOH added</div>
+        <div class="val" id="naohAdded">0.00</div>
+        <div class="unit">mmol</div>
+      </div>
+    </div>
+
+    <div class="eq-badge" id="eqBadge">✦ End point is reached</div>
+    <div class="ind-badge" id="indBadge">✦ Equivalence point is reached</div>
+
+    <!-- pH curve graph -->
+    <div class="graph-panel">
+      <div class="graph-title" id="graphTitle">Titration Curve — pH vs Volume NaOH added</div>
+      <canvas id="curve" height="200"></canvas>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <div class="select-row">
+        <span class="select-label">Setup</span>
+        <select id="setupSelect" aria-label="Titration setup">
+          <option value="acid-in-flask" selected>HCl in flask, NaOH in burette</option>
+          <option value="base-in-flask">NaOH in flask, HCl in burette</option>
+        </select>
+      </div>
+
+      <div class="select-row">
+        <span class="select-label">Indicator</span>
+        <select id="indicatorSelect" aria-label="Indicator">
+          <option value="methyl_orange" selected>Methyl orange</option>
+          <option value="phenolphthalein">Phenolphthalein</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button class="btn-add" id="btnDrop" onclick="addDrop()">+ Add Drop</button>
+        <button class="btn-primary" id="btnAuto" onclick="toggleAuto()">▶ Auto Titrate</button>
+        <button class="btn-secondary" onclick="resetAll()">↺ Reset</button>
+      </div>
+      <div style="font-size:0.6rem;color:var(--dim);text-align:center;line-height:1.6">
+        Starting conditions: 25.0 mL of 0.1 M HCl · Titrant: 0.1 M NaOH · Equivalence point at 25.0 mL
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Chemistry ──────────────────────────────────────────────────────────────
+const C_ACID  = 0.1;  // mol/L HCl
+const V_ACID  = 25.0; // mL
+const C_BASE  = 0.1;  // mol/L NaOH
+const MOL_ACID = C_ACID * V_ACID / 1000; // mol
+const KW = 1e-14;
+const SWIRL_MS = 650;
+const DROP_SIZE_ML = 0.5;
+
+let setupMode = 'acid-in-flask';
+let indicatorMode = 'methyl_orange';
+
+let volAdded = 0;      // mL added so far
+let autoTimer = null;
+let endpointOrangeVol = null;
+let endPointTriggerVol = null;
+let eqPointTriggerVol = null;
+
+function getConfig() {
+  if (setupMode === 'acid-in-flask') {
+    return {
+      analyteName: 'HCl',
+      titrantName: 'NaOH',
+      analyteC: C_ACID,
+      analyteV0_mL: V_ACID,
+      titrantC: C_BASE,
+    };
+  }
+
+  return {
+    analyteName: 'NaOH',
+    titrantName: 'HCl',
+    analyteC: C_BASE,
+    analyteV0_mL: V_ACID,
+    titrantC: C_ACID,
+  };
+}
+
+function equivalenceVolume_mL() {
+  const cfg = getConfig();
+  const molAnalyte0 = cfg.analyteC * (cfg.analyteV0_mL / 1000);
+  return (molAnalyte0 / cfg.titrantC) * 1000;
+}
+
+function indicatorEquivalencePH() {
+  if (indicatorMode === 'phenolphthalein') return 8.2;
+  // methyl orange begins changing at ~pH 4.4 (yellow→orange) and completes by ~3.1 (orange→red)
+  // Use a representative value inside the transition band.
+  return 3.7;
+}
+
+function indicatorEquivalenceVolume_mL() {
+  const targetPH = indicatorEquivalencePH();
+  const step = 0.05;
+  let bestV = 0;
+  let bestErr = Infinity;
+  for (let v = 0; v <= 50; v += step) {
+    const pH = calcPH(v);
+    const err = Math.abs(pH - targetPH);
+    if (err < bestErr) {
+      bestErr = err;
+      bestV = v;
+    }
+  }
+  return bestV;
+}
+
+function molCountsAtVolume(vAdded_mL) {
+  const cfg = getConfig();
+  const vTitrant = vAdded_mL / 1000;
+  const vAnalyte0 = cfg.analyteV0_mL / 1000;
+
+  const molAcid0 = (cfg.analyteName === 'HCl' ? cfg.analyteC * vAnalyte0 : 0);
+  const molBase0 = (cfg.analyteName === 'NaOH' ? cfg.analyteC * vAnalyte0 : 0);
+
+  const molAcidAdded = (cfg.titrantName === 'HCl' ? cfg.titrantC * vTitrant : 0);
+  const molBaseAdded = (cfg.titrantName === 'NaOH' ? cfg.titrantC * vTitrant : 0);
+
+  return {
+    molAcid: molAcid0 + molAcidAdded,
+    molBase: molBase0 + molBaseAdded,
+    cfg,
+  };
+}
+
+function handleEndpointForcing(beforeCounts, afterCounts, afterVol_mL) {
+  const tol = nearEquivalenceMolTolerance();
+  const diffBefore = beforeCounts.molBase - beforeCounts.molAcid;
+  const diffAfter = afterCounts.molBase - afterCounts.molAcid;
+
+  const crossedEq = (diffBefore < -tol && diffAfter > tol) || (diffBefore > tol && diffAfter < -tol);
+  const enteredEqBand = (Math.abs(diffAfter) <= tol) && (Math.abs(diffBefore) > tol);
+  const passedEq = crossedEq || enteredEqBand || (diffBefore > tol && diffAfter <= tol) || (diffBefore < -tol && diffAfter >= -tol);
+
+  if (passedEq) {
+    if (indicatorMode === 'methyl_orange' && endpointOrangeVol === null) endpointOrangeVol = afterVol_mL;
+  }
+}
+
+function calcPH(vAdded_mL) {
+  const cfg = getConfig();
+  const vTitrant = vAdded_mL / 1000;
+  const vAnalyte0 = cfg.analyteV0_mL / 1000;
+  const vTotal = vAnalyte0 + vTitrant;
+
+  const counts = molCountsAtVolume(vAdded_mL);
+  const molAcid = counts.molAcid;
+  const molBase = counts.molBase;
+
+  const net = (molAcid - molBase) / vTotal;
+  const H = (net + Math.sqrt(net * net + 4 * KW)) / 2;
+  const pH = -Math.log10(H);
+  return Math.min(14, Math.max(0, pH));
+}
+
+function methylOrangeColor(pH) {
+  // red < 3.1, orange 3.1–4.4, yellow > 4.4
+  if (pH < 3.1) return '#e8453c';
+  if (pH < 4.4) return lerpColor('#e8453c', '#f5a623', (pH - 3.1) / 1.3);
+  return '#f5e642';
+}
+
+function phenolphthaleinColor(pH) {
+  // colorless < 8.2, transition 8.2–10.0, pink > 10
+  if (pH < 8.2) return 'rgba(232,240,255,0.26)';
+  if (pH < 10.0) return lerpColor('#ffffff', '#ff4fd8', (pH - 8.2) / 1.8);
+  return '#ff4fd8';
+}
+
+function indicatorColor(pH) {
+  if (indicatorMode === 'phenolphthalein') return phenolphthaleinColor(pH);
+  return methylOrangeColor(pH);
+}
+
+function currentDropSize_mL() {
+  return DROP_SIZE_ML;
+}
+
+function nearEquivalenceMolTolerance() {
+  const cfg = getConfig();
+  return cfg.titrantC * (currentDropSize_mL() / 1000) / 2;
+}
+
+function displayColor(pH, molAcid, molBase) {
+  const tol = nearEquivalenceMolTolerance();
+  const nearEq = Math.abs(molAcid - molBase) <= tol;
+  const excessAcid = molAcid > molBase + tol;
+  const excessBase = molBase > molAcid + tol;
+
+  if (indicatorMode === 'methyl_orange') {
+    if (nearEq) return '#f5a623';
+    if (excessBase) return '#f5e642';
+    if (excessAcid) return '#e8453c';
+  }
+
+  return indicatorColor(pH);
+}
+
+function applySettingsToUI() {
+  const cfg = getConfig();
+  const vEq = equivalenceVolume_mL();
+
+  const subtitle = document.getElementById('subtitle');
+  if (subtitle) {
+    subtitle.textContent = `${cfg.titrantName}(aq) into ${cfg.analyteName}(aq) - ${indicatorMode === 'phenolphthalein' ? 'Phenolphthalein' : 'Methyl Orange'} Indicator`;
+  }
+
+  const buretteLabel = document.getElementById('buretteLabel');
+  if (buretteLabel) buretteLabel.textContent = `0.1 M ${cfg.titrantName}`;
+
+  const volLbl = document.getElementById('volLbl');
+  const remainLbl = document.getElementById('remainLbl');
+  const addedLbl = document.getElementById('addedLbl');
+  if (volLbl) volLbl.textContent = `Volume ${cfg.titrantName} added`;
+  if (remainLbl) remainLbl.textContent = `${cfg.analyteName} remaining`;
+  if (addedLbl) addedLbl.textContent = `${cfg.titrantName} added`;
+
+  const graphTitle = document.getElementById('graphTitle');
+  if (graphTitle) graphTitle.textContent = `Titration Curve — pH vs Volume ${cfg.titrantName} added`;
+
+  const eqLeft = document.getElementById('eqLeft');
+  const eqRight = document.getElementById('eqRight');
+  if (eqLeft) eqLeft.textContent = cfg.titrantName;
+  if (eqRight) eqRight.textContent = cfg.analyteName;
+
+  const eqBadge = document.getElementById('eqBadge');
+  if (eqBadge) {
+    eqBadge.textContent = '✦ End point is reached';
+  }
+
+  const indTitle = document.getElementById('indTitle');
+  const indLabels = document.getElementById('indLabels');
+  const indBar = document.getElementById('indBar');
+
+  if (indicatorMode === 'phenolphthalein') {
+    if (indTitle) indTitle.textContent = 'Phenolphthalein Indicator';
+    if (indLabels) {
+      indLabels.innerHTML = '<span style="color:rgba(255,255,255,0.55)">Colorless (pH&lt;8.2)</span><span style="color:#ff4fd8">Pink (8.2–10.0)</span><span style="color:#ff4fd8">Deep pink (&gt;10.0)</span>';
+    }
+    if (indBar) {
+      indBar.style.background = 'linear-gradient(90deg, rgba(232,240,255,0.16) 0%, rgba(232,240,255,0.16) 58%, rgba(255,79,216,0.42) 70%, rgba(255,79,216,0.92) 100%)';
+    }
+  } else {
+    if (indTitle) indTitle.textContent = 'Methyl Orange Indicator';
+    if (indLabels) {
+      indLabels.innerHTML = '<span style="color:#e8453c">Red (pH&lt;3.1)</span><span style="color:#f5a623">Orange (3.1–4.4)</span><span style="color:#f5e642">Yellow (&gt;4.4)</span>';
+    }
+    if (indBar) {
+      indBar.style.background = 'linear-gradient(90deg, #e8453c 0%, #e8453c 30%, #f07030 45%, #f5a623 55%, #f5e642 100%)';
+    }
+  }
+}
+
+function lerpColor(a, b, t) {
+  const hex = s => parseInt(s, 16);
+  const r = c => [hex(c.slice(1,3)), hex(c.slice(3,5)), hex(c.slice(5,7))];
+  const [ar,ag,ab] = r(a);
+  const [br,bg,bb] = r(b);
+  const rr = Math.round(ar + (br-ar)*t).toString(16).padStart(2,'0');
+  const rg = Math.round(ag + (bg-ag)*t).toString(16).padStart(2,'0');
+  const rb = Math.round(ab + (bb-ab)*t).toString(16).padStart(2,'0');
+  return `#${rr}${rg}${rb}`;
+}
+
+// ── UI Update ──────────────────────────────────────────────────────────────
+function updateUI() {
+  const counts = molCountsAtVolume(volAdded);
+  const cfg = counts.cfg;
+  const vTitrant = volAdded / 1000;
+  const vAnalyte0 = cfg.analyteV0_mL / 1000;
+  const molAnalyte0 = cfg.analyteC * vAnalyte0;
+  const molTitrant = cfg.titrantC * vTitrant;
+  const molAcid = counts.molAcid;
+  const molBase = counts.molBase;
+
+  const pH = calcPH(volAdded);
+  let color = displayColor(pH, molAcid, molBase);
+  if (
+    indicatorMode === 'methyl_orange' &&
+    endpointOrangeVol !== null &&
+    Math.abs(volAdded - endpointOrangeVol) < 1e-6
+  ) {
+    color = '#f5a623';
+  }
+
+  const isPhenolColorless = indicatorMode === 'phenolphthalein' && pH < 8.2;
+  const textColor = isPhenolColorless ? 'rgba(232,240,255,0.88)' : color;
+
+  const analyteRemain_mmol = Math.max(0, (molAnalyte0 - molTitrant) * 1000);
+  const titrantAdded_mmol = molTitrant * 1000;
+
+  // pH display
+  document.getElementById('phValue').textContent = pH.toFixed(2);
+  document.getElementById('phValue').style.color = textColor;
+
+  // Flask liquid
+  document.getElementById('flaskLiquid').setAttribute('fill', color);
+
+  // Burette level (max 50 mL total dispensed shown as empty)
+  const pct = Math.min(volAdded / 50, 1);
+  document.getElementById('buretteLiquid').style.height = `${(1 - pct) * 100}%`;
+
+  // Info cards
+  document.getElementById('volAdded').textContent = volAdded.toFixed(2);
+  document.getElementById('hclRemain').textContent = analyteRemain_mmol.toFixed(3);
+  document.getElementById('naohAdded').textContent = titrantAdded_mmol.toFixed(3);
+
+  // End point badge (pH~7 for strong acid/base)
+  const eqBadge = document.getElementById('eqBadge');
+  const vEq = equivalenceVolume_mL();
+  const endVolTol = DROP_SIZE_ML / 2;
+  const pHRounded = Number(pH.toFixed(2));
+  const isEndPoint = (pHRounded === 7.00) || (Math.abs(volAdded - vEq) <= endVolTol);
+  if (endPointTriggerVol === null && isEndPoint) endPointTriggerVol = volAdded;
+  if (eqBadge) {
+    const showNow = endPointTriggerVol !== null && Math.abs(volAdded - endPointTriggerVol) < 1e-6;
+    if (showNow && !eqBadge.classList.contains('visible')) eqBadge.classList.add('visible');
+    if (!showNow && eqBadge.classList.contains('visible')) eqBadge.classList.remove('visible');
+  }
+
+  // Indicator-change "equivalence" badge (user definition)
+  const indBadge = document.getElementById('indBadge');
+  const vInd = indicatorEquivalenceVolume_mL();
+  if (indBadge) {
+    indBadge.textContent = '✦ Equivalence point is reached';
+    if (eqPointTriggerVol === null && volAdded >= vInd) eqPointTriggerVol = volAdded;
+    const showNow = eqPointTriggerVol !== null && Math.abs(volAdded - eqPointTriggerVol) < 1e-6;
+    if (showNow && !indBadge.classList.contains('visible')) indBadge.classList.add('visible');
+    if (!showNow && indBadge.classList.contains('visible')) indBadge.classList.remove('visible');
+  }
+
+  // Indicator cursor — map pH 0–14 to 0–100%
+  const cursorPct = Math.min(Math.max(pH / 14 * 100, 0), 100);
+  document.getElementById('indCursor').style.left = cursorPct + '%';
+
+  // Graph
+  drawCurve();
+}
+
+// ── Drop Animation ─────────────────────────────────────────────────────────
+function animateDrop(callback) {
+  const drop = document.getElementById('drop');
+  const ripple = document.getElementById('ripple');
+  const flaskWrap = document.querySelector('.flask-svg-wrap');
+  drop.classList.remove('falling');
+  ripple.classList.remove('splash');
+  void drop.offsetWidth;
+  drop.classList.add('falling');
+  if (flaskWrap && !flaskWrap.classList.contains('is-auto')) {
+    triggerSwirlOnce();
+  }
+  setTimeout(() => {
+    ripple.classList.remove('splash');
+    void ripple.offsetWidth;
+    ripple.classList.add('splash');
+  }, 480);
+  setTimeout(callback, 550);
+}
+
+function triggerSwirlOnce() {
+  const flaskWrap = document.querySelector('.flask-svg-wrap');
+
+  if (flaskWrap) {
+    flaskWrap.classList.remove('is-swirling');
+    void flaskWrap.offsetWidth;
+    flaskWrap.classList.add('is-swirling');
+    setTimeout(() => flaskWrap.classList.remove('is-swirling'), SWIRL_MS);
+  }
+}
+
+function setAutoSwirl(enabled) {
+  const flaskWrap = document.querySelector('.flask-svg-wrap');
+
+  if (!enabled) {
+    if (flaskWrap) flaskWrap.classList.remove('is-auto');
+    return;
+  }
+
+  if (flaskWrap) flaskWrap.classList.add('is-auto');
+}
+
+function addDrop() {
+  const size = DROP_SIZE_ML;
+  if (volAdded >= 50) return;
+  const before = molCountsAtVolume(volAdded);
+  animateDrop(() => {
+    volAdded = Math.min(volAdded + size, 50);
+    const after = molCountsAtVolume(volAdded);
+    handleEndpointForcing(before, after, volAdded);
+
+    updateUI();
+  });
+}
+
+// ── Auto titrate ───────────────────────────────────────────────────────────
+function toggleAuto() {
+  const btn = document.getElementById('btnAuto');
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    setAutoSwirl(false);
+    btn.innerHTML = '▶ Auto Titrate';
+    return;
+  }
+  btn.innerHTML = '<span class="auto-dot"></span>Stop';
+  setAutoSwirl(true);
+  const step = () => {
+    if (volAdded >= 50) { clearInterval(autoTimer); autoTimer = null; btn.innerHTML = '▶ Auto Titrate'; return; }
+    const size = DROP_SIZE_ML;
+    const before = molCountsAtVolume(volAdded);
+    animateDrop(() => {
+      volAdded = Math.min(volAdded + size, 50);
+      const after = molCountsAtVolume(volAdded);
+      handleEndpointForcing(before, after, volAdded);
+      updateUI();
+    });
+    // Near eq point, slow down
+    const pH = calcPH(volAdded);
+    if (pH > 4 && pH < 10) {
+      clearInterval(autoTimer);
+      autoTimer = setInterval(step, 600);
+    } else {
+      clearInterval(autoTimer);
+      autoTimer = setInterval(step, 150);
+    }
+  };
+  autoTimer = setInterval(step, 150);
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+function resetAll() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  setAutoSwirl(false);
+  document.getElementById('btnAuto').innerHTML = '▶ Auto Titrate';
+  volAdded = 0;
+  endpointOrangeVol = null;
+  endPointTriggerVol = null;
+  eqPointTriggerVol = null;
+  updateUI();
+}
+
+// ── Titration Curve ────────────────────────────────────────────────────────
+function drawCurve() {
+  const canvas = document.getElementById('curve');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth;
+  const H = canvas.clientHeight || 200;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const PAD = { t: 10, r: 14, b: 36, l: 42 };
+  const gW = W - PAD.l - PAD.r;
+  const gH = H - PAD.t - PAD.b;
+
+  const maxVol = 50;
+  const maxPH  = 14;
+
+  // Background
+  ctx.fillStyle = '#0a0d14';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  for (let p = 0; p <= 14; p += 2) {
+    const y = PAD.t + gH - (p / maxPH) * gH;
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + gW, y); ctx.stroke();
+  }
+  for (let v = 0; v <= maxVol; v += 5) {
+    const x = PAD.l + (v / maxVol) * gW;
+    ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, PAD.t + gH); ctx.stroke();
+  }
+
+  // Indicator color bands (background tint)
+  ctx.font = '9px DM Mono, monospace';
+  ctx.textAlign = 'right';
+
+  if (indicatorMode === 'phenolphthalein') {
+    const y82 = PAD.t + gH - (8.2 / maxPH) * gH;
+    const y10 = PAD.t + gH - (10.0 / maxPH) * gH;
+
+    ctx.fillStyle = 'rgba(232,240,255,0.055)';
+    ctx.fillRect(PAD.l, y82, gW, PAD.t + gH - y82);
+    ctx.fillStyle = 'rgba(255,79,216,0.06)';
+    ctx.fillRect(PAD.l, y10, gW, y82 - y10);
+    ctx.fillStyle = 'rgba(255,79,216,0.085)';
+    ctx.fillRect(PAD.l, PAD.t, gW, y10 - PAD.t);
+
+    ctx.fillStyle = 'rgba(232,240,255,0.48)';
+    ctx.fillText('Clr', PAD.l - 3, PAD.t + gH - 6);
+    ctx.fillStyle = 'rgba(255,79,216,0.55)';
+    ctx.fillText('Pink', PAD.l - 3, y82 - 6);
+    ctx.fillStyle = 'rgba(255,79,216,0.72)';
+    ctx.fillText('Deep', PAD.l - 3, y10 - 6);
+  } else {
+    const y31 = PAD.t + gH - (3.1 / maxPH) * gH;
+    const y44 = PAD.t + gH - (4.4 / maxPH) * gH;
+
+    ctx.fillStyle = 'rgba(232,69,60,0.06)';
+    ctx.fillRect(PAD.l, y31, gW, PAD.t + gH - y31);
+    ctx.fillStyle = 'rgba(245,166,35,0.06)';
+    ctx.fillRect(PAD.l, y44, gW, y31 - y44);
+    ctx.fillStyle = 'rgba(245,230,66,0.05)';
+    ctx.fillRect(PAD.l, PAD.t, gW, y44 - PAD.t);
+
+    ctx.fillStyle = 'rgba(232,69,60,0.5)';
+    ctx.fillText('Red', PAD.l - 3, PAD.t + gH - 6);
+    ctx.fillStyle = 'rgba(245,166,35,0.5)';
+    ctx.fillText('Orange', PAD.l - 3, y31 - 6);
+    ctx.fillStyle = 'rgba(245,230,66,0.45)';
+    ctx.fillText('Yellow', PAD.l - 3, y44 - 6);
+  }
+
+  // Equivalence line
+  const vEq = equivalenceVolume_mL();
+  const vInd = indicatorEquivalenceVolume_mL();
+  const eqX = PAD.l + (vEq / maxVol) * gW;
+  const indX = PAD.l + (vInd / maxVol) * gW;
+
+  // Endpoint marker (pH≈7) at stoichiometric equivalence volume
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = 'rgba(74,245,160,0.32)';
+  ctx.beginPath();
+  ctx.moveTo(eqX, PAD.t);
+  ctx.lineTo(eqX, PAD.t + gH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Indicator-change marker (user "equivalence")
+  ctx.setLineDash([2, 6]);
+  ctx.strokeStyle = 'rgba(255,79,216,0.38)';
+  ctx.beginPath();
+  ctx.moveTo(indX, PAD.t);
+  ctx.lineTo(indX, PAD.t + gH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // pH=7 horizontal line
+  const y7 = PAD.t + gH - (7 / maxPH) * gH;
+  ctx.setLineDash([3, 5]);
+  ctx.strokeStyle = 'rgba(232,240,255,0.14)';
+  ctx.beginPath();
+  ctx.moveTo(PAD.l, y7);
+  ctx.lineTo(PAD.l + gW, y7);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = '9px DM Mono, monospace';
+  ctx.fillStyle = 'rgba(74,245,160,0.5)'; ctx.textAlign = 'center';
+
+  // Curve (full theoretical)
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(100,140,200,0.25)';
+  ctx.beginPath();
+  for (let v = 0; v <= maxVol; v += 0.2) {
+    const pH = calcPH(v);
+    const x = PAD.l + (v / maxVol) * gW;
+    const y = PAD.t + gH - (pH / maxPH) * gH;
+    v === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Gradient curve (measured so far)
+  if (volAdded > 0) {
+    const pts = [];
+    const cfg = getConfig();
+    const vAnalyte0 = cfg.analyteV0_mL / 1000;
+    const molAnalyte0 = cfg.analyteC * vAnalyte0;
+
+    for (let v = 0; v <= volAdded; v += 0.2) {
+      const pH = calcPH(v);
+      const vTitrant = v / 1000;
+      const molTitrant = cfg.titrantC * vTitrant;
+      const molAcid = (cfg.analyteName === 'HCl' ? molAnalyte0 : 0) + (cfg.titrantName === 'HCl' ? molTitrant : 0);
+      const molBase = (cfg.analyteName === 'NaOH' ? molAnalyte0 : 0) + (cfg.titrantName === 'NaOH' ? molTitrant : 0);
+      pts.push({
+        x: PAD.l + (v / maxVol) * gW,
+        y: PAD.t + gH - (Math.min(pH, maxPH) / maxPH) * gH,
+        c: displayColor(pH, molAcid, molBase)
+      });
+    }
+
+    // Draw colored curve
+    for (let i = 1; i < pts.length; i++) {
+      const g = ctx.createLinearGradient(pts[i-1].x, 0, pts[i].x, 0);
+      g.addColorStop(0, pts[i-1].c);
+      g.addColorStop(1, pts[i].c);
+      ctx.strokeStyle = g;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(pts[i-1].x, pts[i-1].y);
+      ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+    }
+
+    // Current point dot
+    const curPH  = calcPH(volAdded);
+    const curX   = PAD.l + (volAdded / maxVol) * gW;
+    const curY   = PAD.t + gH - (Math.min(curPH, maxPH) / maxPH) * gH;
+    const cfg2 = getConfig();
+    const vT = volAdded / 1000;
+    const vA0 = cfg2.analyteV0_mL / 1000;
+    const molA0 = cfg2.analyteC * vA0;
+    const molT = cfg2.titrantC * vT;
+    const molAc = (cfg2.analyteName === 'HCl' ? molA0 : 0) + (cfg2.titrantName === 'HCl' ? molT : 0);
+    const molBa = (cfg2.analyteName === 'NaOH' ? molA0 : 0) + (cfg2.titrantName === 'NaOH' ? molT : 0);
+    const curCol = displayColor(curPH, molAc, molBa);
+    ctx.beginPath();
+    ctx.arc(curX, curY, 5, 0, Math.PI * 2);
+    ctx.fillStyle = curCol;
+    ctx.shadowColor = curCol;
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PAD.l, PAD.t); ctx.lineTo(PAD.l, PAD.t + gH);
+  ctx.lineTo(PAD.l + gW, PAD.t + gH);
+  ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle = 'rgba(90,106,133,0.9)';
+  ctx.font = '10px DM Mono, monospace';
+  ctx.textAlign = 'right';
+  for (let p = 0; p <= 14; p += 2) {
+    const y = PAD.t + gH - (p / maxPH) * gH;
+    ctx.fillText(p, PAD.l - 6, y + 3.5);
+  }
+  ctx.textAlign = 'center';
+  for (let v = 0; v <= maxVol; v += 10) {
+    const x = PAD.l + (v / maxVol) * gW;
+    ctx.fillText(v, x, PAD.t + gH + 14);
+  }
+  // Axis titles
+  ctx.save(); ctx.translate(11, PAD.t + gH / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(90,106,133,0.7)';
+  ctx.font = '10px DM Mono'; ctx.fillText('pH', 0, 0);
+  ctx.restore();
+  ctx.fillStyle = 'rgba(90,106,133,0.7)'; ctx.textAlign = 'center';
+  ctx.font = '10px DM Mono';
+  const cfgAxis = getConfig();
+  ctx.fillText(`Volume ${cfgAxis.titrantName} added (mL)`, PAD.l + gW / 2, PAD.t + gH + 32);
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.getElementById('setupSelect').addEventListener('change', function() {
+  setupMode = this.value;
+  endpointOrangeVol = null;
+  endPointTriggerVol = null;
+  eqPointTriggerVol = null;
+  resetAll();
+  applySettingsToUI();
+});
+
+document.getElementById('indicatorSelect').addEventListener('change', function() {
+  indicatorMode = this.value;
+  endpointOrangeVol = null;
+  endPointTriggerVol = null;
+  eqPointTriggerVol = null;
+  applySettingsToUI();
+  updateUI();
+});
+
+applySettingsToUI();
+updateUI();
+window.addEventListener('resize', drawCurve);
+</script>
+</body>
+</html>

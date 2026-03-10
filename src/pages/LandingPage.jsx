@@ -21,7 +21,7 @@ export default function LandingPage() {
   }, [currentUser, navigate]);
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden" style={{ background: '#0a1a18' }}>
+    <div className="min-h-screen w-full relative overflow-x-hidden" style={{ background: '#0a1a18', overflowY: 'visible' }}>
 
       {/* ── Google Font (add to index.html for production) ── */}
       <style>{`

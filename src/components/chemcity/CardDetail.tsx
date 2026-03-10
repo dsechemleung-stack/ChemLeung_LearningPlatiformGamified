@@ -1,8 +1,81 @@
 import React, { useMemo } from 'react';
 import { X, Zap, BookOpen, FlaskConical, Star, ChevronLeft, ChevronRight, MapPin } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
+import { useLanguage } from '../../contexts/LanguageContext';
 
-// Slot ID to human-readable label mapping (from FIXED_SLOT_LAYOUTS in PlaceView.tsx)
+// Slot ID to translation key mapping
+const SLOT_LABEL_KEYS: Record<string, string> = {
+  // School
+  school_student_desk_1: 'chemcity.slots.school_student_desk_1',
+  school_teacher_desk: 'chemcity.slots.school_teacher_desk',
+  school_blackboard: 'chemcity.slots.school_blackboard',
+  school_science_corner: 'chemcity.slots.school_science_corner',
+  school_poster: 'chemcity.slots.school_poster',
+  school_window_side_table: 'chemcity.slots.school_window_side_table',
+  school_student_desk_2: 'chemcity.slots.school_student_desk_2',
+  // Gas Station
+  gas_station_car_1: 'chemcity.slots.gas_station_car_1',
+  gas_station_construction_site: 'chemcity.slots.gas_station_construction_site',
+  gas_station_factory: 'chemcity.slots.gas_station_factory',
+  gas_station_petrol_pump: 'chemcity.slots.gas_station_petrol_pump',
+  gas_station_car_2: 'chemcity.slots.gas_station_car_2',
+  gas_station_motel: 'chemcity.slots.gas_station_motel',
+  gas_station_street_light: 'chemcity.slots.gas_station_street_light',
+  gas_station_firework: 'chemcity.slots.gas_station_firework',
+  // Lab
+  lab_bench: 'chemcity.slots.lab_bench',
+  lab_fume_hood: 'chemcity.slots.lab_fume_hood',
+  lab_acid_alkali_cabinet: 'chemcity.slots.lab_acid_alkali_cabinet',
+  lab_apparatus_1: 'chemcity.slots.lab_apparatus_1',
+  lab_metal_shelf: 'chemcity.slots.lab_metal_shelf',
+  lab_salt_shelf: 'chemcity.slots.lab_salt_shelf',
+  lab_hazardous_chemical_shelf: 'chemcity.slots.lab_hazardous_chemical_shelf',
+  lab_apparatus_2: 'chemcity.slots.lab_apparatus_2',
+  lab_chemical_shelf: 'chemcity.slots.lab_chemical_shelf',
+  lab_gas_tank: 'chemcity.slots.lab_gas_tank',
+  // Kitchen
+  kitchen_cutlery_drawer: 'chemcity.slots.kitchen_cutlery_drawer',
+  kitchen_pantry_1: 'chemcity.slots.kitchen_pantry_1',
+  kitchen_stove_oven: 'chemcity.slots.kitchen_stove_oven',
+  kitchen_dinette: 'chemcity.slots.kitchen_dinette',
+  kitchen_fridge: 'chemcity.slots.kitchen_fridge',
+  kitchen_pantry_2: 'chemcity.slots.kitchen_pantry_2',
+  kitchen_base_cabinet: 'chemcity.slots.kitchen_base_cabinet',
+  kitchen_countertop: 'chemcity.slots.kitchen_countertop',
+  // Toilet
+  toilet_faucet: 'chemcity.slots.toilet_faucet',
+  toilet_vanity_cabinet: 'chemcity.slots.toilet_vanity_cabinet',
+  toilet_bathtub: 'chemcity.slots.toilet_bathtub',
+  toilet_mirror_cabinet_1: 'chemcity.slots.toilet_mirror_cabinet_1',
+  toilet_toilet: 'chemcity.slots.toilet_toilet',
+  toilet_vanity_top: 'chemcity.slots.toilet_vanity_top',
+  toilet_mirror_cabinet_2: 'chemcity.slots.toilet_mirror_cabinet_2',
+  // Garden
+  garden_shed_1: 'chemcity.slots.garden_shed_1',
+  garden_lawn: 'chemcity.slots.garden_lawn',
+  garden_greenhouse: 'chemcity.slots.garden_greenhouse',
+  garden_flower_bed: 'chemcity.slots.garden_flower_bed',
+  garden_mole_hill: 'chemcity.slots.garden_mole_hill',
+  garden_broadcast_spreader: 'chemcity.slots.garden_broadcast_spreader',
+  garden_shed_2: 'chemcity.slots.garden_shed_2',
+  // Boutique
+  lifestyle_boutique_poseur_table_1: 'chemcity.slots.lifestyle_boutique_poseur_table_1',
+  lifestyle_boutique_service_desk: 'chemcity.slots.lifestyle_boutique_service_desk',
+  lifestyle_boutique_jewellery_display: 'chemcity.slots.lifestyle_boutique_jewellery_display',
+  lifestyle_boutique_power_essentials: 'chemcity.slots.lifestyle_boutique_power_essentials',
+  lifestyle_boutique_apparel_gallery: 'chemcity.slots.lifestyle_boutique_apparel_gallery',
+  lifestyle_boutique_poseur_table_2: 'chemcity.slots.lifestyle_boutique_poseur_table_2',
+  // Beach
+  beach_sky: 'chemcity.slots.beach_sky',
+  beach_sea: 'chemcity.slots.beach_sea',
+  beach_rock_1: 'chemcity.slots.beach_rock_1',
+  beach_dry_sand: 'chemcity.slots.beach_dry_sand',
+  beach_strandline: 'chemcity.slots.beach_strandline',
+  beach_rock_2: 'chemcity.slots.beach_rock_2',
+  beach_cliffside: 'chemcity.slots.beach_cliffside',
+};
+
+// Fallback display labels (English)
 const SLOT_LABELS: Record<string, string> = {
   // School
   school_student_desk_1: 'School — Student Desk 1',
@@ -131,6 +204,18 @@ const DetailSkeleton: React.FC = () => (
 );
 
 export const CardDetail: React.FC = () => {
+  const { t, tf } = useLanguage();
+
+  // Helper to get translated slot label
+  const getSlotLabel = (slotId: string): string => {
+    const key = SLOT_LABEL_KEYS[slotId];
+    if (key) {
+      const translated = t(key);
+      if (translated !== key) return translated;
+    }
+    return SLOT_LABELS[slotId] || slotId;
+  };
+
   const cardDetailItemId = useChemCityStore(s => s.cardDetailItemId);
   const cardDetailData   = useChemCityStore(s => s.cardDetailData);
   const cardDetailLoading = useChemCityStore(s => s.cardDetailLoading);
@@ -154,9 +239,9 @@ export const CardDetail: React.FC = () => {
     const raw = (full as any)?.validSlots ?? (slim as any)?.validSlots;
     if (!Array.isArray(raw)) return [] as string[];
     const uniq = Array.from(new Set(raw.map((v) => String(v ?? '').trim()).filter(Boolean)));
-    uniq.sort((a, b) => (SLOT_LABELS[a] || a).localeCompare(SLOT_LABELS[b] || b));
+    uniq.sort((a, b) => (getSlotLabel(a)).localeCompare(getSlotLabel(b)));
     return uniq;
-  }, [full, slim]);
+  }, [full, slim, getSlotLabel]);
 
   const variants = useMemo(() => {
     if (!cardDetailItemId) return [];
@@ -268,7 +353,7 @@ export const CardDetail: React.FC = () => {
                   color: canNav ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)',
                   cursor: canNav ? 'pointer' : 'not-allowed',
                 }}
-                aria-label="Previous variant"
+                aria-label={t('chemcity.cardDetail.previousVariant')}
               >
                 <ChevronLeft size={16} />
               </button>
@@ -294,7 +379,7 @@ export const CardDetail: React.FC = () => {
                   color: canNav ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)',
                   cursor: canNav ? 'pointer' : 'not-allowed',
                 }}
-                aria-label="Next variant"
+                aria-label={t('chemcity.cardDetail.nextVariant')}
               >
                 <ChevronRight size={16} />
               </button>
@@ -372,7 +457,7 @@ export const CardDetail: React.FC = () => {
                 </div>
                 {variants.length > 1 && (
                   <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, marginTop: 6, fontWeight: 700 }}>
-                    Variant {variantIdx + 1}/{variants.length}
+                    {tf('chemcity.cardDetail.variantCount', { current: String(variantIdx + 1), total: String(variants.length) })}
                   </div>
                 )}
               </div>
@@ -404,7 +489,7 @@ export const CardDetail: React.FC = () => {
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Zap size={13} color="#76A8A5" />
-                        <span style={{ color: 'rgba(197,215,181,0.8)', fontSize: 11, fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>Skill Power</span>
+                        <span style={{ color: 'rgba(197,215,181,0.8)', fontSize: 11, fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>{t('chemcity.cardDetail.skillPower')}</span>
                       </div>
                       <span style={{ color: '#76A8A5', fontWeight: 800, fontSize: 13, fontFamily: "'Quicksand',sans-serif" }}>
                         +{slim.skillContribution}
@@ -419,7 +504,7 @@ export const CardDetail: React.FC = () => {
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                         <FlaskConical size={12} color="#60a5fa" />
-                        <span style={{ color: '#60a5fa', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>Fun Fact</span>
+                        <span style={{ color: '#60a5fa', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('chemcity.cardDetail.funFact')}</span>
                       </div>
                       <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, lineHeight: 1.65, margin: 0, fontFamily: "'Quicksand',sans-serif" }}>
                         {renderBoldMarkdown(full.educational.funFact)}
@@ -431,7 +516,7 @@ export const CardDetail: React.FC = () => {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                         <Star size={11} color="#c5d7b5" />
-                        <span style={{ color: 'rgba(197,215,181,0.7)', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>Everyday Uses</span>
+                        <span style={{ color: 'rgba(197,215,181,0.7)', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('chemcity.cardDetail.everydayUses')}</span>
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                         {full.educational.everydayUses.map(use => (
@@ -449,7 +534,7 @@ export const CardDetail: React.FC = () => {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                         <BookOpen size={11} color="#86efac" />
-                        <span style={{ color: 'rgba(134,239,172,0.7)', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>DSE Topics</span>
+                        <span style={{ color: 'rgba(134,239,172,0.7)', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('chemcity.cardDetail.dseTopics')}</span>
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                         {full.topicConnections.map(tid => (
@@ -467,7 +552,7 @@ export const CardDetail: React.FC = () => {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                         <MapPin size={11} color="#fbbf24" />
-                        <span style={{ color: 'rgba(251,191,36,0.8)', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>Can be placed at</span>
+                        <span style={{ color: 'rgba(251,191,36,0.8)', fontSize: 10, fontWeight: 800, fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: '0.08em' }}>{t('chemcity.cardDetail.canBePlacedAt')}</span>
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                         {placementSlots.map((slotId) => (
@@ -475,7 +560,7 @@ export const CardDetail: React.FC = () => {
                             background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)',
                             borderRadius: 6, padding: '4px 10px', fontSize: 10, color: '#fbbf24',
                             fontFamily: "'Quicksand',sans-serif", fontWeight: 600,
-                          }}>{SLOT_LABELS[slotId] || slotId}</span>
+                          }}>{getSlotLabel(slotId)}</span>
                         ))}
                       </div>
                     </div>
@@ -490,7 +575,7 @@ export const CardDetail: React.FC = () => {
                   )}
 
                   {!full && !cardDetailLoading && (
-                    <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, fontFamily: "'Quicksand',sans-serif" }}>Card details unavailable.</p>
+                    <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, fontFamily: "'Quicksand',sans-serif" }}>{t('chemcity.cardDetail.cardDetailsUnavailable')}</p>
                   )}
                 </>
               )}

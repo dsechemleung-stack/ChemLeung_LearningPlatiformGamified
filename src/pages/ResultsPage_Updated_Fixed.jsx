@@ -7,7 +7,6 @@ import { quizStorage } from '../utils/quizStorage';
 import { quizService } from '../services/quizService';
 import { quizCompletionService } from '../services/quizCompletionService';
 import { calendarService } from '../services/calendarService';
-import { rewardMCQCompletion, rewardQuizQuestionTokens } from '../services/rewardLogic';
 import ChemistryLoading from '../components/ChemistryLoading';
 import { formatHKDateKey } from '../utils/hkTime';
 import { srsService } from '../services/srsService';
@@ -31,6 +30,9 @@ export default function ResultsPage() {
 
   const awardQuizReward = useChemCityStore((s) => s.awardQuizReward);
   
+  const [pendingRewardRequest, setPendingRewardRequest] = useState(null);
+  const [rewardAfterPrompt, setRewardAfterPrompt] = useState(false);
+  
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -45,13 +47,36 @@ export default function ResultsPage() {
   const questions = quizStorage.getSelectedQuestions();
   const userAnswers = quizStorage.getUserAnswers();
   const questionTimes = quizStorage.getQuestionTimes();
+  const sessionStartTime = quizStorage.getSessionStart();
   
   // Generate attempt key AFTER userAnswers is defined
   const attemptKey = userAnswers && Object.keys(userAnswers).length > 0 
-    ? `quiz_saved_${Object.keys(userAnswers).sort().join('_')}` 
+    ? `quiz_saved_${sessionStartTime || 'no_session'}_${Object.keys(userAnswers).sort().join('_')}` 
     : null;
 
   const mistakesToSrsMode = localStorage.getItem('practice_mistakes_to_srs_mode') || 'ask';
+
+  const resolveDeferredReward = () => {
+    const rewardFlagKey = attemptKey ? `${attemptKey}_chemcityRewarded` : null;
+    const alreadyRewarded = rewardFlagKey ? sessionStorage.getItem(rewardFlagKey) === 'true' : false;
+    if (!rewardAfterPrompt || !pendingRewardRequest || alreadyRewarded) {
+      setPendingRewardRequest(null);
+      setRewardAfterPrompt(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        await awardQuizReward(pendingRewardRequest);
+        if (rewardFlagKey) sessionStorage.setItem(rewardFlagKey, 'true');
+      } catch (e) {
+        console.error('⚠️ ChemCity quizReward error (after SRS prompt):', e);
+      } finally {
+        setPendingRewardRequest(null);
+        setRewardAfterPrompt(false);
+      }
+    })();
+  };
 
   useEffect(() => {
     if (!questions || questions.length === 0 || Object.keys(userAnswers).length === 0) {
@@ -84,6 +109,55 @@ export default function ResultsPage() {
       if (attemptKey && sessionStorage.getItem(attemptKey)) {
         console.log('⚠️ Attempt already saved (sessionStorage), skipping duplicate save');
         setSaved(true);
+
+        // Compute reward request (may be deferred until after SRS prompt)
+        const totalQuestions = questions.length;
+        const correctAnswers = questions.reduce((acc, q) => acc + (userAnswers[q.ID] === q.CorrectOption ? 1 : 0), 0);
+        const percentage = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+        const topics = [...new Set(questions.map(q => q.Topic))].filter(Boolean);
+        const wrongAnswers = questions.filter(q => userAnswers[q.ID] !== q.CorrectOption);
+        const mode = localStorage.getItem('quiz_mode') || 'practice';
+
+        const perQuestionDiamonds = Math.floor(Number(correctAnswers || 0) / 2);
+        const completionDiamonds =
+          Number(totalQuestions || 0) >= 10
+            ? percentage === 100
+              ? 20
+              : percentage >= 80
+                ? 15
+                : percentage >= 50
+                  ? 10
+                  : 0
+            : 0;
+        const baseDiamonds = Math.max(0, perQuestionDiamonds + completionDiamonds);
+
+        const rewardRequest = {
+          baseCoins: correctAnswers * 10,
+          baseDiamonds,
+          topicId: topics?.[0],
+          correctAnswers,
+          totalQuestions,
+        };
+
+        const rewardFlagKey = `${attemptKey}_chemcityRewarded`;
+        const alreadyRewarded = sessionStorage.getItem(rewardFlagKey) === 'true';
+
+        const shouldShowSrsPrompt =
+          mode !== 'spaced-repetition' && wrongAnswers.length > 0 && mistakesToSrsMode === 'ask';
+
+        if (!alreadyRewarded) {
+          if (shouldShowSrsPrompt) {
+            setPendingRewardRequest(rewardRequest);
+            setRewardAfterPrompt(true);
+          } else {
+            try {
+              await awardQuizReward(rewardRequest);
+              sessionStorage.setItem(rewardFlagKey, 'true');
+            } catch (e) {
+              console.error('⚠️ ChemCity quizReward error (sessionStorage path):', e);
+            }
+          }
+        }
 
         const existingAttemptId = attemptKey
           ? sessionStorage.getItem(`${attemptKey}_attemptId`)
@@ -186,41 +260,28 @@ export default function ResultsPage() {
         // STEP 2: Run ALL operations in parallel (MUCH FASTER!)
         const parallelOperations = [];
 
-        // ChemCity Phase 3 — award Coins + Diamonds (non-blocking)
-        // Note: ChemCity uses its own currency system; existing token rewards remain unchanged.
-        parallelOperations.push(
-          (async () => {
-            try {
-              await awardQuizReward({
-                baseCoins: correctAnswers * 10,
-                baseDiamonds: 5,
-                topicId: topics?.[0],
-                correctAnswers,
-                totalQuestions,
-              });
-            } catch (e) {
-              console.error('⚠️ ChemCity quizReward error:', e);
-            }
-          })()
-        );
+        // Quiz Mode Rewards (ChemCity boosted) — award Coins + Diamonds (non-blocking)
+        // Note: This Cloud Function applies ChemCity skill boosts to the diamond reward.
+        const perQuestionDiamonds = Math.floor(Number(correctAnswers || 0) / 2);
+        const completionDiamonds =
+          Number(totalQuestions || 0) >= 10
+            ? percentage === 100
+              ? 20
+              : percentage >= 80
+                ? 15
+                : percentage >= 50
+                  ? 10
+                  : 0
+            : 0;
+        const baseDiamonds = Math.max(0, perQuestionDiamonds + completionDiamonds);
 
-        // Operation 0: Token rewards (per-question + quiz bonus)
-        parallelOperations.push(
-          (async () => {
-            try {
-              await rewardQuizQuestionTokens(currentUser.uid, questions, userAnswers, quizMode);
-              await rewardMCQCompletion(currentUser.uid, {
-                percentage,
-                totalQuestions,
-                correctAnswers,
-                topics,
-                attemptId
-              });
-            } catch (err) {
-              console.error('⚠️ Token reward error:', err);
-            }
-          })()
-        );
+        const rewardRequest = {
+          baseCoins: correctAnswers * 10,
+          baseDiamonds,
+          topicId: topics?.[0],
+          correctAnswers,
+          totalQuestions,
+        };
 
         // Operation 1: Process quiz completion (performance + spaced repetition)
         parallelOperations.push(
@@ -355,24 +416,54 @@ export default function ResultsPage() {
           );
         }
 
-        // Execute ALL operations at once (parallel = faster!)
-        console.log(`🚀 Running ${parallelOperations.length} operations in parallel...`);
-        const results = await Promise.all(parallelOperations);
-        console.log('✅ All operations complete!');
+        // Execute background operations but DO NOT block UI on them.
+        // This keeps the results screen responsive and allows the reward popup to show promptly.
+        console.log(`🚀 Running ${parallelOperations.length} operations in parallel (background)...`);
+        Promise.all(
+          parallelOperations.map((p) =>
+            Promise.resolve(p).catch((error) => ({ error }))
+          )
+        ).then((results) => {
+          console.log('✅ Background operations complete!');
+          const errors = results.filter((r) => r?.error);
+          if (errors.length > 0) {
+            console.warn('⚠️ Some operations had errors (non-critical):', errors);
 
-        // Check for any errors (non-blocking)
-        const errors = results.filter(r => r?.error);
-        if (errors.length > 0) {
-          console.warn('⚠️ Some operations had errors (non-critical):', errors);
-          
-          // If SRS submission failed, keep the data for retry
-          const srsError = errors.find(e => e.error && e.error.message?.includes('SRS'));
-          if (srsError) {
-            console.log('📝 SRS data preserved for retry');
+            // If SRS submission failed, keep the data for retry
+            const srsError = errors.find((e) => e.error && e.error.message?.includes('SRS'));
+            if (srsError) {
+              console.log('📝 SRS data preserved for retry');
+            }
           }
-        }
+        });
 
         setSaved(true);
+
+        // Decide whether reward popup should show now or after the SRS prompt.
+        // If the prompt is shown, we defer reward until user clicks (No Thanks / Add).
+        const rewardFlagKey = attemptKey ? `${attemptKey}_chemcityRewarded` : null;
+        const alreadyRewarded = rewardFlagKey ? sessionStorage.getItem(rewardFlagKey) === 'true' : false;
+        const wrongAnswers = questions.filter(q => userAnswers[q.ID] !== q.CorrectOption);
+        const mode = localStorage.getItem('quiz_mode') || 'practice';
+        const shouldShowSrsPrompt =
+          mode !== 'spaced-repetition' && wrongAnswers.length > 0 && mistakesToSrsMode === 'ask';
+
+        if (!alreadyRewarded) {
+          if (shouldShowSrsPrompt) {
+            setPendingRewardRequest(rewardRequest);
+            setRewardAfterPrompt(true);
+          } else {
+            (async () => {
+              try {
+                await awardQuizReward(rewardRequest);
+              } catch (e) {
+                console.error('⚠️ ChemCity quizReward error:', e);
+              } finally {
+                if (rewardFlagKey) sessionStorage.setItem(rewardFlagKey, 'true');
+              }
+            })();
+          }
+        }
 
         if (!hasShownSrsPromptRef.current) {
           const alreadyResponded = attemptKey && sessionStorage.getItem(`${attemptKey}_srsPromptResponded`);
@@ -407,7 +498,7 @@ export default function ResultsPage() {
           sessionStorage.setItem(`${attemptKey}_attemptId`, attemptId);
         }
         
-        console.log('🎉 Save complete!');
+        console.log('🎉 Save complete (background tasks running)!');
 
       } catch (error) {
         console.error('❌ Critical save error:', error);
@@ -468,7 +559,14 @@ export default function ResultsPage() {
       )}
 
       {showAddToSrsPrompt && !saving && (
-        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setShowAddToSrsPrompt(false)}>
+        <div
+          className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => {
+            if (attemptKey) sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+            setShowAddToSrsPrompt(false);
+            resolveDeferredReward();
+          }}
+        >
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -481,7 +579,11 @@ export default function ResultsPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowAddToSrsPrompt(false)}
+                onClick={() => {
+                  if (attemptKey) sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+                  setShowAddToSrsPrompt(false);
+                  resolveDeferredReward();
+                }}
                 className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all flex items-center justify-center flex-none"
                 aria-label={t('common.close')}
               >
@@ -506,6 +608,7 @@ export default function ResultsPage() {
                   onClick={() => {
                     if (attemptKey) sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
                     setShowAddToSrsPrompt(false);
+                    resolveDeferredReward();
                   }}
                   className="px-4 py-2 rounded-xl bg-slate-200 text-slate-800 font-black hover:bg-slate-300 transition-all disabled:opacity-60"
                 >
@@ -535,6 +638,8 @@ export default function ResultsPage() {
                       setShowAddToSrsPrompt(false);
                       setAddToSrsDone(true);
                       setTimeout(() => setAddToSrsDone(false), 2500);
+
+                      resolveDeferredReward();
                     } catch (e) {
                       console.error('Failed to add mistakes to SRS:', e);
                       alert(t('results.failedAddToSrs'));

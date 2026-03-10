@@ -1,119 +1,114 @@
 import React, { useState } from 'react';
+import { Coins } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
-
-const STEPS = [
-  {
-    emoji: '🧪',
-    title: 'Welcome to ChemCity!',
-    subtitle: 'Your chemistry-powered city awaits.',
-    body: (
-      <div className="flex flex-col gap-3 text-slate-300 text-sm leading-relaxed">
-        <p>
-          ChemCity is a collectible card game built around real chemistry. Collect chemical compound
-          cards, equip them to 8 city locations, and watch your city generate rewards.
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { emoji: '🃏', label: 'Collect cards' },
-            { emoji: '🏙️', label: 'Build your city' },
-            { emoji: '💰', label: 'Earn coins' },
-            { emoji: '💎', label: 'Win diamonds' },
-          ].map(({ emoji, label }) => (
-            <div key={label} className="flex items-center gap-2 bg-slate-800/60 rounded-xl px-3 py-2">
-              <span className="text-xl">{emoji}</span>
-              <span className="text-white text-xs font-semibold">{label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    ),
-  },
-  {
-    emoji: '💰',
-    title: 'Earn Coins & Diamonds',
-    subtitle: 'Two ways to build your wealth.',
-    body: (
-      <div className="flex flex-col gap-3 text-sm">
-        <div className="bg-yellow-900/30 border border-yellow-700/60 rounded-xl p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">🪙</span>
-            <span className="text-yellow-300 font-bold">Coins — Passive Income</span>
-          </div>
-          <p className="text-slate-300 text-xs leading-relaxed">
-            Equip cards in the 🌱 <strong>Garden</strong> to generate coins per hour. The ⚗️{' '}
-            <strong>Lab</strong> multiplies your rate. Collect any time from the map.
-          </p>
-        </div>
-        <div className="bg-cyan-900/30 border border-cyan-700/60 rounded-xl p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">💎</span>
-            <span className="text-cyan-300 font-bold">Diamonds — Quiz Rewards</span>
-          </div>
-          <p className="text-slate-300 text-xs leading-relaxed">
-            Complete quizzes to earn diamonds. 🍳 <strong>Kitchen</strong>, 📚 <strong>School</strong>,
-            and 🏖️ <strong>Beach</strong> cards supercharge your quiz rewards.
-          </p>
-        </div>
-        <div className="bg-indigo-900/30 border border-indigo-700/60 rounded-xl p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">🚽</span>
-            <span className="text-slate-200 font-bold">Daily Login Bonus</span>
-          </div>
-          <p className="text-slate-300 text-xs leading-relaxed">
-            Open ChemCity every day to claim a streak bonus. Toilet cards boost your daily diamond
-            reward.
-          </p>
-        </div>
-      </div>
-    ),
-  },
-  {
-    emoji: '🏪',
-    title: 'Collect Cards in ChemStore',
-    subtitle: 'A new selection every day.',
-    body: (
-      <div className="flex flex-col gap-3 text-sm">
-        <p className="text-slate-300 leading-relaxed">
-          The <strong className="text-white">🏪 ChemStore</strong> rotates 3–6 cards daily. Spend
-          coins or diamonds to add them to your collection.
-        </p>
-        <div className="flex flex-col gap-2">
-          {[
-            {
-              pill: 'Common',
-              pillClass: 'bg-slate-600 text-white',
-              desc: 'Affordable and plentiful — great for filling slots.',
-            },
-            { pill: 'Rare', pillClass: 'bg-blue-600 text-white', desc: 'Stronger skill contributions.' },
-            { pill: 'Epic', pillClass: 'bg-purple-600 text-white', desc: 'Significant boosts to place skills.' },
-            {
-              pill: 'Legendary',
-              pillClass: 'bg-yellow-400 text-slate-900',
-              desc: 'Massive power — rare to appear in the store.',
-            },
-          ].map(({ pill, pillClass, desc }) => (
-            <div key={pill} className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-3 py-2.5">
-              <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 shrink-0 ${pillClass}`}>
-                {pill}
-              </span>
-              <span className="text-slate-300 text-xs">{desc}</span>
-            </div>
-          ))}
-        </div>
-        <div className="bg-emerald-900/30 border border-emerald-700/60 rounded-xl p-3">
-          <p className="text-slate-300 text-xs leading-relaxed">
-            💡 <strong className="text-white">Tip:</strong> Equip cards from the 🛍️{' '}
-            <strong>Boutique</strong> to get a discount in the ChemStore — up to 50% off coin prices!
-          </p>
-        </div>
-      </div>
-    ),
-  },
-] as const;
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export const OnboardingOverlay: React.FC = () => {
+  const { t, tf } = useLanguage();
   const dismissOnboarding = useChemCityStore((s) => s.dismissOnboarding);
   const [step, setStep] = useState(0);
+
+  const STEPS = [
+    {
+      emoji: '🧪',
+      title: t('chemcity.onboarding.step1.title'),
+      subtitle: t('chemcity.onboarding.step1.subtitle'),
+      body: (
+        <div className="flex flex-col gap-3 text-slate-300 text-sm leading-relaxed">
+          <p>{t('chemcity.onboarding.step1.body1')}</p>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { emoji: '🃏', label: t('chemcity.onboarding.step1.collectCards') },
+              { emoji: '🏙️', label: t('chemcity.onboarding.step1.buildCity') },
+              { emoji: '💰', label: t('chemcity.onboarding.step1.earnCoins') },
+              { emoji: '💎', label: t('chemcity.onboarding.step1.winDiamonds') },
+            ].map(({ emoji, label }) => (
+              <div key={label} className="flex items-center gap-2 bg-slate-800/60 rounded-xl px-3 py-2">
+                <span className="text-xl">{emoji}</span>
+                <span className="text-white text-xs font-semibold">{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    {
+      emoji: '💰',
+      title: t('chemcity.onboarding.step2.title'),
+      subtitle: t('chemcity.onboarding.step2.subtitle'),
+      body: (
+        <div className="flex flex-col gap-3 text-sm">
+          <div className="bg-yellow-900/30 border border-yellow-700/60 rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <Coins size={18} className="text-yellow-300" />
+              <span className="text-yellow-300 font-bold">{t('chemcity.onboarding.step2.coinsTitle')}</span>
+            </div>
+            <p className="text-slate-300 text-xs leading-relaxed">
+              {tf('chemcity.onboarding.step2.coinsBody', { garden: '🌱', lab: '⚗️' })}
+            </p>
+          </div>
+          <div className="bg-cyan-900/30 border border-cyan-700/60 rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xl">💎</span>
+              <span className="text-cyan-300 font-bold">{t('chemcity.onboarding.step2.diamondsTitle')}</span>
+            </div>
+            <p className="text-slate-300 text-xs leading-relaxed">
+              {tf('chemcity.onboarding.step2.diamondsBody', { kitchen: '🍳', school: '📚', beach: '🏖️' })}
+            </p>
+          </div>
+          <div className="bg-indigo-900/30 border border-indigo-700/60 rounded-xl p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xl">🚽</span>
+              <span className="text-slate-200 font-bold">{t('chemcity.onboarding.step2.dailyBonusTitle')}</span>
+            </div>
+            <p className="text-slate-300 text-xs leading-relaxed">
+              {t('chemcity.onboarding.step2.dailyBonusBody')}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      emoji: '🏪',
+      title: t('chemcity.onboarding.step3.title'),
+      subtitle: t('chemcity.onboarding.step3.subtitle'),
+      body: (
+        <div className="flex flex-col gap-3 text-sm">
+          <p className="text-slate-300 leading-relaxed">
+            {t('chemcity.onboarding.step3.body1')}
+          </p>
+          <div className="flex flex-col gap-2">
+            {[
+              {
+                pill: t('chemcity.onboarding.step3.common'),
+                pillClass: 'bg-slate-600 text-white',
+                desc: t('chemcity.onboarding.step3.commonDesc'),
+              },
+              { pill: t('chemcity.onboarding.step3.rare'), pillClass: 'bg-blue-600 text-white', desc: t('chemcity.onboarding.step3.rareDesc') },
+              { pill: t('chemcity.onboarding.step3.epic'), pillClass: 'bg-purple-600 text-white', desc: t('chemcity.onboarding.step3.epicDesc') },
+              {
+                pill: t('chemcity.onboarding.step3.legendary'),
+                pillClass: 'bg-yellow-400 text-slate-900',
+                desc: t('chemcity.onboarding.step3.legendaryDesc'),
+              },
+            ].map(({ pill, pillClass, desc }) => (
+              <div key={pill} className="flex items-center gap-3 bg-slate-800/60 rounded-xl px-3 py-2.5">
+                <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 shrink-0 ${pillClass}`}>
+                  {pill}
+                </span>
+                <span className="text-slate-300 text-xs">{desc}</span>
+              </div>
+            ))}
+          </div>
+          <div className="bg-emerald-900/30 border border-emerald-700/60 rounded-xl p-3">
+            <p className="text-slate-300 text-xs leading-relaxed">
+              {tf('chemcity.onboarding.step3.tip', { boutique: '🛍️' })}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+  ] as const;
 
   const isLast = step === STEPS.length - 1;
   const { emoji, title, subtitle, body } = STEPS[step];
@@ -177,7 +172,7 @@ export const OnboardingOverlay: React.FC = () => {
                 onClick={handleSkip}
                 className="text-slate-500 text-sm hover:text-slate-300 transition-colors px-2"
               >
-                Skip
+                {t('chemcity.onboarding.skip')}
               </button>
             )}
 
@@ -185,7 +180,7 @@ export const OnboardingOverlay: React.FC = () => {
               onClick={handleNext}
               className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm transition-all active:scale-95"
             >
-              {isLast ? "Let's go! 🚀" : 'Next →'}
+              {isLast ? t('chemcity.onboarding.letsGo') : t('chemcity.onboarding.next')}
             </button>
           </div>
         </div>

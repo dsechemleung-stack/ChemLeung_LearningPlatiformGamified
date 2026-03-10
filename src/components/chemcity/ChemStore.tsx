@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { X, ShoppingBag, Clock, Lock, Plus, Coins, Gem, Tag, RefreshCw } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
-import { getEffectiveCoinPrice } from '../../lib/chemcity/shop';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { getEffectiveCoinPrice, getEffectiveDiamondPrice } from '../../lib/chemcity/shop';
 import { countdownToMidnight, STORE_SLOT_UNLOCK_COSTS, STORE_MAX_SLOTS } from '../../lib/chemcity/dailyStore';
 import type { SlimItemDocument } from '../../lib/chemcity/types';
 
@@ -37,6 +38,7 @@ const RARITY_CONFIG: Record<string, {
 };
 
 export const ChemStore: React.FC = () => {
+  const { t, tf } = useLanguage();
   const user             = useChemCityStore(s => s.user);
   const dailyStoreItems  = useChemCityStore(s => s.dailyStoreItems);
   const storeSlotCount   = useChemCityStore(s => s.storeSlotCount);
@@ -93,7 +95,7 @@ export const ChemStore: React.FC = () => {
     setUnlockingSlot(true);
     setUnlockError(null);
     try { await unlockStoreSlot(); }
-    catch (err: any) { setUnlockError(err?.message ?? 'Failed to unlock slot.'); }
+    catch (err: any) { setUnlockError(err?.message ?? t('unifiedStore.failedToUnlockSlot')); }
     finally { setUnlockingSlot(false); }
   };
 
@@ -132,7 +134,7 @@ export const ChemStore: React.FC = () => {
                 <div style={{ color: '#fff', fontWeight: 800, fontSize: 18 }}>ChemStore</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(197,215,181,0.5)', fontSize: 12, fontWeight: 600 }}>
                   <Clock size={11} />
-                  <span>Resets in {countdown}</span>
+                  <span>{tf('unifiedStore.resetsIn', { countdown })}</span>
                 </div>
               </div>
             </div>
@@ -157,7 +159,7 @@ export const ChemStore: React.FC = () => {
                     title="DEV: refresh ChemCity static data"
                   >
                     <RefreshCw size={14} />
-                    Refresh
+                    {t('chemcity.store.dev.refresh')}
                   </button>
 
                   <button
@@ -177,7 +179,7 @@ export const ChemStore: React.FC = () => {
                     }}
                     title="DEV: reroll store items"
                   >
-                    Reroll
+                    {t('chemcity.store.dev.reroll')}
                   </button>
 
                   <button
@@ -209,7 +211,7 @@ export const ChemStore: React.FC = () => {
                   borderRadius: 20, padding: '5px 12px',
                 }}>
                   <Tag size={13} color="#34d399" />
-                  <span style={{ color: '#34d399', fontWeight: 800, fontSize: 13 }}>{discount}% OFF</span>
+                  <span style={{ color: '#34d399', fontWeight: 800, fontSize: 13 }}>{tf('unifiedStore.offPercent', { percent: String(discount) })}</span>
                 </div>
               )}
             </div>
@@ -225,7 +227,7 @@ export const ChemStore: React.FC = () => {
               ))}
             </div>
             <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-              {storeSlotCount}/{STORE_MAX_SLOTS} slots
+              {tf('chemcity.store.slotsCount', { current: String(storeSlotCount), total: String(STORE_MAX_SLOTS) })}
             </span>
           </div>
         </div>
@@ -235,7 +237,7 @@ export const ChemStore: React.FC = () => {
           {dailyStoreItems.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200, gap: 12 }}>
               <ShoppingBag size={40} color="rgba(255,255,255,0.1)" style={{ animation: 'legendGlow 2s infinite' }} />
-              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, fontWeight: 600, margin: 0 }}>Loading store…</p>
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14, fontWeight: 600, margin: 0 }}>{t('unifiedStore.loadingStore')}</p>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -252,7 +254,9 @@ export const ChemStore: React.FC = () => {
                   const rawCoin = item.shopData?.coinCost;
                   const rawDiamond = item.shopData?.diamondCost;
                   const effCoin = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
+                  const effDiamond = rawDiamond != null ? getEffectiveDiamondPrice(rawDiamond, user?.activeBonuses ?? null) : null;
                   const coinSaved = rawCoin != null && effCoin != null ? rawCoin - effCoin : 0;
+                  const diamondSaved = rawDiamond != null && effDiamond != null ? rawDiamond - effDiamond : 0;
                   const formulaText = String(item.chemicalFormula ?? '');
                   const shouldMarquee = formulaText.length >= 18;
 
@@ -391,7 +395,7 @@ export const ChemStore: React.FC = () => {
                               background: 'rgba(52,211,153,0.9)', borderRadius: 8,
                               padding: '6px 14px', fontWeight: 800, fontSize: 12,
                               color: '#052e16', fontFamily: "'Quicksand',sans-serif",
-                            }}>✓ Owned</div>
+                            }}>✓ {t('unifiedStore.owned')}</div>
                           </div>
                         )}
                       </button>
@@ -417,8 +421,14 @@ export const ChemStore: React.FC = () => {
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                             <Gem size={11} color="#67e8f9" />
                             <span style={{ color: '#67e8f9', fontWeight: 800, fontSize: 13, fontFamily: "'Quicksand',sans-serif" }}>
-                              {item.shopData.diamondCost.toLocaleString()}
+                              {(effDiamond ?? item.shopData.diamondCost).toLocaleString()}
                             </span>
+                          </div>
+                        )}
+
+                        {diamondSaved > 0 && rawDiamond != null && (
+                          <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, textDecoration: 'line-through', fontFamily: "'Quicksand',sans-serif" }}>
+                            {rawDiamond.toLocaleString()}
                           </div>
                         )}
                       </div>
@@ -431,7 +441,7 @@ export const ChemStore: React.FC = () => {
               {canUnlockMore && (
                 <div style={{ marginTop: 8 }}>
                   <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11, fontWeight: 600, textAlign: 'center', marginBottom: 10 }}>
-                    Unlock more slots to see more cards daily
+                    {t('unifiedStore.unlockMoreSlots')}
                   </p>
                   <button
                     onClick={handleUnlockSlot}
@@ -459,7 +469,7 @@ export const ChemStore: React.FC = () => {
                     </div>
                     <div style={{ textAlign: 'left' }}>
                       <div style={{ color: canAffordNext ? '#fff' : '#64748b', fontWeight: 800, fontSize: 13, fontFamily: "'Quicksand',sans-serif" }}>
-                        Unlock Slot #{nextSlotNum}
+                        {tf('unifiedStore.unlockSlotNumber', { number: String(nextSlotNum) })}
                       </div>
                       {nextSlotCost != null && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -469,7 +479,7 @@ export const ChemStore: React.FC = () => {
                           </span>
                           {!canAffordNext && (
                             <span style={{ color: '#64748b', fontSize: 10, fontFamily: "'Quicksand',sans-serif" }}>
-                              (need {(nextSlotCost - coins).toLocaleString()} more)
+                              {tf('chemcity.store.needMoreCoinsInline', { count: (nextSlotCost - coins).toLocaleString() })}
                             </span>
                           )}
                         </div>
@@ -484,7 +494,7 @@ export const ChemStore: React.FC = () => {
               {storeSlotCount === STORE_MAX_SLOTS && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '12px 0' }}>
                   <div style={{ height: 1, flex: 1, background: 'rgba(255,255,255,0.06)' }} />
-                  <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>All slots unlocked</span>
+                  <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: 11, fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>{t('chemcity.store.allSlotsUnlocked')}</span>
                   <div style={{ height: 1, flex: 1, background: 'rgba(255,255,255,0.06)' }} />
                 </div>
               )}

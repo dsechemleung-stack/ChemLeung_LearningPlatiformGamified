@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { CurrencyBar } from './CurrencyBar';
 import { ChemCityMap } from './ChemCityMap';
@@ -7,7 +8,6 @@ import { PlaceView } from './PlaceView';
 import { CardPicker } from './CardPicker';
 import { CardDetail } from './CardDetail';
 import { DailyLoginModal } from './DailyLoginModal';
-import { QuizRewardModal } from './QuizRewardModal';
 import { PurchaseConfirmModal } from './PurchaseConfirmModal';
 import { PlaceUnlockModal } from './PlaceUnlockModal';
 import { GasStationDistributor } from './GasStationDistributor';
@@ -16,6 +16,7 @@ import ChemistryLoading from '../ChemistryLoading';
 
 export const ChemCityRoot: React.FC = () => {
   const { currentUser } = useAuth() as any;
+  const { t } = useLanguage();
 
   const view = useChemCityStore((s) => s.view);
   const isLoading = useChemCityStore((s) => s.isLoading);
@@ -37,7 +38,7 @@ export const ChemCityRoot: React.FC = () => {
     return (
       <div className="flex flex-col min-h-screen bg-slate-950 items-center justify-center gap-4 px-8">
         <span className="text-5xl">🧪</span>
-        <p className="text-slate-400 text-sm text-center">Please sign in to access ChemCity.</p>
+        <p className="text-slate-400 text-sm text-center">{t('chemcity.root.pleaseSignIn')}</p>
       </div>
     );
   }
@@ -59,7 +60,7 @@ export const ChemCityRoot: React.FC = () => {
           onClick={() => window.location.reload()}
           className="bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-4 py-2 text-sm"
         >
-          Retry
+          {t('common.retry')}
         </button>
       </div>
     );
@@ -79,7 +80,6 @@ export const ChemCityRoot: React.FC = () => {
       <CardDetail />
 
       <DailyLoginModal />
-      {!dailyLoginOpen && <QuizRewardModal />}
 
       <PlaceUnlockModal />
       <PurchaseConfirmModal />

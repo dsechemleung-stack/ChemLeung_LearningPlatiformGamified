@@ -6,6 +6,8 @@ import { Home, Trophy, User, LogOut, History, ChevronDown, Menu, X, Languages, B
 import { quizStorage } from '../utils/quizStorage';
 import { forumService } from '../services/forumService';
 
+import TokenRulesModal from './TokenRulesModal';
+
 import ChemCityUserProfileIcon from './ChemCityUserProfileIcon';
 
 export default function Header() {
@@ -22,6 +24,9 @@ export default function Header() {
     const [notifLimit, setNotifLimit] = useState(10);
     const [showLangSubmenu, setShowLangSubmenu] = useState(false);
     const [showDeleteAllNotifsConfirm, setShowDeleteAllNotifsConfirm] = useState(false);
+
+    const [showTokenRules, setShowTokenRules] = useState(false);
+    const [tokenRulesInitialView, setTokenRulesInitialView] = useState('diamonds');
 
     useEffect(() => {
         if (!currentUser || !showNotifPanel) return;
@@ -445,28 +450,8 @@ export default function Header() {
                                                     onClick={() => handleNavigation('/history')}
                                                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left border-t border-slate-100 active:scale-[0.99]"
                                                 >
-                                                    <History size={18} className="text-slate-700" />
-                                                    <span className="font-bold text-slate-900">
-                                                        {t('header.myHistory')}
-                                                    </span>
-                                                </button>
-                                                <button
-                                                    onClick={() => handleNavigation('/token-log')}
-                                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left border-t border-slate-100 active:scale-[0.99]"
-                                                >
-                                                    <Clock size={18} className="text-amber-500" />
-                                                    <span className="font-bold text-slate-900">
-                                                        {t('header.tokenHistory')}
-                                                    </span>
-                                                </button>
-                                                <button
-                                                    onClick={() => handleNavigation('/inventory')}
-                                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-all text-left border-t border-slate-100 active:scale-[0.99]"
-                                                >
-                                                    <Archive size={18} className="text-slate-700" />
-                                                    <span className="font-bold text-slate-900">
-                                                        Inventory
-                                                    </span>
+                                                    <History size={18} className="text-purple-600" />
+                                                    <span className="font-bold text-slate-700">{t('header.myHistory')}</span>
                                                 </button>
                                                 <button
                                                     onClick={() => setShowLangSubmenu(true)}
@@ -498,14 +483,32 @@ export default function Header() {
                             {currentUser && (
                                 <div className="floating-island island-amber px-2 py-1 flex flex-col gap-1 flex-shrink-0">
                                     <div className="floating-island-content flex flex-col items-start gap-1">
-                                        <div className="flex items-center gap-1 justify-start">
+                                        <button
+                                            type="button"
+                                            className="flex items-center gap-1 justify-start text-left"
+                                            onClick={() => {
+                                                setTokenRulesInitialView('diamonds');
+                                                setShowTokenRules(true);
+                                            }}
+                                            title={t('store.howToEarnTokens')}
+                                            aria-label={t('store.howToEarnTokens')}
+                                        >
                                         <Gem size={12} className="text-cyan-500" />
                                         <span className="text-[11px] font-black text-slate-900 tabular-nums">{Number(diamondsDisplay || 0).toLocaleString()}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1 justify-start">
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="flex items-center gap-1 justify-start text-left"
+                                            onClick={() => {
+                                                setTokenRulesInitialView('coins');
+                                                setShowTokenRules(true);
+                                            }}
+                                            title={t('store.howToEarnCoins')}
+                                            aria-label={t('store.howToEarnCoins')}
+                                        >
                                         <Coins size={12} className="text-amber-700" />
                                         <span className="text-[11px] font-black text-slate-900 tabular-nums">{coins.toLocaleString()}</span>
-                                        </div>
+                                        </button>
                                     </div>
                                 </div>
                             )}
@@ -513,6 +516,12 @@ export default function Header() {
                     </div>
                 </div>
             </header>
+
+            <TokenRulesModal
+                open={showTokenRules}
+                onClose={() => setShowTokenRules(false)}
+                initialView={tokenRulesInitialView}
+            />
 
                 {/* Mobile Navigation Menu */}
                 {showMobileNav && currentUser && (

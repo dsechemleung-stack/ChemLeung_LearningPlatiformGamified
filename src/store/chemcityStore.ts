@@ -610,6 +610,13 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
     }));
 
     try {
+      // Ensure ChemCity user doc exists even if user never opened /chemcity.
+      // Best-effort: reward should still attempt even if init fails.
+      try {
+        await callChemCityInitUser();
+      } catch {
+        // ignore
+      }
       const result = await callChemCityQuizReward(request);
       set({
         quizReward: {
@@ -619,10 +626,45 @@ export const useChemCityStore = create<ChemCityStore>((set, get) => ({
           isAwarding: false,
         },
       });
-    } catch {
-      set((s) => ({
-        quizReward: { ...s.quizReward, isAwarding: false },
-      }));
+    } catch (err) {
+      console.error('[ChemCity] awardQuizReward failed; showing fallback modal', err);
+      const code = (err as any)?.code;
+      const message = (err as any)?.message;
+      const details = (err as any)?.details;
+      const detailsStr = (() => {
+        try {
+          return details ? JSON.stringify(details) : '';
+        } catch {
+          return '';
+        }
+      })();
+      const combinedMessage =
+        [
+          code ? `code=${String(code)}` : '',
+          message ? String(message) : '',
+          detailsStr ? `details=${detailsStr}` : '',
+        ]
+          .filter(Boolean)
+          .join(' | ') || 'Failed to award quiz reward';
+      set({
+        quizReward: {
+          result: {
+            coinsAwarded: 0,
+            diamondsAwarded: 0,
+            breakdown: {
+              error: true,
+              message: combinedMessage,
+              baseCoins: request.baseCoins ?? 0,
+              baseDiamonds: request.baseDiamonds ?? 0,
+              correctAnswers: request.correctAnswers ?? 0,
+              totalQuestions: request.totalQuestions ?? 0,
+            },
+          } as any,
+          correctAnswers: request.correctAnswers ?? 0,
+          totalQuestions: request.totalQuestions ?? 0,
+          isAwarding: false,
+        },
+      });
     }
   },
 

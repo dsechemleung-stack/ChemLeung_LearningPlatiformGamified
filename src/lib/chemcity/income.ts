@@ -20,7 +20,7 @@ export function estimateUnclaimedCoins(
 }
 
 export function formatCoinsPerHour(coinsPerHour: number): string {
-  if (coinsPerHour === 0) return "0 🪙/hr";
-  if (coinsPerHour >= 1000) return `${(coinsPerHour / 1000).toFixed(1)}k 🪙/hr`;
-  return `${Math.round(coinsPerHour)} 🪙/hr`;
+  if (coinsPerHour === 0) return "0/hr";
+  if (coinsPerHour >= 1000) return `${(coinsPerHour / 1000).toFixed(1)}k/hr`;
+  return `${Math.round(coinsPerHour)}/hr`;
 }

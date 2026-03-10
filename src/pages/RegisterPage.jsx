@@ -142,7 +142,7 @@ export default function RegisterPage() {
         type="button"
         onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
         className="back-btn"
-        title="Back"
+        title={t('common.back')}
       >
         <ArrowLeft size={18} />
       </button>

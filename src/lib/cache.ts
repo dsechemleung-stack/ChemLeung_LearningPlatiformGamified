@@ -300,7 +300,11 @@ async function fetchSlimItemsFromCsv(url: string): Promise<SlimItemDocument[]> {
         ...(coinCost != null ? { coinCost } : {}),
         ...(diamondCost != null ? { diamondCost } : {}),
       },
-      skillContribution: Number(parseNumberish(get(r, 'skillcontribution')) ?? 0),
+      skillContribution: Number(
+        parseNumberish(get(r, 'skillcontribution')) ??
+          parseNumberish(get(r, 'skillpower')) ??
+          rarityValue,
+      ),
       collections: splitList(get(r, 'collectionids') || get(r, 'collections')),
       deprecated: parseBoolish(get(r, 'deprecated')),
     };

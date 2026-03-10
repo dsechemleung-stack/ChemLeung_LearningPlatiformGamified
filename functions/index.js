@@ -1,9 +1,144 @@
 const admin = require('firebase-admin');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } = require('firebase-functions/v2/firestore');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const algoliasearch = require('algoliasearch');
+const fs = require('fs');
+const path = require('path');
+
+const SLIM_ITEMS_CSV_URL =
+  String(process.env.CHEMCITY_SLIM_ITEMS_CSV_URL || '').trim() ||
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vT1y1TCVk0zDqeO8V58ZN-Dj3M3rqJZFSLUEjWWTW6f-jlzSpqc8UEl3MGmTw78qOZHJNVEEbJYGojc/pub?gid=0&single=true&output=csv';
+
+let _slimFallbackCache = { fetchedAt: 0, map: new Map() };
+const SLIM_FALLBACK_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function _parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+
+  const pushField = () => {
+    row.push(field);
+    field = '';
+  };
+  const pushRow = () => {
+    rows.push(row);
+    row = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        const next = text[i + 1];
+        if (next === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+      continue;
+    }
+
+    if (c === '"') {
+      inQuotes = true;
+      continue;
+    }
+
+    if (c === ',') {
+      pushField();
+      continue;
+    }
+
+    if (c === '\n') {
+      pushField();
+      pushRow();
+      continue;
+    }
+
+    if (c === '\r') continue;
+    field += c;
+  }
+
+  pushField();
+  if (row.length > 1 || (row.length === 1 && String(row[0] || '').trim() !== '')) pushRow();
+  return rows;
+}
+
+function _normHeaderKey(raw) {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[_\-]+/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function _parseNumberish(raw) {
+  const s0 = String(raw || '').trim();
+  if (!s0) return undefined;
+  const n = Number(s0.replace(/,/g, ''));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+async function getSlimFallbackMap() {
+  const now = Date.now();
+  if (_slimFallbackCache.map.size > 0 && now - _slimFallbackCache.fetchedAt < SLIM_FALLBACK_TTL_MS) {
+    return _slimFallbackCache.map;
+  }
+
+  try {
+    const res = await fetch(SLIM_ITEMS_CSV_URL, { cache: 'no-store' });
+    if (!res.ok) return _slimFallbackCache.map;
+    const csvText = await res.text();
+    const head = csvText.slice(0, 120).trim().toLowerCase();
+    if (head.startsWith('<!doctype html') || head.startsWith('<html')) return _slimFallbackCache.map;
+
+    const rows = _parseCsv(csvText);
+    if (!rows || rows.length < 2) return _slimFallbackCache.map;
+
+    const header = rows[0].map(_normHeaderKey);
+    const idx = (k) => {
+      const key = _normHeaderKey(k);
+      const exact = header.indexOf(key);
+      if (exact >= 0) return exact;
+      return header.findIndex((h) => h.startsWith(key));
+    };
+
+    const get = (r, k) => {
+      const i = idx(k);
+      if (i < 0) return '';
+      return String(r[i] || '').trim();
+    };
+
+    const map = new Map();
+    for (let ri = 1; ri < rows.length; ri++) {
+      const r = rows[ri];
+      const id = get(r, 'id') || get(r, 'itemid');
+      if (!id) continue;
+      const placeId = get(r, 'primaryplaceid') || get(r, 'placeid');
+      const rarityValue = Number(_parseNumberish(get(r, 'rarityvalue')) || 0);
+      const rawContrib = Number(_parseNumberish(get(r, 'skillcontribution')) || _parseNumberish(get(r, 'skillpower')) || 0);
+      const contrib = rawContrib !== 0 ? rawContrib : (rarityValue !== 0 ? rarityValue : 0);
+      const deprecatedRaw = String(get(r, 'deprecated') || '').trim().toLowerCase();
+      const deprecated = deprecatedRaw === '1' || deprecatedRaw === 'true' || deprecatedRaw === 'yes' || deprecatedRaw === 'y';
+      map.set(id, { placeId: placeId || undefined, skillContribution: contrib, deprecated });
+    }
+
+    if (map.size > 0) {
+      _slimFallbackCache = { fetchedAt: now, map };
+    }
+    return _slimFallbackCache.map;
+  } catch {
+    return _slimFallbackCache.map;
+  }
+}
 
 admin.initializeApp();
 
@@ -41,7 +176,7 @@ function getChemCityDefaults(userId) {
     unlockedSlots: [],
     extraSlotsBudget: 0,
     passiveIncome: {
-      lastCollected: null,
+      lastCollected: now,
     },
     streaks: {
       currentStreak: 0,
@@ -94,6 +229,19 @@ async function ensureChemCityInitialized(db, userId) {
       patch['chemcity.growthTokens'] = 0;
     }
 
+    // Backfill passive income clock if missing.
+    // If passive income is active but lastCollected is null/missing, the client ticker will stay at 0
+    // until the user re-equips a card. Set it to server time so accrual starts cleanly.
+    const bonuses = cc.activeBonuses && typeof cc.activeBonuses === 'object' ? cc.activeBonuses : {};
+    const passiveBase = Number(bonuses.passiveBaseCoinsPerHour || 0);
+    const lastCollected = cc.passiveIncome && typeof cc.passiveIncome === 'object'
+      ? cc.passiveIncome.lastCollected
+      : undefined;
+    const hasLastCollected = !!(lastCollected && typeof lastCollected === 'object' && typeof lastCollected.seconds === 'number');
+    if (!hasLastCollected && Number.isFinite(passiveBase) && passiveBase > 0) {
+      patch['chemcity.passiveIncome.lastCollected'] = admin.firestore.FieldValue.serverTimestamp();
+    }
+
     if (Object.keys(patch).length > 0) {
       patch['chemcity.updatedAt'] = admin.firestore.FieldValue.serverTimestamp();
       await userRef.update(patch);
@@ -138,7 +286,7 @@ function calcGasStationExtraSlots(totalBonus) {
 }
 
 function calcBoutiqueDiscount(totalBonus) {
-  return Math.min(totalBonus * 2, 50);
+  return totalBonus * 10;
 }
 
 function getTodayUtcDateKey() {
@@ -170,8 +318,16 @@ function getDiscountedCoinCost(baseCost, shopDiscountPercent) {
   if (!Number.isFinite(cost) || cost <= 0) return 0;
   const disc = Number(shopDiscountPercent || 0);
   if (!Number.isFinite(disc) || disc <= 0) return cost;
-  const factor = 1 - Math.min(disc, 50) / 100;
+  const factor = 1 - disc / 100;
   return Math.max(1, Math.floor(cost * factor));
+}
+
+function rarityToValue(rarity) {
+  const r = String(rarity || '').trim().toLowerCase();
+  if (r === 'legendary') return 4;
+  if (r === 'epic') return 3;
+  if (r === 'rare') return 2;
+  return 1;
 }
 
 const STORE_SLOT_UNLOCK_COSTS = {
@@ -194,16 +350,19 @@ async function computeChemCityActiveBonuses(db, equipped) {
   const slotToPlaceId = new Map();
   for (const doc of placesSnap.docs) {
     const data = doc.data() || {};
+    const resolvedPlaceId = String(data.id || doc.id || '');
     const slots = Array.isArray(data.slots) ? data.slots : [];
     for (const s of slots) {
       const sid = s && typeof s === 'object' ? String(s.slotId || '') : '';
       if (!sid) continue;
-      slotToPlaceId.set(sid, doc.id);
+      slotToPlaceId.set(sid, resolvedPlaceId);
     }
   }
 
   const totals = {};
+  let boutiqueRarityTotal = 0;
   if (uniqueIds.length > 0) {
+    const slimFallbackMap = await getSlimFallbackMap();
     const refs = uniqueIds.map((id) => db.collection('items').doc(id));
     const snaps = await db.getAll(...refs);
 
@@ -214,10 +373,25 @@ async function computeChemCityActiveBonuses(db, equipped) {
 
     for (const [slotId, itemId] of equippedEntries) {
       const item = itemMap.get(itemId);
-      if (!item || item.deprecated) continue;
+      const fallback = slimFallbackMap.get(itemId);
+      const isDeprecated = Boolean(item?.deprecated) || Boolean(fallback?.deprecated);
+      if (isDeprecated) continue;
 
-      const placeId = String(slotToPlaceId.get(slotId) || item.placeId || '');
-      const contrib = Number(item.skillContribution || 0);
+      const placeId = String(
+        slotToPlaceId.get(slotId) || item?.placeId || fallback?.placeId || '',
+      );
+
+      // Boutique uses rarityValue-based bonus, not skillContribution.
+      if (placeId === 'lifestyle_boutique') {
+        const rawRv = Number(item?.rarityValue);
+        const rv = Number.isFinite(rawRv) && rawRv > 0 ? rawRv : rarityToValue(item?.rarity);
+        boutiqueRarityTotal += rv;
+        continue;
+      }
+
+      const rawContrib = Number(item?.skillContribution || 0);
+      const fbContrib = Number(fallback?.skillContribution || 0);
+      const contrib = Number.isFinite(rawContrib) && rawContrib !== 0 ? rawContrib : fbContrib;
       if (!placeId || !Number.isFinite(contrib)) continue;
       totals[placeId] = (totals[placeId] || 0) + contrib;
     }
@@ -230,7 +404,7 @@ async function computeChemCityActiveBonuses(db, equipped) {
   const beachBonus = totals.beach || 0;
   const toiletBonus = totals.toilet || 0;
   const gasStationBonus = totals.gas_station || 0;
-  const boutiqueBonus = totals.lifestyle_boutique || 0;
+  const boutiqueBonus = boutiqueRarityTotal;
 
   const gardenBase = calcGardenCoinsPerHour(gardenBonus);
   const labMult = calcLabMultiplier(labBonus);
@@ -454,6 +628,23 @@ exports.updateMistakeTopicStatsOnCreate = onDocumentCreated(
     const db = admin.firestore();
     await applyMistakeDocDelta(db, userId, null, after);
   }
+);
+
+exports.trimAttemptsOnAttemptCreate = onDocumentCreated(
+  {
+    document: 'attempts/{attemptId}',
+    region: 'asia-east1',
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const data = snap.data() || {};
+    const userId = data.userId;
+    const ts = data.timestamp;
+    if (!userId || typeof ts !== 'string' || !ts) return;
+    const db = admin.firestore();
+    await trimUserAttempts(db, userId, 20);
+  },
 );
 
 exports.chemcityUnlockStoreSlot = onCall(
@@ -722,7 +913,7 @@ exports.chemcityPurchaseCard = onCall(
         ? getDiscountedCoinCost(baseCoinCost, discountPercent)
         : 0;
       const effectiveDiamondCost = currency === 'diamonds'
-        ? Number(baseDiamondCost)
+        ? getDiscountedCoinCost(baseDiamondCost, discountPercent)
         : 0;
 
       if (currency === 'coins') {
@@ -1067,37 +1258,68 @@ exports.chemcityQuizReward = onCall(
         throw new HttpsError('not-found', 'User not found.');
       }
 
+      // Firestore transactions require all reads to happen before any writes.
+      // Read progress doc early if we may need it.
+      const shouldUpdateTopicMastery = typeof topicId === 'string' && topicId;
+      const progressSnap = shouldUpdateTopicMastery ? await tx.get(progressRef) : null;
+
       const userData = userSnap.data() || {};
       const chemcity = userData.chemcity || {};
       const bonuses = chemcity.activeBonuses || {};
 
-      let diamonds = Math.floor(baseDiamonds);
+      const rootTokens = Number(userData.tokens || 0);
+      const safeRootTokens = Number.isFinite(rootTokens) ? rootTokens : 0;
+      const ccCurrencies = chemcity.currencies && typeof chemcity.currencies === 'object' ? chemcity.currencies : {};
+      const ccCoins = Number(ccCurrencies.coins || 0);
+      const ccDiamonds = Number(ccCurrencies.diamonds || 0);
+      const safeCcCoins = Number.isFinite(ccCoins) ? ccCoins : 0;
+      const safeCcDiamonds = Number.isFinite(ccDiamonds) ? ccDiamonds : 0;
+
+      const baseDiamondsFloor = Math.floor(baseDiamonds);
+      const baseCoinsFloor = Math.floor(baseCoins);
+
+      let diamonds = baseDiamondsFloor;
 
       const kitchenRoll = rollKitchenBonusFromMax(bonuses.quizFlatDiamondBonus);
       diamonds += kitchenRoll;
+
+      const afterKitchen = diamonds;
 
       const mult = Number(bonuses.quizDiamondMultiplier || 1);
       if (Number.isFinite(mult) && mult > 0) {
         diamonds = Math.floor(diamonds * mult);
       }
 
-      if (rollBeachDoubleFromPercent(bonuses.quizDoubleChancePercent)) {
+      const afterSchool = diamonds;
+
+      const didDouble = rollBeachDoubleFromPercent(bonuses.quizDoubleChancePercent);
+      if (didDouble) {
         diamonds *= 2;
       }
 
+      const afterBeach = diamonds;
+
       diamonds = Math.max(0, diamonds);
 
-      const updates = {
-        'chemcity.currencies.coins': admin.firestore.FieldValue.increment(Math.floor(baseCoins)),
-        tokens: admin.firestore.FieldValue.increment(diamonds),
+      const nextCoins = safeCcCoins + baseCoinsFloor;
+      const nextCcDiamonds = safeCcDiamonds + diamonds;
+      const nextTokens = safeRootTokens + diamonds;
+
+      tx.update(userRef, {
+        // Coins are ChemCity-only currency
+        'chemcity.currencies.coins': nextCoins,
+
+        // Diamonds should be consistent:
+        // - root `tokens` is used by the legacy/global economy
+        // - `chemcity.currencies.diamonds` is used by ChemCity UI/state
+        tokens: nextTokens,
+        'chemcity.currencies.diamonds': nextCcDiamonds,
+
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
-      };
+      });
 
-      tx.update(userRef, updates);
-
-      if (typeof topicId === 'string' && topicId) {
-        const progressSnap = await tx.get(progressRef);
-        const progress = progressSnap.exists ? (progressSnap.data() || {}) : {};
+      if (shouldUpdateTopicMastery) {
+        const progress = progressSnap && progressSnap.exists ? (progressSnap.data() || {}) : {};
         const tm = progress.topicMastery && typeof progress.topicMastery === 'object' ? progress.topicMastery : {};
         const prev = tm[topicId] && typeof tm[topicId] === 'object' ? tm[topicId] : {};
 
@@ -1113,8 +1335,20 @@ exports.chemcityQuizReward = onCall(
 
       return {
         ok: true,
-        coinsAwarded: Math.floor(baseCoins),
+        coinsAwarded: baseCoinsFloor,
         diamondsAwarded: diamonds,
+        didDouble,
+        breakdown: {
+          baseDiamonds: baseDiamondsFloor,
+          baseCoins: baseCoinsFloor,
+          kitchenFlatBonus: kitchenRoll,
+          afterKitchen,
+          schoolMultiplier: Number.isFinite(mult) && mult > 0 ? mult : 1,
+          afterSchool,
+          afterBeach,
+          correctAnswers: Number.isFinite(correctAnswers) ? correctAnswers : 0,
+          totalQuestions: Number.isFinite(totalQuestions) ? totalQuestions : 0,
+        },
       };
     });
   }
@@ -1232,9 +1466,23 @@ exports.chemcityEquipCard = onCall(
 
       const nextBonuses = await computeChemCityActiveBonuses(db, nextEquipped);
 
+      const serverNow = admin.firestore.Timestamp.now();
+      const prevLastCollected = chemcity.passiveIncome?.lastCollected || null;
+      const nextPassiveBase = Number(nextBonuses.passiveBaseCoinsPerHour || 0);
+
+      // Start (or reset) passive accrual clock to prevent earning while income is inactive,
+      // and to avoid a null lastCollected that would make the client ticker always show 0.
+      const shouldResetClockToNow =
+        !Number.isFinite(nextPassiveBase) || nextPassiveBase <= 0;
+      const shouldStartClockNow =
+        Number.isFinite(nextPassiveBase) && nextPassiveBase > 0 && !prevLastCollected;
+
       tx.update(userRef, {
         'chemcity.equipped': nextEquipped,
         'chemcity.activeBonuses': nextBonuses,
+        ...(shouldResetClockToNow || shouldStartClockNow
+          ? { 'chemcity.passiveIncome.lastCollected': serverNow }
+          : {}),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -1277,9 +1525,20 @@ exports.chemcityUnequipCard = onCall(
 
       const nextBonuses = await computeChemCityActiveBonuses(db, nextEquipped);
 
+      const serverNow = admin.firestore.Timestamp.now();
+      const prevLastCollected = chemcity.passiveIncome?.lastCollected || null;
+      const nextPassiveBase = Number(nextBonuses.passiveBaseCoinsPerHour || 0);
+      const shouldResetClockToNow =
+        !Number.isFinite(nextPassiveBase) || nextPassiveBase <= 0;
+      const shouldStartClockNow =
+        Number.isFinite(nextPassiveBase) && nextPassiveBase > 0 && !prevLastCollected;
+
       tx.update(userRef, {
         'chemcity.equipped': nextEquipped,
         'chemcity.activeBonuses': nextBonuses,
+        ...(shouldResetClockToNow || shouldStartClockNow
+          ? { 'chemcity.passiveIncome.lastCollected': serverNow }
+          : {}),
         'chemcity.updatedAt': admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -1489,7 +1748,7 @@ exports.chemcityCollectPassiveIncome = onCall(
 
       let elapsedSeconds = 0;
       if (lastCollected && typeof lastCollected.seconds === 'number') {
-        elapsedSeconds = serverNow.seconds - lastCollected.seconds;
+        elapsedSeconds = Math.max(0, serverNow.seconds - lastCollected.seconds);
       }
 
       const cappedSeconds = Math.min(elapsedSeconds, MAX_HOURS * 3600);
@@ -2153,6 +2412,46 @@ function weeklyTokensForRank(rank) {
   return Math.max(0, 11 - r);
 }
 
+async function trimUserAttempts(db, userId, keep) {
+  const KEEP = Number(keep || 20);
+  if (!userId || !Number.isFinite(KEEP) || KEEP <= 0) return;
+
+  const baseQuery = db
+    .collection('attempts')
+    .where('userId', '==', userId)
+    .orderBy('timestamp', 'desc');
+
+  const headSnap = await baseQuery.limit(KEEP + 1).get();
+  if (headSnap.size <= KEEP) return;
+
+  const cursor = headSnap.docs[headSnap.docs.length - 1];
+  let pageCursor = cursor;
+
+  while (true) {
+    const pageSnap = await baseQuery.startAfter(pageCursor).limit(350).get();
+    if (pageSnap.empty) return;
+
+    let batch = db.batch();
+    let countInBatch = 0;
+    for (const d of pageSnap.docs) {
+      batch.delete(d.ref);
+      countInBatch++;
+      if (countInBatch >= 450) {
+        await batch.commit();
+        batch = db.batch();
+        countInBatch = 0;
+      }
+    }
+
+    if (countInBatch > 0) {
+      await batch.commit();
+    }
+
+    if (pageSnap.size < 350) return;
+    pageCursor = pageSnap.docs[pageSnap.docs.length - 1];
+  }
+}
+
 exports.aggregateWeeklyLeaderboardOnAttemptCreate = onDocumentCreated(
   {
     document: 'attempts/{attemptId}',
@@ -2278,21 +2577,6 @@ exports.weeklyLeaderboardPayout = onSchedule(
         tx.update(userRef, {
           tokens: newTokens,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-        const historyRef = userRef.collection('tokenHistory').doc();
-        tx.set(historyRef, {
-          amount: tokens,
-          reason: `Leaderboard Reward: weekly #${rank}`,
-          type: 'gain',
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          balanceAfter: newTokens,
-          metadata: {
-            category: 'leaderboard',
-            period: 'weekly',
-            rank,
-            weekId,
-          },
         });
 
         const notifRef = db.collection('notifications').doc();

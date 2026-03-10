@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { PassiveIncomeCollector } from './PassiveIncomeCollector';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export const ChemCityMap: React.FC = () => {
   const user = useChemCityStore((s) => s.user);
@@ -9,6 +10,7 @@ export const ChemCityMap: React.FC = () => {
   const navigateToPlace = useChemCityStore((s) => s.navigateToPlace);
   const openPlaceUnlockModal = useChemCityStore((s) => s.openPlaceUnlockModal);
   const navigate = useNavigate();
+  const { t, tf } = useLanguage();
   const [mapLevel, setMapLevel] = useState<'world' | 'home'>('world');
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -26,11 +28,11 @@ export const ChemCityMap: React.FC = () => {
       action?: 'home' | 'chemstore';
     }>
   >([
-    { key: 'school', label: 'School', placeId: 'school', leftPct: 32.372, topPct: 34.495 },
-    { key: 'beach', label: 'Beach', placeId: 'beach', leftPct: 44.952, topPct: 74.039 },
-    { key: 'boutique', label: 'Boutique', placeId: 'lifestyle_boutique', leftPct: 29.487, topPct: 63.241 },
-    { key: 'gas_station', label: 'Gas Station', placeId: 'gas_station', leftPct: 67.147, topPct: 50.761 },
-    { key: 'home', label: 'Home', leftPct: 48.958, topPct: 50.06, action: 'home' },
+    { key: 'school', label: t('chemcity.places.school'), placeId: 'school', leftPct: 32.372, topPct: 34.495 },
+    { key: 'beach', label: t('chemcity.places.beach'), placeId: 'beach', leftPct: 44.952, topPct: 74.039 },
+    { key: 'boutique', label: t('chemcity.places.boutique'), placeId: 'lifestyle_boutique', leftPct: 29.487, topPct: 63.241 },
+    { key: 'gas_station', label: t('chemcity.places.gasStation'), placeId: 'gas_station', leftPct: 67.147, topPct: 50.761 },
+    { key: 'home', label: t('chemcity.places.home'), leftPct: 48.958, topPct: 50.06, action: 'home' },
     { key: 'chemstore', label: 'ChemStore', leftPct: 61.071, topPct: 40.189, action: 'chemstore' },
   ]);
 
@@ -43,10 +45,10 @@ export const ChemCityMap: React.FC = () => {
       topPct: number;
     }>
   >([
-    { key: 'toilet', label: 'Toilet', placeId: 'toilet', leftPct: 29.728, topPct: 49.079 },
-    { key: 'kitchen', label: 'Kitchen', placeId: 'kitchen', leftPct: 29.728, topPct: 73.057 },
-    { key: 'garden', label: 'Garden', placeId: 'garden', leftPct: 12.26, topPct: 72.496 },
-    { key: 'lab', label: 'Lab', placeId: 'lab', leftPct: 73.397, topPct: 49.079 },
+    { key: 'toilet', label: t('chemcity.places.toilet'), placeId: 'toilet', leftPct: 29.728, topPct: 49.079 },
+    { key: 'kitchen', label: t('chemcity.places.kitchen'), placeId: 'kitchen', leftPct: 29.728, topPct: 73.057 },
+    { key: 'garden', label: t('chemcity.places.garden'), placeId: 'garden', leftPct: 12.26, topPct: 72.496 },
+    { key: 'lab', label: t('chemcity.places.lab'), placeId: 'lab', leftPct: 73.397, topPct: 49.079 },
   ]);
 
   const worldHotspotsSnapshot: Array<{
@@ -138,7 +140,7 @@ export const ChemCityMap: React.FC = () => {
       <button
         type="button"
         aria-label={label}
-        title={locked ? `${label} (Locked — tap to unlock)` : label}
+        title={locked ? tf('chemcity.lockedTapToUnlock', { label }) : label}
         onClick={(e) => {
           e.stopPropagation();
           if (disabled) return;
@@ -176,7 +178,7 @@ export const ChemCityMap: React.FC = () => {
             <img
               ref={mapImgRef}
               src={mapSrc}
-              alt={mapLevel === 'world' ? 'ChemCity world map' : 'ChemCity home map'}
+              alt={mapLevel === 'world' ? t('chemcity.worldMapAlt') : t('chemcity.homeMapAlt')}
               className="block w-[min(100vw,1400px)] h-auto"
               loading="lazy"
               onLoad={(e) => {
@@ -241,8 +243,8 @@ export const ChemCityMap: React.FC = () => {
               type="button"
               onClick={() => setMapLevel('world')}
               className="absolute left-3 bottom-3 z-10 w-12 h-12 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 backdrop-blur text-white font-bold"
-              aria-label="Back to city map"
-              title="Back"
+              aria-label={t('chemcity.backToCityMap')}
+              title={t('common.back')}
             >
               ←
             </button>

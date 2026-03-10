@@ -52,11 +52,11 @@ export function generateB1(ramOn) {
     description: `Insoluble base in ${base.context}; excess acid titrated with alkali`,
     problemStatement:
       `A student crushed a ${base.context} containing ${base.formula} of mass ${safeMass} g ` +
-      `and added it to ${volExcessHCl}.0 cm³ of hydrochloric acid (HCl) of concentration ${concHCl} mol/dm³. ` +
+      `and added it to ${volExcessHCl}.0 cm³ of ${concHCl} mol/dm³ hydrochloric acid (HCl). ` +
       `The mixture was warmed to ensure complete reaction. ` +
       `The resulting solution was transferred to a ${flaskVol}.0 cm³ volumetric flask and made up to the mark. ` +
       `A ${aliquot}.0 cm³ portion of this solution required ${titre} cm³ of sodium hydroxide (NaOH) ` +
-      `of concentration ${concNaOH} mol/dm³ for neutralisation using phenolphthalein indicator.` +
+      `of ${concNaOH} mol/dm³ for neutralisation using phenolphthalein indicator.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\nCalculate the percentage by mass of ${base.formula} in the ${base.context}.`,
     equation: `${base.withHCl.equation}\nHCl(aq) + NaOH(aq) → NaCl(aq) + H₂O(l)  [back titration step]`,
@@ -166,9 +166,9 @@ export function generateB2(ramOn) {
     description: 'Ammonium salt determined by boiling with excess NaOH; excess titrated with HCl',
     problemStatement:
       `A ${sfStr(parseFloat(massSample), 4)} g sample of fertilizer containing ammonium sulphate ` +
-      `was boiled with ${volExcessNaOH}.0 cm³ of sodium hydroxide (NaOH) of concentration ${concNaOH} mol/dm³. ` +
+      `was boiled with ${volExcessNaOH}.0 cm³ of ${concNaOH} mol/dm³ sodium hydroxide (NaOH). ` +
       `The ammonia gas evolved was driven off completely by heating. ` +
-      `The excess base remaining required ${titre} cm³ of hydrochloric acid of concentration ${concHCl} mol/dm³ ` +
+      `The excess base remaining required ${titre} cm³ of ${concHCl} mol/dm³ hydrochloric acid ` +
       `for neutralisation using methyl orange indicator.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\nCalculate the percentage by mass of nitrogen in the fertilizer.`,

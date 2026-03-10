@@ -19,7 +19,7 @@ export default function VirtualLabHub() {
       id: 'molar-volume-simulation',
       title: 'Molar Volume Simulation',
       description: 'Explore molar volume relationships for gases under different conditions.',
-      href: '/virtualLab/desktop/molar-volume-simulation.html',
+      href: '/virtualLab/molar-volume-simulation.html',
     },
   ];
 

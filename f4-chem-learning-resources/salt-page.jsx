@@ -9,6 +9,7 @@ const sub = (n) => (n > 1 ? SUBS[n] : "");
 const CATIONS = [
   { id: "Na",  sym: "Na",  name: "Sodium",      charge: 1, poly: false, alkali: true  },
   { id: "K",   sym: "K",   name: "Potassium",   charge: 1, poly: false, alkali: true  },
+  { id: "Ba",  sym: "Ba",  name: "Barium",      charge: 2, poly: false, alkali: false },
   { id: "Ca",  sym: "Ca",  name: "Calcium",     charge: 2, poly: false, alkali: false },
   { id: "Mg",  sym: "Mg",  name: "Magnesium",   charge: 2, poly: false, alkali: false },
   { id: "Al",  sym: "Al",  name: "Aluminium",   charge: 3, poly: false, alkali: false },
@@ -37,11 +38,13 @@ const ALL_ANIONS = [
 
 const SALT_ANIONS = ALL_ANIONS.filter((a) => a.id !== "OH" && a.id !== "O");
 
+const ADVANCED_ANIONS = ["NO2", "CH3COO"];
+
 // ── chemistry logic ───────────────────────────────────────────────────────────
 const isSoluble = (cid, aid) => {
   if (["Na", "K", "NH4"].includes(cid)) return true;
   if (["NO3", "NO2", "HCO3", "CH3COO"].includes(aid)) return true;
-  if (aid === "SO4") return !["Ca", "Pb"].includes(cid);
+  if (aid === "SO4") return !["Ca", "Pb", "Ba"].includes(cid);
   if (["Cl", "Br", "I"].includes(aid)) return !["Ag", "Pb"].includes(cid);
   return false; // CO3, OH, O → insoluble
 };
@@ -105,8 +108,14 @@ const getMethodNote = (cid, aid) => {
 const EXCLUDED = [["Ag", "SO4"]];
 const EXCLUDED_MODE2 = [["NH4", "CO3"], ["Na", "CO3"], ["K", "CO3"]];
 
-const genQ = (mode) => {
-  const pool = mode === 2 ? SALT_ANIONS.filter((a) => a.id !== "HCO3") : ALL_ANIONS;
+const getAnionPool = (mode, advanced) => {
+  const base = mode === 2 ? SALT_ANIONS.filter((a) => a.id !== "HCO3") : ALL_ANIONS;
+  if (advanced) return base;
+  return base.filter((a) => !ADVANCED_ANIONS.includes(a.id));
+};
+
+const genQ = (mode, advanced) => {
+  const pool = getAnionPool(mode, advanced);
   let cat, an;
   do {
     cat = CATIONS[Math.floor(Math.random() * CATIONS.length)];
@@ -122,6 +131,52 @@ const genQ = (mode) => {
   const baseRule = getRule(cat.id, an.id);
   const rule = mode === 2 ? baseRule + "\n" + getMethodNote(cat.id, an.id) : baseRule;
   return { cat, an, formula: buildFormula(cat, an), soluble, method, rule };
+};
+
+const genQuiz = (mode, advanced) => {
+  if (mode !== 2) return Array.from({ length: 10 }, () => genQ(mode, advanced));
+
+  const targetMin = {
+    precipitation: 2,
+    crystallisation: 2,
+    titration: 2,
+  };
+
+  const picked = [];
+  const used = new Set();
+  const counts = { precipitation: 0, crystallisation: 0, titration: 0 };
+
+  const addOne = (predicate) => {
+    let attempts = 0;
+    while (attempts < 3000) {
+      attempts += 1;
+      const q = genQ(2, advanced);
+      if (used.has(q.formula)) continue;
+      if (predicate && !predicate(q)) continue;
+      picked.push(q);
+      used.add(q.formula);
+      counts[q.method] += 1;
+      return;
+    }
+    const q = genQ(2, advanced);
+    picked.push(q);
+    counts[q.method] += 1;
+  };
+
+  Object.keys(targetMin).forEach((m) => {
+    for (let i = 0; i < targetMin[m]; i += 1) {
+      addOne((q) => q.method === m);
+    }
+  });
+
+  while (picked.length < 10) addOne();
+
+  for (let i = picked.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [picked[i], picked[j]] = [picked[j], picked[i]];
+  }
+
+  return picked;
 };
 
 // ── styles ────────────────────────────────────────────────────────────────────
@@ -374,6 +429,80 @@ const styles = `
     border: none; border-top: 1px solid rgba(255,255,255,0.07);
     margin: 20px 0;
   }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    z-index: 50;
+  }
+
+  .modal {
+    width: min(720px, 100%);
+    max-height: min(78vh, 720px);
+    overflow: auto;
+    background: rgba(10,14,22,0.92);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 18px;
+    box-shadow: 0 30px 90px rgba(0,0,0,0.6);
+    padding: 18px 18px 16px;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .modal-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(232,237,245,0.86);
+  }
+
+  .modal-close {
+    appearance: none;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.06);
+    color: rgba(232,237,245,0.88);
+    border-radius: 12px;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-weight: 800;
+    font-size: 0.78rem;
+    transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+  }
+
+  .modal-close:hover {
+    transform: translateY(-1px);
+    background: rgba(255,255,255,0.09);
+    border-color: rgba(255,255,255,0.22);
+  }
+
+  .mnemonic-tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 6px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.06);
+    color: rgba(232,237,245,0.95);
+    margin-right: 10px;
+    vertical-align: middle;
+  }
 `;
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -385,11 +514,12 @@ export default function App() {
   const [sel, setSel] = useState(null);
   const [answered, setAnswered] = useState(false);
   const [score, setScore] = useState(0);
-  const [showRules, setShowRules] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
 
   const start = (m) => {
     setMode(m);
-    setQs(Array.from({ length: 10 }, () => genQ(m)));
+    setQs(genQuiz(m, advanced));
     setQi(0); setSel(null); setAnswered(false); setScore(0);
     setScreen("quiz");
   };
@@ -463,6 +593,22 @@ export default function App() {
               Test your knowledge of solubility rules with randomly generated ionic compounds. Choose a mode to begin.
             </p>
 
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 18 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, color: "rgba(200,220,240,0.55)", fontSize: "0.85rem", fontWeight: 700 }}>
+                <input
+                  type="checkbox"
+                  checked={advanced}
+                  onChange={(e) => setAdvanced(e.target.checked)}
+                  style={{ width: 16, height: 16 }}
+                />
+                Advanced (include NO₂⁻, CH₃COO⁻ — never tested in HKDSE)
+              </label>
+
+              <button className="rules-toggle" style={{ marginTop: 0, width: "auto", padding: "10px 14px" }} onClick={() => setShowInfo(true)}>
+                Rules + Mnemonics
+              </button>
+            </div>
+
             <div className="mode-grid">
               <button className="mode-btn mode-a" onClick={() => start(1)}>
                 <span className="mode-icon">🧂</span>
@@ -478,22 +624,46 @@ export default function App() {
               </button>
             </div>
 
-            <button className="rules-toggle" onClick={() => setShowRules((v) => !v)}>
-              {showRules ? "▲ Hide Solubility Rules" : "▼ View Solubility Rules"}
-            </button>
+          </div>
+        )}
 
-            {showRules && (
-              <div className="rules-box">
+        {screen === "landing" && showInfo && (
+          <div
+            className="modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Solubility rules and mnemonics"
+            onClick={() => setShowInfo(false)}
+          >
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <div className="modal-title">Rules + Mnemonics</div>
+                <button className="modal-close" type="button" onClick={() => setShowInfo(false)}>
+                  Close
+                </button>
+              </div>
+
+              <div className="rules-box" style={{ marginTop: 0 }}>
+                <h4>Mnemonic</h4>
+                <ul>
+                  <li><span className="mnemonic-tag">PANSH</span><strong>P</strong>otassium (K⁺), <strong>A</strong>mmonium (NH₄⁺), <strong>N</strong>itrate (NO₃⁻), <strong>S</strong>odium (Na⁺), <strong>H</strong>ydrogen carbonate (HCO₃⁻) are soluble.</li>
+                  <li><span className="mnemonic-tag">ABCPP</span>For sulphates: <strong>B</strong>aSO₄, <strong>C</strong>aSO₄, <strong>P</strong>bSO₄ are insoluble (exceptions). For halides (Cl⁻/Br⁻/I⁻): <strong>A</strong>g⁺ and <strong>P</strong>b²⁺ halides are insoluble.</li>
+                </ul>
+
+                <hr className="section-sep" />
+
                 <h4>Solubility Rules</h4>
                 <ul>
                   <li>All K⁺, Na⁺, NH₄⁺ compounds are <strong>soluble</strong>.</li>
-                  <li>All NO₃⁻, NO₂⁻, HCO₃⁻, CH₃COO⁻ compounds are <strong>soluble</strong>.</li>
-                  <li>All sulphates are soluble <em>except</em> CaSO₄, PbSO₄, BaSO₄.</li>
-                  <li>All chlorides are soluble <em>except</em> AgCl and PbCl₂ (same for Br⁻, I⁻).</li>
+                  <li>All NO₃⁻, HCO₃⁻ compounds are <strong>soluble</strong>. {advanced ? "NO₂⁻ and CH₃COO⁻ are also included in Advanced mode." : ""}</li>
+                  <li>All sulphates are soluble <em>except</em> BaSO₄, CaSO₄, PbSO₄.</li>
+                  <li>All halides (Cl⁻, Br⁻, I⁻) are soluble <em>except</em> AgCl and PbCl₂ (same pattern for AgBr, AgI, PbBr₂, PbI₂).</li>
                   <li>All carbonates, hydroxides, and oxides are insoluble <em>except</em> K⁺, Na⁺, NH₄⁺.</li>
                   <li>Note: Ca(OH)₂ is slightly soluble (limewater).</li>
                 </ul>
+
                 <hr className="section-sep" />
+
                 <h4>Preparation Methods (Mode 2)</h4>
                 <ul>
                   <li><strong>Precipitation</strong> — insoluble salts (mix two soluble solutions).</li>
@@ -501,7 +671,7 @@ export default function App() {
                   <li><strong>Titration + Crystallisation</strong> — soluble salts with Na⁺, K⁺, or NH₄⁺.</li>
                 </ul>
               </div>
-            )}
+            </div>
           </div>
         )}
 

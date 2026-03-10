@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Backpack, Search, Package, Info } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
+import { useLanguage } from '../../contexts/LanguageContext';
 import { ChemCard } from './ChemCard';
 import type { SlimItemDocument } from '../../lib/chemcity/types';
 
@@ -27,6 +28,7 @@ function preloadCardImages(items: SlimItemDocument[]) {
 }
 
 export const CardPicker: React.FC = () => {
+  const { t, tf } = useLanguage();
   const user               = useChemCityStore(s => s.user);
   const slimItems          = useChemCityStore(s => s.slimItems);
   const cardPickerSlotId   = useChemCityStore(s => s.cardPickerSlotId);
@@ -147,10 +149,10 @@ export const CardPicker: React.FC = () => {
                   <Backpack size={20} color="#76A8A5" />
                 </div>
                 <div>
-                  <div style={{ color: '#fff', fontWeight: 800, fontSize: 16 }}>Your Backpack</div>
+                  <div style={{ color: '#fff', fontWeight: 800, fontSize: 16 }}>{t('chemcity.cardPicker.yourBackpack')}</div>
                   <div style={{ color: 'rgba(197,215,181,0.6)', fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>
-                    Slot: <span style={{ color: '#76A8A5' }}>{slotLabel}</span>
-                    <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: 8 }}>{validCards.length} compatible cards</span>
+                    {t('chemcity.cardPicker.slot')}: <span style={{ color: '#76A8A5' }}>{slotLabel}</span>
+                    <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: 8 }}>{tf('chemcity.cardPicker.compatibleCards', { count: String(validCards.length) })}</span>
                   </div>
                 </div>
               </div>
@@ -166,7 +168,7 @@ export const CardPicker: React.FC = () => {
               <Search size={14} color="rgba(255,255,255,0.3)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="text"
-                placeholder="Search cards..."
+                placeholder={t('chemcity.cardPicker.searchCards')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 style={{
@@ -185,7 +187,7 @@ export const CardPicker: React.FC = () => {
                   background: filterRarity === r ? 'rgba(118,168,165,0.25)' : 'transparent',
                   borderColor: filterRarity === r ? '#76A8A5' : 'rgba(255,255,255,0.12)',
                   color: filterRarity === r ? '#C5D7B5' : 'rgba(255,255,255,0.5)',
-                }}>{r}</button>
+                }}>{t(`chemcity.cardPicker.rarity.${r}`)}</button>
               ))}
             </div>
           </div>
@@ -199,7 +201,7 @@ export const CardPicker: React.FC = () => {
                 color: '#f87171', fontWeight: 800, fontSize: 12, cursor: 'pointer',
                 fontFamily: "'Quicksand',sans-serif", transition: 'all 0.2s',
               }}>
-                {equipping === '__unequip__' ? 'Removing...' : '↩ Remove equipped card'}
+                {equipping === '__unequip__' ? t('chemcity.cardPicker.removing') : t('chemcity.cardPicker.removeEquippedCard')}
               </button>
             </div>
           )}
@@ -210,7 +212,7 @@ export const CardPicker: React.FC = () => {
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 0', gap: 12 }}>
                 <Package size={36} color="rgba(255,255,255,0.15)" />
                 <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 13, fontWeight: 600, margin: 0 }}>
-                  {validCards.length === 0 ? 'No cards for this slot yet' : 'No cards match filter'}
+                  {validCards.length === 0 ? t('chemcity.cardPicker.noCardsForSlot') : t('chemcity.cardPicker.noCardsMatchFilter')}
                 </p>
               </div>
             ) : (
@@ -235,7 +237,7 @@ export const CardPicker: React.FC = () => {
                         }}
                         className="card-slot-hover"
                       >
-                        <Info size={9} />Info
+                        <Info size={9} />{t('chemcity.cardPicker.info')}
                       </button>
                     </div>
                   );

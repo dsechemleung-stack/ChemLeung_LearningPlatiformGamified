@@ -19,7 +19,7 @@ function makeItem(id: string, rarity: SlimItemDocument['rarity'], coinCost: numb
     chemicalFormula: 'X',
     emoji: '🧪',
     rarity,
-    rarityValue: { common: 1, rare: 2, epic: 3, legendary: 4 }[rarity] as any,
+    rarityValue: { common: 1, uncommon: 2, rare: 2, epic: 3, legendary: 4 }[rarity] as any,
     placeId: 'lab',
     validSlots: ['lab_bench'],
     shopData: { coinCost },
@@ -159,11 +159,19 @@ describe('canAffordItem', () => {
   it('discount makes unaffordable item affordable', () => {
     expect(canAffordItem(200, undefined, 'coins', 100, 0, makeActiveBonuses(50))).toBe(true);
   });
+
+  it('diamond purchases also get discounted', () => {
+    expect(canAffordItem(undefined, 200, 'diamonds', 0, 100, makeActiveBonuses(50))).toBe(true);
+  });
 });
 
 describe('getDisplayPrice', () => {
   it('coin price with 20% discount → 80', () => {
     expect(getDisplayPrice(100, undefined, 'coins', makeActiveBonuses(20))).toBe(80);
+  });
+
+  it('diamond price with 20% discount → 80', () => {
+    expect(getDisplayPrice(undefined, 100, 'diamonds', makeActiveBonuses(20))).toBe(80);
   });
 
   it('returns null when currency path unavailable', () => {

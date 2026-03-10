@@ -1,6 +1,6 @@
-import { useMemo, useState, useEffect } from 'react';
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useChemCityStore } from '../../../store/chemcityStore';
+import { useLanguage } from '../../../contexts/LanguageContext';
 import type { CosmeticType, Rarity, Cosmetic } from '../../../lib/chemcity/types';
 import { ProfileCard } from './ProfileCard';
 import { callChemCityEquipCosmetics } from '../../../lib/chemcity/cloudFunctions';
@@ -344,6 +344,7 @@ function InfoRow({ label, value, rarity }: { label: string; value: string; rarit
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function CosmeticsInventory() {
+  const { t, tf } = useLanguage();
   const user = useChemCityStore((s) => s.user);
   const userGender = useChemCityStore((s) => (s as any).userGender as 'boy' | 'girl' | null);
   const cosmeticsMap = useChemCityStore((s) => (s as any).cosmeticsMap as Map<string, Cosmetic> | undefined);
@@ -413,8 +414,8 @@ export function CosmeticsInventory() {
 
       {/* Header */}
       <div style={{ padding: '20px 16px 12px', borderBottom: `1px solid ${BRAND.border}`, flexShrink: 0 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 900, color: BRAND.sage, margin: 0 }}>My Cosmetics</h1>
-        <p style={{ fontSize: 12, color: BRAND.teal, margin: '2px 0 0' }}>{allOwned.length} owned · Tap to equip</p>
+        <h1 style={{ fontSize: 20, fontWeight: 900, color: BRAND.sage, margin: 0 }}>{t('chemcity.inventory.myCosmetics')}</h1>
+        <p style={{ fontSize: 12, color: BRAND.teal, margin: '2px 0 0' }}>{tf('chemcity.inventory.ownedTapToEquip', { count: String(allOwned.length) })}</p>
       </div>
 
       {/* Two-column */}
@@ -430,8 +431,8 @@ export function CosmeticsInventory() {
         }}>
           <ProfileCard size="xl" className="w-full rounded-2xl shadow-2xl" />
           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <InfoRow label="Avatar" value={equippedAvatar?.name ?? 'None'} rarity={equippedAvatar?.rarity} />
-            <InfoRow label="Background" value={equippedBg?.name ?? 'None'} rarity={equippedBg?.rarity} />
+            <InfoRow label={t('chemcity.inventory.avatar')} value={equippedAvatar?.name ?? t('chemcity.inventory.none')} rarity={equippedAvatar?.rarity} />
+            <InfoRow label={t('chemcity.inventory.background')} value={equippedBg?.name ?? t('chemcity.inventory.none')} rarity={equippedBg?.rarity} />
           </div>
           <AvatarTunerButton
             avatarId={tunerAvatar?.id}
@@ -465,7 +466,9 @@ export function CosmeticsInventory() {
                   border: activeTab === tab ? 'none' : `1px solid ${BRAND.border}`,
                 }}
               >
-                {tab === 'avatars' ? `👤 Avatars (${ownedAvatars.length})` : `🖼 Backgrounds (${ownedBgs.length})`}
+                {tab === 'avatars'
+                  ? tf('chemcity.inventory.tabs.avatarsCount', { count: String(ownedAvatars.length) })
+                  : tf('chemcity.inventory.tabs.backgroundsCount', { count: String(ownedBgs.length) })}
               </button>
             ))}
           </div>
@@ -493,8 +496,10 @@ export function CosmeticsInventory() {
             {activeList.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 0', gap: 12 }}>
                 <span style={{ fontSize: 40 }}>🎁</span>
-                <p style={{ fontWeight: 700, fontSize: 14, color: BRAND.teal, margin: 0 }}>No {activeTab} yet</p>
-                <p style={{ fontSize: 12, color: 'rgba(118,168,165,0.6)', margin: 0, textAlign: 'center' }}>Pull in the Gacha or browse the Shop!</p>
+                <p style={{ fontWeight: 700, fontSize: 14, color: BRAND.teal, margin: 0 }}>
+                  {activeTab === 'avatars' ? t('chemcity.inventory.empty.noAvatars') : t('chemcity.inventory.empty.noBackgrounds')}
+                </p>
+                <p style={{ fontSize: 12, color: 'rgba(118,168,165,0.6)', margin: 0, textAlign: 'center' }}>{t('chemcity.inventory.empty.hint')}</p>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8 }}>

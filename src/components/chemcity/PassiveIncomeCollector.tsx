@@ -3,12 +3,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Coins, TrendingUp, Download } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
 import { formatCoinsPerHour } from '../../lib/chemcity/income';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export const PassiveIncomeCollector: React.FC = () => {
   const user                = useChemCityStore(s => s.user);
   const passiveDisplayCoins = useChemCityStore(s => s.passiveDisplayCoins);
   const collectIncome       = useChemCityStore(s => s.collectIncome);
   const tickPassiveDisplay  = useChemCityStore(s => s.tickPassiveDisplay);
+  const { t, tf } = useLanguage();
 
   const [collecting, setCollecting]       = useState(false);
   const [lastCollected, setLastCollected] = useState<number | null>(null);
@@ -57,14 +59,17 @@ export const PassiveIncomeCollector: React.FC = () => {
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ color:'rgba(255,255,255,0.4)', fontSize:10, fontWeight:700 }}>
-              {formatCoinsPerHour(rate)} passive
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Coins size={12} color="#fbbf24" />
+                <span>{tf('chemcity.passiveIncome.passiveRateLabel', { rate: formatCoinsPerHour(rate) })}</span>
+              </span>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:5, marginTop:1 }}>
               <Coins size={12} color="#fbbf24" />
               <span style={{ color:'#fbbf24', fontWeight:800, fontSize:14, fontVariantNumeric:'tabular-nums' }}>
                 {passiveDisplayCoins.toLocaleString()}
               </span>
-              <span style={{ color:'rgba(255,255,255,0.3)', fontSize:10, fontWeight:600 }}>pending</span>
+              <span style={{ color:'rgba(255,255,255,0.3)', fontSize:10, fontWeight:600 }}>{t('chemcity.passiveIncome.pending')}</span>
             </div>
           </div>
         </div>
@@ -76,7 +81,7 @@ export const PassiveIncomeCollector: React.FC = () => {
             borderRadius:8, padding:'6px 12px',
           }}>
             <Coins size={12} color="#4ade80" />
-            <span style={{ color:'#4ade80', fontWeight:800, fontSize:13 }}>+{lastCollected.toLocaleString()}</span>
+            <span style={{ color:'#4ade80', fontWeight:800, fontSize:13 }}>{tf('chemcity.passiveIncome.collectedPlus', { count: lastCollected.toLocaleString() })}</span>
           </div>
         ) : (
           <button onClick={handleCollect} disabled={collecting || passiveDisplayCoins < 1} style={{
@@ -95,7 +100,7 @@ export const PassiveIncomeCollector: React.FC = () => {
             ) : (
               <Download size={13} />
             )}
-            Collect
+            {t('chemcity.passiveIncome.collect')}
           </button>
         )}
       </div>

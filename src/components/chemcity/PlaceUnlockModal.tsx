@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Lock, Coins, CheckCircle } from 'lucide-react';
 import { useChemCityStore } from '../../store/chemcityStore';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export const PlaceUnlockModal: React.FC = () => {
   const user                  = useChemCityStore(s => s.user);
@@ -8,6 +9,42 @@ export const PlaceUnlockModal: React.FC = () => {
   const placeUnlockModalId    = useChemCityStore(s => s.placeUnlockModalId);
   const closePlaceUnlockModal = useChemCityStore(s => s.closePlaceUnlockModal);
   const unlockPlace           = useChemCityStore(s => s.unlockPlace);
+  const { t, tf } = useLanguage();
+
+  const placeNameKeyByPlaceId: Record<string, string> = {
+    school: 'school',
+    beach: 'beach',
+    lifestyle_boutique: 'boutique',
+    gas_station: 'gasStation',
+    home: 'home',
+    toilet: 'toilet',
+    kitchen: 'kitchen',
+    garden: 'garden',
+    lab: 'lab',
+  };
+
+  const getPlaceLabel = (placeId: string, fallback?: string) => {
+    const key = placeNameKeyByPlaceId[String(placeId || '')];
+    if (key) return t(`chemcity.places.${key}`);
+    return fallback ?? String(placeId || '');
+  };
+
+  const skillDescKeyByPlaceId: Record<string, string> = {
+    beach: 'beach',
+    garden: 'garden',
+    gas_station: 'gasStation',
+    kitchen: 'kitchen',
+    lab: 'lab',
+    lifestyle_boutique: 'boutique',
+    school: 'school',
+    toilet: 'toilet',
+  };
+
+  const getSkillDescription = (placeId: string, fallback?: string) => {
+    const key = skillDescKeyByPlaceId[String(placeId || '')];
+    if (key) return t(`chemcity.skillBoosts.descriptions.${key}`);
+    return fallback ?? t('common.ellipsis');
+  };
 
   const [unlocking, setUnlocking] = useState(false);
   const [error, setError]         = useState<string | null>(null);
@@ -29,7 +66,7 @@ export const PlaceUnlockModal: React.FC = () => {
       await unlockPlace(place.id);
       setSuccess(true);
       setTimeout(() => { closePlaceUnlockModal(); setSuccess(false); }, 1200);
-    } catch (err: any) { setError(err?.message ?? 'Unlock failed.'); }
+    } catch (err: any) { setError(err?.message ?? t('chemcity.unlockPlace.unlockFailed')); }
     finally { setUnlocking(false); }
   };
 
@@ -69,9 +106,9 @@ export const PlaceUnlockModal: React.FC = () => {
             }}><X size={13} /></button>
 
             <div style={{ fontSize: 48, lineHeight: 1 }}>{place.emoji}</div>
-            <div style={{ color: '#fff', fontWeight: 800, fontSize: 18, textAlign: 'center' }}>{place.displayName}</div>
+            <div style={{ color: '#fff', fontWeight: 800, fontSize: 18, textAlign: 'center' }}>{getPlaceLabel(place.id, place.displayName)}</div>
             <div style={{ color: 'rgba(197,215,181,0.5)', fontSize: 12, fontWeight: 600, textAlign: 'center', maxWidth: 260 }}>
-              {place.skill.description}
+              {getSkillDescription(place.id, place.skill?.description)}
             </div>
           </div>
 
@@ -81,7 +118,7 @@ export const PlaceUnlockModal: React.FC = () => {
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '14px 0' }}>
                 <CheckCircle size={30} color="#4ade80" />
                 <span style={{ color: '#4ade80', fontWeight: 800, fontSize: 14 }}>
-                  {isUnlocked ? 'Already unlocked!' : `${place.displayName} unlocked!`}
+                  {isUnlocked ? t('chemcity.unlockPlace.alreadyUnlocked') : tf('chemcity.unlockPlace.unlocked', { place: place.displayName })}
                 </span>
               </div>
             ) : (
@@ -89,14 +126,14 @@ export const PlaceUnlockModal: React.FC = () => {
                 {/* Cost / Balance */}
                 <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: 700 }}>Unlock Cost</span>
+                    <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: 700 }}>{t('chemcity.unlockPlace.unlockCost')}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                       <Coins size={14} color="#fbbf24" />
                       <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: 16 }}>{cost.toLocaleString()}</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: 700 }}>Your Balance</span>
+                    <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, fontWeight: 700 }}>{t('chemcity.unlockPlace.yourBalance')}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                       <Coins size={13} color={canAfford ? '#fbbf24' : '#f87171'} />
                       <span style={{ color: canAfford ? '#fff' : '#f87171', fontWeight: 800, fontSize: 14 }}>{coins.toLocaleString()}</span>
@@ -104,7 +141,7 @@ export const PlaceUnlockModal: React.FC = () => {
                   </div>
                   {!canAfford && (
                     <div style={{ textAlign: 'center', color: '#f87171', fontSize: 11, fontWeight: 700 }}>
-                      Need {(cost - coins).toLocaleString()} more coins
+                      {tf('chemcity.unlockPlace.needMoreCoins', { count: (cost - coins).toLocaleString() })}
                     </div>
                   )}
                 </div>
@@ -112,7 +149,7 @@ export const PlaceUnlockModal: React.FC = () => {
                 {/* Slot info */}
                 <div style={{ background: 'rgba(118,168,165,0.08)', border: '1px solid rgba(118,168,165,0.2)', borderRadius: 10, padding: '9px 12px' }}>
                   <span style={{ color: 'rgba(197,215,181,0.7)', fontSize: 11, fontWeight: 600, fontFamily: "'Quicksand',sans-serif" }}>
-                    Grants access to <strong style={{ color: '#C5D7B5' }}>{place.slots?.length ?? 0} card slots</strong>
+                    {tf('chemcity.unlockPlace.grantsAccessToSlots', { count: String(place.slots?.length ?? 0) })}
                   </span>
                 </div>
 
@@ -128,7 +165,7 @@ export const PlaceUnlockModal: React.FC = () => {
                 color: 'rgba(255,255,255,0.6)', fontWeight: 800, fontSize: 13, cursor: 'pointer',
                 fontFamily: "'Quicksand',sans-serif",
               }}>
-                {isUnlocked || success ? 'Close' : 'Cancel'}
+                {isUnlocked || success ? t('chemcity.unlockPlace.close') : t('chemcity.unlockPlace.cancel')}
               </button>
               {!success && !isUnlocked && (
                 <button onClick={handleUnlock} disabled={!canAfford || unlocking} style={{
@@ -145,7 +182,7 @@ export const PlaceUnlockModal: React.FC = () => {
                   {unlocking ? (
                     <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                   ) : <Lock size={13} />}
-                  Unlock for {cost.toLocaleString()}
+                  {tf('chemcity.unlockPlace.unlockFor', { cost: cost.toLocaleString() })}
                 </button>
               )}
             </div>

@@ -317,7 +317,7 @@ export function generateK2(ramOn) {
     description: 'Calculate 1/time as a measure of rate; interpret effect of concentration',
     problemStatement:
       `In an experiment to study reaction rate, ${volS2O3} cm³ of sodium thiosulphate (Na₂S₂O₃) ` +
-      `of concentration ${concS2O3} mol/dm³ is mixed with ${volHCl} cm³ of dilute HCl (1.0 mol/dm³) ` +
+      `of ${concS2O3} mol/dm³ is mixed with ${volHCl} cm³ of dilute HCl (1.0 mol/dm³) ` +
       `in a conical flask placed over a piece of paper marked with a cross. ` +
       `A yellow precipitate of sulfur gradually forms, making the cross invisible. ` +
       `The time for the cross to disappear is ${time} seconds.\n\n` +

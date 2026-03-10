@@ -36,22 +36,7 @@ export async function awardTokens(userId, amount, reason, metadata = {}) {
         tokens: newTokens,
         updatedAt: serverTimestamp()
       });
-
-      // Create history entry
-      const historyRef = doc(collection(db, 'users', userId, 'tokenHistory'));
-      transaction.set(historyRef, {
-        amount,
-        reason,
-        type: 'gain',
-        timestamp: serverTimestamp(),
-        balanceAfter: newTokens,
-        metadata
-      });
     });
-
-    // Clean up old history records (keep only 8 most recent)
-    // Run this after transaction to avoid conflicts
-    setTimeout(() => cleanupTokenHistory(userId), 100);
 
     return { success: true, message: `Awarded ${amount} tokens` };
   } catch (error) {
@@ -89,22 +74,8 @@ export async function deductTokens(userId, amount, reason, metadata = {}) {
         updatedAt: serverTimestamp()
       });
 
-      // Create history entry
-      const historyRef = doc(collection(db, 'users', userId, 'tokenHistory'));
-      transaction.set(historyRef, {
-        amount: -amount,
-        reason,
-        type: 'spend',
-        timestamp: serverTimestamp(),
-        balanceAfter: newTokens,
-        metadata
-      });
-
       return { newBalance: newTokens };
     });
-
-    // Clean up old history records (keep only 8 most recent)
-    setTimeout(() => cleanupTokenHistory(userId), 100);
 
     return { success: true, newBalance: result.newBalance };
   } catch (error) {
@@ -154,17 +125,6 @@ export async function purchaseItem(userId, itemId, price) {
         tokens: newTokens,
         inventory: [...inventory, itemId],
         updatedAt: serverTimestamp()
-      });
-
-      // Log transaction
-      const historyRef = doc(collection(db, 'users', userId, 'tokenHistory'));
-      transaction.set(historyRef, {
-        amount: -price,
-        reason: `Purchased: ${itemId}`,
-        type: 'spend',
-        timestamp: serverTimestamp(),
-        balanceAfter: newTokens,
-        metadata: { itemId, category: 'store_purchase' }
       });
 
       return { newBalance: newTokens, newInventory: [...inventory, itemId] };
@@ -422,20 +382,6 @@ export async function initializeUserTokens(userId, initialTokens = 100) {
       equipped: {},
       updatedAt: serverTimestamp()
     });
-
-    // Create welcome token entry
-    const historyRef = doc(collection(db, 'users', userId, 'tokenHistory'));
-    await setDoc(historyRef, {
-      amount: initialTokens,
-      reason: 'Welcome to ChemLeung! 🎉',
-      type: 'gain',
-      timestamp: serverTimestamp(),
-      balanceAfter: initialTokens,
-      metadata: { category: 'welcome_bonus' }
-    });
-
-    // Clean up old history records (keep only 8 most recent)
-    setTimeout(() => cleanupTokenHistory(userId), 100);
 
     return { success: true };
   } catch (error) {

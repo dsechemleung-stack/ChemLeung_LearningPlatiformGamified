@@ -2,10 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { ChevronLeft, Sparkles, Fuel, X, Zap, Archive } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useChemCityStore } from '../../store/chemcityStore';
+import { computeActiveBonuses } from '../../lib/chemcity/bonuses';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export const CurrencyBar: React.FC = () => {
   const navigate = useNavigate();
+  const { t, tf } = useLanguage();
   const user               = useChemCityStore(s => s.user);
+  const slimItems          = useChemCityStore(s => s.slimItems);
   const places             = useChemCityStore(s => s.places);
   const view               = useChemCityStore(s => s.view);
   const selectedPlaceId    = useChemCityStore(s => s.selectedPlaceId);
@@ -16,20 +20,92 @@ export const CurrencyBar: React.FC = () => {
 
   const showGasDistributorButton = view === 'place' && selectedPlaceId === 'gas_station' && (user?.extraSlotsBudget ?? 0) > 0;
 
+  const computedBonuses = useMemo(() => {
+    if (!user) return null;
+    if (!Array.isArray(slimItems) || slimItems.length === 0) return null;
+    const equipped = user.equipped && typeof user.equipped === 'object' ? user.equipped : {};
+    return computeActiveBonuses(equipped as any, slimItems);
+  }, [slimItems, user]);
+
+  const ccDebugEnabled =
+    typeof window !== 'undefined' &&
+    String(window.location?.search || '').includes('ccDebug=1');
+
+  const debugSnapshot = useMemo(() => {
+    if (!ccDebugEnabled) return null;
+    const equipped = user?.equipped && typeof user.equipped === 'object' ? user.equipped : {};
+    const entries = Object.entries(equipped);
+    const itemMap = new Map((Array.isArray(slimItems) ? slimItems : []).map((it: any) => [it?.id, it]));
+    const gardenEntries = entries
+      .filter(([slotId]) => String(slotId || '').startsWith('garden_'))
+      .map(([slotId, itemId]) => {
+        const it = itemMap.get(itemId);
+        return {
+          slotId,
+          itemId,
+          skillContribution: Number(it?.skillContribution || 0),
+          placeId: it?.placeId,
+          name: it?.name,
+        };
+      });
+    return {
+      slimItemsLen: Array.isArray(slimItems) ? slimItems.length : -1,
+      equippedCount: entries.length,
+      computedPassive: computedBonuses?.passiveBaseCoinsPerHour ?? null,
+      storedPassive: user?.activeBonuses?.passiveBaseCoinsPerHour ?? null,
+      gardenEntries,
+    };
+  }, [ccDebugEnabled, computedBonuses?.passiveBaseCoinsPerHour, slimItems, user?.activeBonuses?.passiveBaseCoinsPerHour, user?.equipped]);
+
   const skillSummaryByPlaceId = useMemo(() => {
-    const b = user?.activeBonuses;
+    const b = computedBonuses ?? user?.activeBonuses;
     if (!b) return {} as Record<string, string>;
     return {
-      garden:             `${b.passiveBaseCoinsPerHour.toLocaleString()} coins/hr`,
-      lab:                `${b.passiveMultiplier.toFixed(1)}× multiplier`,
-      kitchen:            `+${b.quizFlatDiamondBonus} diamond bonus`,
-      school:             `${b.quizDiamondMultiplier.toFixed(1)}× quiz diamonds`,
-      beach:              `${b.quizDoubleChancePercent}% double chance`,
-      toilet:             `${b.dailyLoginDiamonds} daily diamonds`,
-      gas_station:        `${b.extraSlotsTotal} bonus slots`,
-      lifestyle_boutique: `${b.shopDiscountPercent}% store discount`,
+      garden: tf('chemcity.skillBoosts.summary.garden', { rate: b.passiveBaseCoinsPerHour.toLocaleString() }),
+      lab: tf('chemcity.skillBoosts.summary.lab', { multiplier: b.passiveMultiplier.toFixed(1) }),
+      kitchen: tf('chemcity.skillBoosts.summary.kitchen', { bonus: String(b.quizFlatDiamondBonus) }),
+      school: tf('chemcity.skillBoosts.summary.school', { multiplier: b.quizDiamondMultiplier.toFixed(1) }),
+      beach: tf('chemcity.skillBoosts.summary.beach', { percent: String(b.quizDoubleChancePercent) }),
+      toilet: tf('chemcity.skillBoosts.summary.toilet', { diamonds: String(b.dailyLoginDiamonds) }),
+      gas_station: tf('chemcity.skillBoosts.summary.gasStation', { count: String(b.extraSlotsTotal) }),
+      lifestyle_boutique: tf('chemcity.skillBoosts.summary.boutique', { percent: String(b.shopDiscountPercent) }),
     };
-  }, [user?.activeBonuses]);
+  }, [computedBonuses, user?.activeBonuses]);
+
+  const placeNameKeyByPlaceId: Record<string, string> = {
+    school: 'school',
+    beach: 'beach',
+    lifestyle_boutique: 'boutique',
+    gas_station: 'gasStation',
+    home: 'home',
+    toilet: 'toilet',
+    kitchen: 'kitchen',
+    garden: 'garden',
+    lab: 'lab',
+  };
+
+  const getPlaceLabel = (placeId: string, fallback?: string) => {
+    const key = placeNameKeyByPlaceId[String(placeId || '')];
+    if (key) return t(`chemcity.places.${key}`);
+    return fallback ?? String(placeId || '');
+  };
+
+  const skillDescKeyByPlaceId: Record<string, string> = {
+    beach: 'beach',
+    garden: 'garden',
+    gas_station: 'gasStation',
+    kitchen: 'kitchen',
+    lab: 'lab',
+    lifestyle_boutique: 'boutique',
+    school: 'school',
+    toilet: 'toilet',
+  };
+
+  const getSkillDescription = (placeId: string, fallback?: string) => {
+    const key = skillDescKeyByPlaceId[String(placeId || '')];
+    if (key) return t(`chemcity.skillBoosts.descriptions.${key}`);
+    return fallback ?? t('common.ellipsis');
+  };
 
   const NavBtn: React.FC<{
     onClick: () => void;
@@ -123,7 +199,7 @@ export const CurrencyBar: React.FC = () => {
         {/* Left: Back button */}
         <div style={{ pointerEvents: 'auto' }}>
           {view !== 'map' && (
-            <button onClick={navigateToMap} title="Back to map" aria-label="Back to map" style={{
+            <button onClick={navigateToMap} title={t('chemcity.currencyBar.backToMap')} aria-label={t('chemcity.currencyBar.backToMap')} style={{
               width: 36, height: 36, borderRadius: 10,
               border: '1.5px solid rgba(255,255,255,0.12)',
               background: 'rgba(8,20,19,0.9)',
@@ -143,7 +219,7 @@ export const CurrencyBar: React.FC = () => {
           <NavBtn
             onClick={() => setSkillsOpen(true)}
             active={false}
-            label="Skill Boosts"
+            label={t('chemcity.currencyBar.skillBoosts')}
             showText
             pulse
             bg="linear-gradient(135deg, rgba(251,191,36,0.95), rgba(245,158,11,0.92))"
@@ -155,16 +231,16 @@ export const CurrencyBar: React.FC = () => {
           <NavBtn
             onClick={() => navigate('/inventory')}
             active={false}
-            label="Inventory"
+            label={t('chemcity.currencyBar.inventory')}
             showText
             bg="linear-gradient(135deg, rgba(59,130,246,0.35), rgba(14,165,233,0.18))"
             borderColor="rgba(125,211,252,0.55)"
-            textColor="#111827"
+            textColor="#e2e8f0"
           >
-            <Archive size={16} color="#111827" />
+            <Archive size={16} color="#e2e8f0" />
           </NavBtn>
           {showGasDistributorButton && (
-            <NavBtn onClick={navigateToGasStationDistributor} active={false} label="Distribute Bonus Slots" accent>
+            <NavBtn onClick={navigateToGasStationDistributor} active={false} label={t('chemcity.currencyBar.distributeBonusSlots')} accent>
               <Fuel size={15} />
             </NavBtn>
           )}
@@ -202,8 +278,8 @@ export const CurrencyBar: React.FC = () => {
                   <Sparkles size={16} color="#76A8A5" />
                 </div>
                 <div>
-                  <div style={{ color: '#fff', fontWeight: 800, fontSize: 15 }}>Skill Boosts</div>
-                  <div style={{ color: 'rgba(197,215,181,0.5)', fontSize: 11, fontWeight: 600 }}>Active card bonuses</div>
+                  <div style={{ color: '#fff', fontWeight: 800, fontSize: 15 }}>{t('chemcity.skillBoosts.title')}</div>
+                  <div style={{ color: 'rgba(197,215,181,0.5)', fontSize: 11, fontWeight: 600 }}>{t('chemcity.skillBoosts.subtitle')}</div>
                 </div>
               </div>
               <button onClick={() => setSkillsOpen(false)} style={{
@@ -225,9 +301,9 @@ export const CurrencyBar: React.FC = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     <div style={{ fontSize: 20, flexShrink: 0 }}>{p.emoji}</div>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ color: '#fff', fontWeight: 800, fontSize: 12 }}>{p.displayName}</div>
+                      <div style={{ color: '#fff', fontWeight: 800, fontSize: 12 }}>{getPlaceLabel(p.id, p.displayName)}</div>
                       <div style={{ color: 'rgba(197,215,181,0.4)', fontSize: 10, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {p.skill.description}
+                        {getSkillDescription(p.id, p.skill?.description)}
                       </div>
                     </div>
                   </div>
@@ -239,6 +315,23 @@ export const CurrencyBar: React.FC = () => {
                   </div>
                 </div>
               ))}
+
+              {ccDebugEnabled && debugSnapshot && (
+                <div style={{
+                  marginTop: 10,
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  background: 'rgba(255,255,255,0.04)',
+                  color: 'rgba(226,232,240,0.9)',
+                  fontSize: 11,
+                  lineHeight: '15px',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  whiteSpace: 'pre-wrap',
+                }}>
+                  {`[ChemCity Debug]\nslimItems.length = ${debugSnapshot.slimItemsLen}\nequippedCount = ${debugSnapshot.equippedCount}\ncomputed passiveBaseCoinsPerHour = ${debugSnapshot.computedPassive}\nstored passiveBaseCoinsPerHour = ${debugSnapshot.storedPassive}\n\nGarden equipped slots (garden_*):\n${debugSnapshot.gardenEntries.map((e: any) => `- ${e.slotId}: ${e.itemId} (skill=${e.skillContribution})`).join('\n') || '(none)'}`}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,11 +1,12 @@
 // src/components/UnifiedChemStore.jsx
 // Unified ChemStore: ChemCards tab + Cosmetics tab (Ticket Store + Gacha Machine)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { useChemCityStore } from '../store/chemcityStore';
-import { getEffectiveCoinPrice } from '../lib/chemcity/shop';
+import { getEffectiveCoinPrice, getEffectiveDiamondPrice } from '../lib/chemcity/shop';
 import {
   countdownToMidnight,
   STORE_SLOT_UNLOCK_COSTS,
@@ -17,6 +18,7 @@ import {
 } from '../lib/chemcity/cloudFunctions';
 import { PurchaseConfirmModal } from './chemcity/PurchaseConfirmModal';
 import ChemistryLoading from './ChemistryLoading';
+import TokenRulesModal from './TokenRulesModal';
 import {
   ArrowLeft,
   Coins,
@@ -33,6 +35,7 @@ import {
   ChevronUp,
   TrendingUp,
   Archive,
+  Info,
 } from 'lucide-react';
 
 const RARITY_CFG = {
@@ -50,6 +53,7 @@ function needsAnonymousCrossOrigin(url) {
 }
 
 function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
+  const { t } = useLanguage();
   const isOwned = ownedSet.has(item.id);
   const rarityKey = (() => {
     const r = String(item?.rarity ?? '').toLowerCase();
@@ -60,6 +64,9 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
   const rawCoin = item.shopData?.coinCost;
   const effCoin = rawCoin != null ? getEffectiveCoinPrice(rawCoin, user?.activeBonuses ?? null) : null;
   const coinSaved = rawCoin != null && effCoin != null ? rawCoin - effCoin : 0;
+  const rawDiamond = item.shopData?.diamondCost;
+  const effDiamond = rawDiamond != null ? getEffectiveDiamondPrice(rawDiamond, user?.activeBonuses ?? null) : null;
+  const diamondSaved = rawDiamond != null && effDiamond != null ? rawDiamond - effDiamond : 0;
   const isLegendary = rarityKey === 'legendary';
   const formulaText = String(item?.chemicalFormula ?? '');
   const shouldMarquee = formulaText.length >= 18;
@@ -157,8 +164,8 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
           position: 'relative',
           zIndex: 2,
         }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-            <div style={{ minWidth: 0, textAlign: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 8 }}>
+            <div style={{ minWidth: 0, textAlign: 'center', width: '100%' }}>
               <div style={{ color: '#f1f5f9', fontSize: 13, fontWeight: 900, fontFamily: "'Quicksand',sans-serif", lineHeight: 1.2, paddingBottom: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
               {shouldMarquee ? (
                 <div className="chemcity-marquee" style={{
@@ -168,11 +175,13 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
                   whiteSpace: 'nowrap',
                   display: 'flex',
                   alignItems: 'flex-end',
+                  justifyContent: 'center',
                 }}>
                   <div className="chemcity-marquee__track" style={{
                     display: 'inline-flex',
                     alignItems: 'flex-end',
                     gap: 18,
+                    justifyContent: 'center',
                   }}>
                     <span className="chemcity-marquee__text" style={{
                       color: 'rgba(255,255,255,0.75)',
@@ -220,7 +229,7 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 4,
             pointerEvents: 'none',
           }}>
-            <div style={{ background: 'rgba(52,211,153,0.9)', borderRadius: 8, padding: '6px 14px', fontWeight: 800, fontSize: 12, color: '#052e16', fontFamily: "'Quicksand',sans-serif", pointerEvents: 'auto' }}>✓ Owned</div>
+            <div style={{ background: 'rgba(52,211,153,0.9)', borderRadius: 8, padding: '6px 14px', fontWeight: 800, fontSize: 12, color: '#052e16', fontFamily: "'Quicksand',sans-serif", pointerEvents: 'auto' }}>✓ {t('unifiedStore.owned')}</div>
           </div>
         )}
       </button>
@@ -255,23 +264,30 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
           </div>
         )}
         {item.shopData?.diamondCost != null && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 2 }}>
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              borderRadius: 12,
-              background: '#0e7490',
-            }}>
-              <Gem size={11} color="#67e8f9" />
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 2 }}>
               <span style={{
-                color: '#ffffff',
-                fontWeight: 900,
-                fontSize: 13,
-                fontFamily: "'Quicksand',sans-serif",
-              }}>{item.shopData.diamondCost.toLocaleString()}</span>
-            </span>
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 12,
+                background: '#0e7490',
+              }}>
+                <Gem size={11} color="#67e8f9" />
+                <span style={{
+                  color: '#ffffff',
+                  fontWeight: 900,
+                  fontSize: 13,
+                  fontFamily: "'Quicksand',sans-serif",
+                }}>{(effDiamond ?? item.shopData.diamondCost).toLocaleString()}</span>
+              </span>
+            </div>
+            {diamondSaved > 0 && (
+              <div style={{ color: 'rgba(15,23,42,0.45)', fontSize: 10, textDecoration: 'line-through', fontFamily: "'Quicksand',sans-serif", marginTop: 2 }}>
+                {rawDiamond.toLocaleString()}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -280,6 +296,7 @@ function StoreCard({ item, idx, ownedSet, user, onCardClick }) {
 }
 
 function ChemCardsTab() {
+  const { t, tf } = useLanguage();
   const user = useChemCityStore((s) => s.user);
   const dailyStoreItems = useChemCityStore((s) => s.dailyStoreItems);
   const storeSlotCount = useChemCityStore((s) => s.storeSlotCount);
@@ -314,7 +331,7 @@ function ChemCardsTab() {
     setUnlockingSlot(true);
     setUnlockError(null);
     try { await unlockStoreSlot(); }
-    catch (err) { setUnlockError(err?.message ?? 'Failed to unlock slot.'); }
+    catch (err) { setUnlockError(err?.message ?? t('unifiedStore.failedToUnlockSlot')); }
     finally { setUnlockingSlot(false); }
   };
 
@@ -328,12 +345,12 @@ function ChemCardsTab() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Clock size={14} color="#2d4a3e" />
-          <span style={{ color: '#2d4a3e', fontSize: 12, fontWeight: 900 }}>Resets in {countdown}</span>
+          <span style={{ color: '#2d4a3e', fontSize: 12, fontWeight: 900 }}>{tf('unifiedStore.resetsIn', { countdown })}</span>
         </div>
         {discount > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(52,211,153,0.15)', border: '1.5px solid rgba(52,211,153,0.4)', borderRadius: 20, padding: '4px 10px' }}>
             <Tag size={12} color="#34d399" />
-            <span style={{ color: '#34d399', fontWeight: 800, fontSize: 12 }}>{discount}% OFF</span>
+            <span style={{ color: '#34d399', fontWeight: 800, fontSize: 12 }}>{tf('unifiedStore.offPercent', { percent: String(discount) })}</span>
           </div>
         )}
       </div>
@@ -343,17 +360,17 @@ function ChemCardsTab() {
           <ShoppingBag size={40} color="rgba(45,74,62,0.35)" />
           <p style={{ color: 'rgba(15,23,42,0.55)', fontSize: 14, fontWeight: 800, textAlign: 'center', margin: 0 }}>
             {slimItems.length === 0
-              ? 'No ChemCard catalog loaded.'
+              ? t('unifiedStore.noCatalogLoaded')
               : purchasableCount === 0
-                ? 'No purchasable ChemCards found in catalog.'
-                : 'Loading store…'}
+                ? t('unifiedStore.noPurchasableFound')
+                : t('unifiedStore.loadingStore')}
           </p>
           <p style={{ color: 'rgba(15,23,42,0.45)', fontSize: 12, fontWeight: 700, textAlign: 'center', margin: 0 }}>
             {slimItems.length === 0
-              ? 'Check the CSV URL / CORS / column headers (open DevTools Console).'
+              ? t('unifiedStore.emptyHintNoCatalog')
               : purchasableCount === 0
-                ? 'Ensure your CSV has coinCost/diamondCost (or shopCoinCost/shopDiamondCost) columns.'
-                : 'Please wait…'}
+                ? t('unifiedStore.emptyHintNoPurchasable')
+                : t('unifiedStore.pleaseWait')}
           </p>
         </div>
       ) : (
@@ -380,7 +397,7 @@ function ChemCardsTab() {
       {canUnlockMore && (
         <div style={{ marginTop: 8 }}>
           <p style={{ color: 'rgba(15,23,42,0.55)', fontSize: 11, fontWeight: 800, textAlign: 'center', marginBottom: 10 }}>
-            Unlock more slots to see more cards daily
+            {t('unifiedStore.unlockMoreSlots')}
           </p>
           <button
             onClick={handleUnlockSlot}
@@ -402,7 +419,7 @@ function ChemCardsTab() {
               }
             </div>
             <div style={{ textAlign: 'left' }}>
-              <div style={{ color: canAffordNext ? '#0f172a' : '#64748b', fontWeight: 900, fontSize: 13 }}>Unlock Slot #{nextSlotNum}</div>
+              <div style={{ color: canAffordNext ? '#0f172a' : '#64748b', fontWeight: 900, fontSize: 13 }}>{tf('unifiedStore.unlockSlotNumber', { number: String(nextSlotNum) })}</div>
               {nextSlotCost != null && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span style={{
@@ -436,6 +453,7 @@ function ChemCardsTab() {
 
 function CosmeticsTab() {
   const navigate = useNavigate();
+  const { t, tf } = useLanguage();
   const user = useChemCityStore((s) => s.user);
   const cosmeticsMap = useChemCityStore((s) => s.cosmeticsMap);
 
@@ -457,9 +475,9 @@ function CosmeticsTab() {
     setPurchasing(`tickets_${count}`);
     try {
       await callChemCityBuyTickets({ count });
-      showNotif(`Bought ${count} ticket${count > 1 ? 's' : ''}!`);
+      showNotif(tf('chemcity.cosmetics.boughtTickets', { count: String(count) }));
     } catch (e) {
-      showNotif(e?.message || 'Failed to buy tickets', 'error');
+      showNotif(e?.message || t('chemcity.cosmetics.failedToBuyTickets'), 'error');
     }
     setPurchasing(null);
   };
@@ -469,9 +487,9 @@ function CosmeticsTab() {
     setPurchasing(cosmeticId);
     try {
       await callChemCityPurchaseCosmetic({ cosmeticId, currency });
-      showNotif('Cosmetic added to your collection!');
+      showNotif(t('chemcity.cosmetics.cosmeticAdded'));
     } catch (e) {
-      showNotif(e?.message || 'Purchase failed', 'error');
+      showNotif(e?.message || t('chemcity.cosmetics.purchaseFailed'), 'error');
     }
     setPurchasing(null);
   };
@@ -481,9 +499,9 @@ function CosmeticsTab() {
     : [];
 
   const TICKET_PACKAGES = [
-    { count: 1, cost: 250, label: 'Single Pull' },
-    { count: 10, cost: 2500, label: '10-Pull Bundle' },
-    { count: 50, cost: 12500, label: 'Mega Bundle' },
+    { count: 1, cost: 250, label: t('chemcity.cosmetics.ticketPackages.singlePull') },
+    { count: 10, cost: 2500, label: t('chemcity.cosmetics.ticketPackages.tenPullBundle') },
+    { count: 50, cost: 12500, label: t('chemcity.cosmetics.ticketPackages.megaBundle') },
   ];
 
   return (
@@ -517,8 +535,8 @@ function CosmeticsTab() {
             <Ticket size={24} color="#76A8A5" />
           </div>
           <div>
-            <div style={{ color: '#2d4a3e', fontWeight: 900, fontSize: 14 }}>Ticket Store</div>
-            <div style={{ color: 'rgba(45,74,62,0.65)', fontSize: 11, fontWeight: 700 }}>Buy with coins</div>
+            <div style={{ color: '#2d4a3e', fontWeight: 900, fontSize: 14 }}>{t('chemcity.cosmetics.ticketStoreTitle')}</div>
+            <div style={{ color: 'rgba(45,74,62,0.65)', fontSize: 11, fontWeight: 700 }}>{t('chemcity.cosmetics.buyWithCoins')}</div>
           </div>
           <div style={{ color: '#2d4a3e', marginTop: 2 }}>
             {ticketStoreOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -543,11 +561,11 @@ function CosmeticsTab() {
             <Sparkles size={24} color="#76A8A5" />
           </div>
           <div>
-            <div style={{ color: '#2d4a3e', fontWeight: 900, fontSize: 14 }}>Gacha Machine</div>
-            <div style={{ color: 'rgba(45,74,62,0.65)', fontSize: 11, fontWeight: 700 }}>Pull for cosmetics</div>
+            <div style={{ color: '#2d4a3e', fontWeight: 900, fontSize: 14 }}>{t('chemcity.cosmetics.gachaMachineTitle')}</div>
+            <div style={{ color: 'rgba(45,74,62,0.65)', fontSize: 11, fontWeight: 700 }}>{t('chemcity.cosmetics.pullForCosmetics')}</div>
           </div>
           <div style={{ color: '#2d4a3e', fontSize: 10, fontWeight: 900, background: 'rgba(118,168,165,0.14)', borderRadius: 20, padding: '3px 10px', border: '1px solid rgba(118,168,165,0.25)' }}>
-            Open →
+            {t('chemcity.cosmetics.open')}
           </div>
         </button>
       </div>
@@ -571,7 +589,7 @@ function CosmeticsTab() {
                   <div style={{ color: '#0f172a', fontWeight: 900, fontSize: 13 }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                       <Ticket size={13} color="#76A8A5" />
-                      {pkg.count} {pkg.count === 1 ? 'Ticket' : 'Tickets'}
+                      {tf('chemcity.cosmetics.ticketCount', { count: String(pkg.count) })}
                     </span>
                   </div>
                   <div style={{ color: 'rgba(15,23,42,0.55)', fontSize: 11, fontWeight: 700 }}>{pkg.label}</div>
@@ -604,7 +622,7 @@ function CosmeticsTab() {
             );
           })}
           <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: 'rgba(15,23,42,0.55)', fontSize: 11, fontWeight: 800 }}>Your tickets</span>
+            <span style={{ color: 'rgba(15,23,42,0.55)', fontSize: 11, fontWeight: 800 }}>{t('chemcity.cosmetics.yourTickets')}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <Ticket size={13} color="#76A8A5" />
               <span style={{ color: '#2d4a3e', fontWeight: 900, fontSize: 14 }}>{tickets.toLocaleString()}</span>
@@ -617,6 +635,7 @@ function CosmeticsTab() {
 }
 
 export default function UnifiedChemStore() {
+  const { t, tf, isEnglish } = useLanguage();
   const navigate = useNavigate();
   const { currentUser, userProfile } = useAuth();
 
@@ -628,12 +647,25 @@ export default function UnifiedChemStore() {
   const devRefreshStaticData = useChemCityStore((s) => s.devRefreshStaticData);
 
   const [activeTab, setActiveTab] = useState('chemcards');
+  const [showRules, setShowRules] = useState(false);
+  const [rulesInitialView, setRulesInitialView] = useState('diamonds');
+
+  const didInitLoadRef = useRef(false);
 
   useEffect(() => {
-    if (currentUser?.uid && !user && !isLoading) {
+    if (!currentUser?.uid) return;
+    if (didInitLoadRef.current) return;
+    if (isLoading) return;
+    didInitLoadRef.current = true;
+    loadAll(currentUser.uid);
+  }, [currentUser?.uid, isLoading, loadAll]);
+
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    if (user?.userId && user.userId !== currentUser.uid) {
       loadAll(currentUser.uid);
     }
-  }, [currentUser?.uid, user, isLoading, loadAll]);
+  }, [currentUser?.uid, user?.userId, loadAll]);
 
   useEffect(() => {
     loadGachaStatic();
@@ -698,41 +730,68 @@ export default function UnifiedChemStore() {
           <div className="flex-1 receipt-widget">
             <div className="receipt-perforation" />
             <div className="receipt-widget-content p-6">
-              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-amber">
-                <ShoppingBag size={32} className="text-amber-700" />
+              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-indigo">
+                <ShoppingBag size={32} className="text-orange-600" />
                 ChemStore
+                <button
+                  type="button"
+                  onClick={() => setShowRules(true)}
+                  className="ml-1 p-1 rounded-lg hover:bg-slate-100 text-slate-500"
+                  title={t('store.howToEarnTokens')}
+                  aria-label={t('store.howToEarnTokens')}
+                >
+                  <Info size={18} strokeWidth={2.5} />
+                </button>
               </h1>
-              <p className="text-slate-700 mt-1 font-semibold">Expand your collection</p>
+              <p className="text-slate-700 mt-1 font-semibold">{t('unifiedStore.expandYourCollection')}</p>
 
               <div className="flex items-start justify-between gap-6">
                 <div className="min-w-0">
                   <div className="mt-3 receipt-rule" />
                   <p className="mt-3 text-sm text-slate-700 font-medium">
-                    Daily store + ticket shop + cosmetics.
+                    {t('unifiedStore.dailyStoreTicketCosmetics')}
                   </p>
                 </div>
 
                 <div className="flex-shrink-0 text-right">
                   <div className="text-xs font-bold tracking-widest text-slate-500 uppercase">
-                    Your Balance
+                    {t('unifiedStore.yourBalance')}
                   </div>
                   <div className="mt-2 flex items-center justify-end gap-2 flex-wrap">
-                    <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-black tabular-nums inline-flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-black tabular-nums inline-flex items-center gap-2"
+                      onClick={() => {
+                        setRulesInitialView('diamonds');
+                        setShowRules(true);
+                      }}
+                      title={t('store.howToEarnTokens')}
+                      aria-label={t('store.howToEarnTokens')}
+                    >
                       <Gem size={14} className="text-cyan-500" />
-                      {diamonds} diamonds
-                    </span>
-                    <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-black tabular-nums inline-flex items-center gap-2">
+                      {diamonds} {t('unifiedStore.diamondsUnit')}
+                    </button>
+                    <button
+                      type="button"
+                      className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-black tabular-nums inline-flex items-center gap-2"
+                      onClick={() => {
+                        setRulesInitialView('coins');
+                        setShowRules(true);
+                      }}
+                      title={t('store.howToEarnCoins')}
+                      aria-label={t('store.howToEarnCoins')}
+                    >
                       <Coins size={14} className="text-amber-500" />
-                      {coins} coins
-                    </span>
+                      {coins} {t('unifiedStore.coinsUnit')}
+                    </button>
                     <span className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-black tabular-nums inline-flex items-center gap-2">
                       <Ticket size={14} className="text-teal-600" />
-                      {tickets} tickets
+                      {tickets} {t('unifiedStore.ticketsUnit')}
                     </span>
                   </div>
                   <div className="mt-3 receipt-rule" />
                   <div className="mt-2 font-mono text-[11px] text-slate-500">
-                    #{String(currentUser?.uid || '').slice(0, 6).toUpperCase()} · {new Date().toLocaleDateString('en-GB')}
+                    #{String(currentUser?.uid || '').slice(0, 6).toUpperCase()} · {new Date().toLocaleDateString(isEnglish ? 'en-GB' : 'zh-HK')}
                   </div>
                 </div>
               </div>
@@ -750,6 +809,8 @@ export default function UnifiedChemStore() {
             </button>
           )}
         </div>
+
+        <TokenRulesModal open={showRules} onClose={() => setShowRules(false)} initialView={rulesInitialView} />
 
         <div className="bg-white rounded-2xl shadow-xl border-2 border-slate-200 overflow-hidden">
           <div className="flex items-stretch border-b-2 border-slate-200">

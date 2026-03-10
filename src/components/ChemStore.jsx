@@ -6,9 +6,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { ArrowLeft, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, ShoppingBag, Info } from 'lucide-react';
 import { getCosmeticsMap } from '../lib/chemcity/gachaStaticCache';
 import { callChemCityBuyTickets, callChemCityPurchaseCosmetic } from '../lib/chemcity/cloudFunctions';
+import TokenRulesModal from './TokenRulesModal';
 
 export default function ChemStore() {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export default function ChemStore() {
   const [selectedCategory, setSelectedCategory] = useState('tickets');
   const [purchasing, setPurchasing] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [showRules, setShowRules] = useState(false);
 
   const [cosmeticsMap, setCosmeticsMap] = useState(null);
 
@@ -112,23 +114,25 @@ export default function ChemStore() {
           <ArrowLeft size={20} />
         </button>
         
-        <div className="flex-1 receipt-widget">
-          <div className="receipt-perforation" />
-          <div className="receipt-widget-content p-6">
-            <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-amber">
-              <ShoppingBag size={32} className="text-amber-700" />
-              {t('store.title')}
-            </h1>
-            <p className="text-slate-700 mt-1 font-semibold">
-              {t('store.subtitle')}
-            </p>
-            <div className="flex items-start justify-between gap-6">
-              <div className="min-w-0">
-                <div className="mt-3 receipt-rule" />
-                <p className="mt-3 text-sm text-slate-700 font-medium">
-                  {t('store.subtitle')}
-                </p>
-              </div>
+        <div className="flex-1 flex justify-center">
+          <div className="paper-island paper-island-md paper-amber">
+            <div className="paper-island-content">
+              <h1 className="text-3xl font-black flex items-center gap-3 text-slate-900 bellmt-title ink-amber">
+                <ShoppingBag size={32} className="text-amber-700" />
+                {t('store.title')}
+                <button
+                  type="button"
+                  onClick={() => setShowRules(true)}
+                  className="ml-1 w-8 h-8 rounded-xl border-2 border-slate-200 bg-white/70 hover:bg-white hover:border-amber-300 transition-all flex items-center justify-center text-amber-700 shadow-sm hover:shadow-md active:scale-[0.99]"
+                  title={t('store.howToEarnTokens')}
+                  aria-label={t('store.howToEarnTokens')}
+                >
+                  <Info size={18} strokeWidth={2.5} />
+                </button>
+              </h1>
+              <p className="text-slate-700 mt-1 font-semibold">
+                {t('store.subtitle')}
+              </p>
 
               <div className="flex-shrink-0 text-right">
                 <div className="text-xs font-bold tracking-widest text-slate-500 uppercase">

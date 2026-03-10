@@ -36,8 +36,8 @@ export function generateD1(ramOn) {
     title: `Precipitation — Theoretical Yield of ${rxn.precipitateName}`,
     description: 'Mix two solutions; determine limiting reagent and mass of precipitate',
     problemStatement:
-      `A student mixes ${vol1}.0 cm³ of ${rxn.cationSource} solution of concentration ${conc1} mol/dm³ ` +
-      `with ${vol2}.0 cm³ of ${rxn.anionSource} solution of concentration ${conc2} mol/dm³. ` +
+      `A student mixes ${vol1}.0 cm³ of ${conc1} mol/dm³ ${rxn.cationSource} solution ` +
+      `with ${vol2}.0 cm³ of ${conc2} mol/dm³ ${rxn.anionSource} solution. ` +
       `A ${rxn.precipitateColour} precipitate of ${rxn.precipitateName} (${rxn.precipitate}) forms immediately. ` +
       `The precipitate is filtered, washed, and dried.` +
       (ramInfo ? ` ${ramInfo}` : '') +
@@ -125,7 +125,7 @@ export function generateE1(ramOn) {
     description: 'Excess reactive metal displaces less reactive metal from solution',
     problemStatement:
       `Excess ${rxn.activeMetalName} (${rxn.activeMetal}) powder is added to ${vol} cm³ of ` +
-      `${rxn.ionSource} solution of concentration ${conc} mol/dm³. ` +
+      `${conc} mol/dm³ ${rxn.ionSource} solution. ` +
       `After the reaction is complete, the solid mixture is filtered, washed with water, dried, and weighed.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\n(a) Write the ionic equation for this displacement reaction.` +
@@ -205,7 +205,7 @@ export function generateE2(ramOn) {
     description: 'Find mass of active metal used and remaining, and mass of displaced metal formed (no mass-change concept)',
     problemStatement:
       `A strip of ${rxn.activeMetalName} (${rxn.activeMetal}) metal weighing ${initialMass} g is placed into ` +
-      `${vol} cm³ of ${rxn.ionSource} solution of concentration ${conc} mol/dm³. ` +
+      `${vol} cm³ of ${conc} mol/dm³ ${rxn.ionSource} solution. ` +
       `Assume the ${rxn.ionFormula} solution is the limiting reagent and the ${rxn.activeMetal} strip is in excess. ` +
       (ramInfo ? `${ramInfo} ` : '') +
       `\n\n(a) Calculate the mass of ${rxn.activeMetal} used (dissolved into solution).` +
@@ -292,7 +292,7 @@ export function generateF1(ramOn) {
     problemStatement:
       `To determine the concentration of a ${rxn.reducerName} (${rxn.reducerFormula}) solution, ` +
       `${volSample} cm³ of the solution was acidified with dilute sulphuric acid and ` +
-      `titrated with ${rxn.oxidiserName} of concentration ${concOxidiser} mol/dm³. ` +
+      `titrated with ${concOxidiser} mol/dm³ ${rxn.oxidiserName}. ` +
       `The average titre was ${titre} cm³. ` +
       `The endpoint was detected when ${rxn.endpoint}.` +
       (ramInfo ? ` ${ramInfo}` : '') +
@@ -385,7 +385,7 @@ export function generateF2(ramOn) {
       `A commercial iron tablet of mass ${massTablet} g was crushed and dissolved in dilute sulphuric acid. ` +
       `The solution was transferred to a ${flaskVol}.0 cm³ volumetric flask and made up to the mark. ` +
       `A ${aliquot}.0 cm³ aliquot of this solution required ${titre} cm³ of acidified potassium manganate(VII) (KMnO₄) ` +
-      `of concentration ${concKMnO4} mol/dm³ for complete oxidation of Fe²⁺ ions.` +
+      `of ${concKMnO4} mol/dm³ for complete oxidation of Fe²⁺ ions.` +
       (ramInfo ? ` ${ramInfo}` : '') +
       `\n\nCalculate the percentage by mass of iron(II) sulphate (FeSO₄) in the tablet.`,
     equation: 'MnO₄⁻(aq) + 5Fe²⁺(aq) + 8H⁺(aq) → Mn²⁺(aq) + 5Fe³⁺(aq) + 4H₂O(l)',

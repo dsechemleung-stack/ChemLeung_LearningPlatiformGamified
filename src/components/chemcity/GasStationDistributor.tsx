@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { useChemCityStore } from '../../store/chemcityStore';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export const GasStationDistributor: React.FC = () => {
+  const { t, tf } = useLanguage();
   const user = useChemCityStore((s) => s.user);
   const places = useChemCityStore((s) => s.places);
   const unlockSlot = useChemCityStore((s) => s.unlockSlot);
@@ -38,6 +40,24 @@ export const GasStationDistributor: React.FC = () => {
     return result;
   }, [user, places, recentlyUnlocked]);
 
+  const placeNameKeyByPlaceId: Record<string, string> = {
+    school: 'school',
+    beach: 'beach',
+    lifestyle_boutique: 'boutique',
+    gas_station: 'gasStation',
+    home: 'home',
+    toilet: 'toilet',
+    kitchen: 'kitchen',
+    garden: 'garden',
+    lab: 'lab',
+  };
+
+  const getPlaceLabel = (placeId: string, fallback?: string) => {
+    const key = placeNameKeyByPlaceId[String(placeId || '')];
+    if (key) return t(`chemcity.places.${key}`);
+    return fallback ?? String(placeId || '');
+  };
+
   const grouped = useMemo(() => {
     const map = new Map<string, typeof gasStationSlots>();
     for (const s of gasStationSlots) {
@@ -55,7 +75,7 @@ export const GasStationDistributor: React.FC = () => {
       await unlockSlot(placeId, slotId, true);
       setRecentlyUnlocked((prev) => new Set([...prev, slotId]));
     } catch (err: any) {
-      setError(err?.message ?? 'Failed to unlock slot.');
+      setError(err?.message ?? t('chemcity.gasStationDistributor.failedToUnlockSlot'));
     } finally {
       setUnlockingSlotId(null);
     }
@@ -66,17 +86,17 @@ export const GasStationDistributor: React.FC = () => {
       <div className="px-4 pt-3 pb-3 border-b border-slate-800">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-2xl">⛽</span>
-          <h2 className="text-white font-bold text-lg">Gas Station</h2>
+          <h2 className="text-white font-bold text-lg">{t('chemcity.gasStationDistributor.title')}</h2>
         </div>
-        <p className="text-slate-400 text-xs mb-3">Use your bonus slot budget to unlock extra card slots across any place.</p>
+        <p className="text-slate-400 text-xs mb-3">{t('chemcity.gasStationDistributor.subtitle')}</p>
 
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center justify-between">
           <div>
-            <p className="text-slate-400 text-xs">Extra Slot Budget</p>
+            <p className="text-slate-400 text-xs">{t('chemcity.gasStationDistributor.extraSlotBudget')}</p>
             <p className="text-white font-black text-2xl tabular-nums">{budget}</p>
           </div>
           <div className="text-right">
-            <p className="text-slate-400 text-xs">Total unlockable</p>
+            <p className="text-slate-400 text-xs">{t('chemcity.gasStationDistributor.totalUnlockable')}</p>
             <p className="text-slate-300 font-bold text-lg">{gasStationSlots.length}</p>
           </div>
         </div>
@@ -86,7 +106,7 @@ export const GasStationDistributor: React.FC = () => {
         {budget === 0 && gasStationSlots.length > 0 && (
           <div className="bg-amber-900/30 border border-amber-700 rounded-xl p-3 mb-4">
             <p className="text-amber-200 text-sm">
-              💡 Equip more cards in the <span className="font-bold">⛽ Gas Station</span> to increase your budget.
+              {tf('chemcity.gasStationDistributor.tipEquipMore', { place: '⛽' })}
             </p>
           </div>
         )}
@@ -96,13 +116,13 @@ export const GasStationDistributor: React.FC = () => {
             <span className="text-5xl mb-3">⛽</span>
             {user?.extraSlotsBudget === 0 ? (
               <>
-                <p className="text-sm text-center">No bonus slots available yet.</p>
-                <p className="text-xs text-center mt-1">Equip cards in the Gas Station to earn slot budget.</p>
+                <p className="text-sm text-center">{t('chemcity.gasStationDistributor.noBonusSlotsYet')}</p>
+                <p className="text-xs text-center mt-1">{t('chemcity.gasStationDistributor.noBonusSlotsHint')}</p>
               </>
             ) : (
               <>
-                <p className="text-sm text-center">All extra slots are unlocked!</p>
-                <p className="text-xs text-center mt-1">Check back after unlocking more places.</p>
+                <p className="text-sm text-center">{t('chemcity.gasStationDistributor.allUnlocked')}</p>
+                <p className="text-xs text-center mt-1">{t('chemcity.gasStationDistributor.allUnlockedHint')}</p>
               </>
             )}
           </div>
@@ -120,8 +140,8 @@ export const GasStationDistributor: React.FC = () => {
                 <div key={placeId}>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xl">{place?.emoji}</span>
-                    <span className="text-slate-300 font-semibold text-sm">{place?.displayName}</span>
-                    <span className="text-slate-500 text-xs ml-auto">{slots.length} available</span>
+                    <span className="text-slate-300 font-semibold text-sm">{getPlaceLabel(placeId, place?.displayName)}</span>
+                    <span className="text-slate-500 text-xs ml-auto">{tf('chemcity.gasStationDistributor.availableCount', { count: String(slots.length) })}</span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -149,7 +169,7 @@ export const GasStationDistributor: React.FC = () => {
                               canAfford && !unlockingSlotId ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'
                             }`}
                           >
-                            {isUnlocking ? '⏳' : '-1'}
+                            {isUnlocking ? t('chemcity.gasStationDistributor.unlocking') : t('chemcity.gasStationDistributor.costOne')}
                           </span>
                         </button>
                       );

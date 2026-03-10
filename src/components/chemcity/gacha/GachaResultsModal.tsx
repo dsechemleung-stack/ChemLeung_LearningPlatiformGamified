@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useChemCityStore } from '../../../store/chemcityStore';
 import type { Cosmetic, GachaDrawResult, Rarity } from '../../../lib/chemcity/types';
 import { getAvatarTuning, shouldForceNoSplit, avatarNumberFromId } from './AvatarTuner';
+import { Coins } from 'lucide-react';
 
 interface Props {
   results: GachaDrawResult[];
@@ -136,7 +137,10 @@ export function GachaResultsModal({ results, onClose }: Props) {
             )}
             {totalRefund > 0 && (
               <span className="text-sm font-bold" style={{ color: '#fde68a' }}>
-                🪙 +{totalRefund} refunded
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Coins size={14} />
+                  <span>+{totalRefund} refunded</span>
+                </span>
               </span>
             )}
           </div>
@@ -374,7 +378,10 @@ function ResultCard({
                   className="text-xs font-bold px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(245,185,60,0.2)', color: '#fde68a', border: '1px solid rgba(245,185,60,0.35)' }}
                 >
-                  +{result.refundCoins} 🪙
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Coins size={12} />
+                    <span>+{result.refundCoins}</span>
+                  </span>
                 </span>
               )}
             </div>
