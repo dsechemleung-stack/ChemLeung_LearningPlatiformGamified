@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function PrivateRoute({ children }) {
-  const { currentUser } = useAuth();
+  const { currentUser, isVisitor } = useAuth();
   
-  return currentUser ? children : <Navigate to="/" />;
+  return (currentUser || isVisitor) ? children : <Navigate to="/" />;
 }

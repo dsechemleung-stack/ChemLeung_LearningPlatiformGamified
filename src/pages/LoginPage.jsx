@@ -9,9 +9,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, enterVisitorMode } = useAuth();
   const { t, toggleLanguage, isEnglish } = useLanguage();
   const navigate = useNavigate();
+
+  const [showVisitorConfirm, setShowVisitorConfirm] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -128,6 +130,82 @@ export default function LoginPage() {
           background: 'radial-gradient(ellipse 80% 80% at 50% 50%, rgba(10,26,24,0.2) 0%, rgba(10,26,24,0.9) 100%)',
         }} />
       </div>
+
+      {showVisitorConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={() => setShowVisitorConfirm(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 520,
+              borderRadius: 20,
+              background: 'rgba(10,26,24,0.92)',
+              border: '1px solid rgba(197,215,181,0.18)',
+              backdropFilter: 'blur(18px)',
+              WebkitBackdropFilter: 'blur(18px)',
+              boxShadow: '0 18px 70px rgba(0,0,0,0.6)',
+              padding: 18,
+              color: '#fff',
+              fontFamily: "'Quicksand', sans-serif",
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{
+                width: 42,
+                height: 42,
+                borderRadius: 14,
+                background: 'rgba(255,255,255,0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <AlertCircle size={20} color="#C5D7B5" />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
+                  Visitor mode
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>
+                  Your data will not be saved or uploaded. Do not use Visitor mode if you want to keep your progress.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={() => setShowVisitorConfirm(false)}
+                className="auth-btn-primary"
+                style={{
+                  flex: 1,
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1.5px solid rgba(255,255,255,0.12)',
+                  boxShadow: 'none',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVisitorConfirm(false);
+                  enterVisitorMode();
+                  navigate('/dashboard');
+                }}
+                className="auth-btn-primary"
+                style={{ flex: 1 }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Language Toggle */}
       <button className="lang-btn" onClick={toggleLanguage}>
@@ -251,6 +329,25 @@ export default function LoginPage() {
                 </>
               )}
             </button>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => setShowVisitorConfirm(true)}
+              className="auth-btn-primary"
+              style={{
+                marginTop: 6,
+                background: 'rgba(255,255,255,0.08)',
+                border: '1.5px solid rgba(197,215,181,0.22)',
+                boxShadow: 'none',
+              }}
+            >
+              <span>Visitor Login</span>
+            </button>
+
+            <div style={{ color: 'rgba(255,255,255,0.42)', fontSize: 12, fontWeight: 700, lineHeight: 1.35 }}>
+              Caution: Visitor mode does not save or upload any data. Your progress will be lost when you leave.
+            </div>
           </form>
 
           {/* Footer */}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -17,15 +17,15 @@ import { useChemCityStore } from '../store/chemcityStore';
  * ResultsPage - OPTIMIZED VERSION with SRS Review Support
  * 
  * FIXES:
- * 1. ✅ No translation keys - plain English text
- * 2. ✅ Faster save - parallel operations
- * 3. ✅ Always logs to calendar with date
- * 4. ✅ Shortened loading time
- * 5. ✅ Spaced repetition reviews submitted in batch
+ * 1. No translation keys - plain English text
+ * 2. Faster save - parallel operations
+ * 3. Always logs to calendar with date
+ * 4. Shortened loading time
+ * 5. Spaced repetition reviews submitted in batch
  */
 export default function ResultsPage() {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, isVisitor } = useAuth();
   const { t } = useLanguage();
 
   const awardQuizReward = useChemCityStore((s) => s.awardQuizReward);
@@ -231,11 +231,19 @@ export default function ResultsPage() {
           questions,
         };
 
+        const attemptId = `attempt_${Date.now()}`;
+
+        if (isVisitor) {
+          setSavedAttemptId(attemptId);
+          setSaving(false);
+          return;
+        }
+
         // STEP 1: Save attempt to Firestore
         const savedAttemptId = await quizService.saveAttempt(currentUser.uid, attemptData);
-        const attemptId = savedAttemptId || `attempt_${Date.now()}`;
-        console.log('✅ Attempt saved:', attemptId);
-        setSavedAttemptId(attemptId);
+        const finalAttemptId = savedAttemptId || attemptId;
+        console.log('✅ Attempt saved:', finalAttemptId);
+        setSavedAttemptId(finalAttemptId);
 
         // Get quiz metadata
         const quizMode = localStorage.getItem('quiz_mode') || 'practice';
@@ -289,7 +297,7 @@ export default function ResultsPage() {
             currentUser.uid,
             questions,
             userAnswers,
-            attemptId,
+            finalAttemptId,
             { createSrsCards: false }
           ).catch(err => {
             console.error('⚠️ Processing error:', err);
@@ -301,7 +309,7 @@ export default function ResultsPage() {
         parallelOperations.push(
           quizCompletionService.logDetailedCompletion(
             currentUser.uid,
-            attemptId,
+            finalAttemptId,
             completionData
           ).catch(err => {
             console.error('⚠️ Calendar logging error:', err);

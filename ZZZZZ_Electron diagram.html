@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Electron Diagrams — Questions 116–145</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #f5f3ee;
+    font-family: 'Libre Baskerville', serif;
+    padding: 32px 24px 48px;
+  }
+  header {
+    max-width: 1200px;
+    margin: 0 auto 28px;
+    border-bottom: 2px solid #1a1a1a;
+    padding-bottom: 14px;
+  }
+  header h1 { font-size: 20px; font-weight: 700; color: #1a1a1a; letter-spacing: -0.3px; }
+  header p  { font-size: 11.5px; color: #666; margin-top: 5px; font-style: italic; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 20px;
+    margin-top: 12px; font-size: 11.5px; color: #444;
+  }
+  .legend-item { display: flex; align-items: center; gap: 7px; }
+  .section-title {
+    max-width: 1200px; margin: 26px auto 10px;
+    font-size: 10px; font-weight: 700; letter-spacing: 2.5px;
+    text-transform: uppercase; color: #999;
+    font-family: 'Source Code Pro', monospace;
+  }
+  .grid {
+    max-width: 1200px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+  }
+  .card {
+    background: #fff; border: 1.5px solid #dbd7ce; border-radius: 3px;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 9px 6px 7px;
+  }
+  .q-num {
+    font-family: 'Source Code Pro', monospace; font-size: 9.5px;
+    color: #bbb; letter-spacing: 1px; margin-bottom: 3px; align-self: flex-start;
+  }
+  .card svg { display: block; }
+  .label {
+    margin-top: 5px; font-family: 'Source Code Pro', monospace;
+    font-size: 13px; font-weight: 600; color: #1a1a1a;
+  }
+  .sub { font-size: 9.5px; color: #aaa; margin-top: 1px; font-style: italic; }
+  hr.divider {
+    max-width: 1200px; margin: 26px auto 0;
+    border: none; border-top: 1.5px dashed #ccc;
+  }
+  @media print {
+    body { background: #fff; padding: 8px; }
+    .card { border-color: #aaa; }
+    .grid { gap: 6px; }
+  }
+  @media (max-width: 860px)  { .grid { grid-template-columns: repeat(4,1fr); } }
+  @media (max-width: 620px)  { .grid { grid-template-columns: repeat(3,1fr); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Electron Diagrams — Blooket Quiz Reference Sheet</h1>
+  <p>Questions 116–145 · Add these diagrams to their matching Blooket questions</p>
+  <div class="legend">
+    <div class="legend-item">
+      <svg width="14" height="14"><circle cx="7" cy="7" r="4" fill="#000"/></svg>
+      Dot = electron belonging to the atom
+    </div>
+    <div class="legend-item">
+      <svg width="14" height="14">
+        <line x1="2" y1="2" x2="12" y2="12" stroke="#000" stroke-width="1.8"/>
+        <line x1="12" y1="2" x2="2" y2="12" stroke="#000" stroke-width="1.8"/>
+      </svg>
+      Cross = electron gained from another atom (anions only)
+    </div>
+    <div class="legend-item">
+      <svg width="48" height="14">
+        <polyline points="8,2 2,2 2,12 8,12" fill="none" stroke="#000" stroke-width="1.8"/>
+        <polyline points="32,2 38,2 38,12 32,12" fill="none" stroke="#000" stroke-width="1.8"/>
+        <text x="39" y="11" font-size="10" font-family="Georgia,serif" fill="#000" font-weight="bold">2+</text>
+      </svg>
+      Square brackets with charge = ion
+    </div>
+  </div>
+</header>
+
+<div class="section-title">Neutral Atoms — Q116 to Q135</div>
+<div class="grid" id="atomGrid"></div>
+
+<hr class="divider">
+<div class="section-title">Cations (lost electrons — all dots) — Q136 to Q140</div>
+<div class="grid" id="cationGrid"></div>
+
+<hr class="divider">
+<div class="section-title">Anions (gained electrons — crosses) — Q141 to Q145</div>
+<div class="grid" id="anionGrid"></div>
+
+<script>
+// ── Layout constants ──────────────────────────────────────────
+const CX = 110, CY = 110, SZ = 220;
+const SR = [26, 52, 78, 104];   // shell radii
+const ER = 3.5;                  // electron dot radius
+const CS = 4.5;                  // cross half-size
+const PO = 5.5;                  // pair offset (perpendicular)
+// Slot angles from north (degrees), fill order: top → bottom → right → left
+const SLOTS = [0, 180, 90, 270];
+
+// ── Electron position calculator ──────────────────────────────
+function shellElectrons(n, r, nGained) {
+  const nDots = n - nGained;
+  const sc = [0,0,0,0];
+  for (let i = 0; i < n; i++) sc[i % 4]++;
+
+  const out = [];
+  for (let round = 0; round < 2; round++) {
+    for (let s = 0; s < 4; s++) {
+      if (sc[s] <= round) continue;
+      const a = SLOTS[s] * Math.PI / 180;
+      const bx = r * Math.sin(a), by = -r * Math.cos(a);
+      let x, y;
+      if (sc[s] === 1) {
+        x = bx; y = by;
+      } else {
+        const px = Math.cos(a), py = Math.sin(a);
+        if (round === 0) { x = bx - PO*px; y = by - PO*py; }
+        else             { x = bx + PO*px; y = by + PO*py; }
+      }
+      out.push({x, y});
+    }
+  }
+  return out.map((p, i) => ({...p, type: i < nDots ? 'dot' : 'cross'}));
+}
+
+// ── SVG builder ───────────────────────────────────────────────
+function f(n) { return n.toFixed(1); }
+
+function makeSVG(p) {
+  const hasCharge = p.charge !== undefined;
+  let s = `<svg width="${SZ}" height="${SZ}" xmlns="http://www.w3.org/2000/svg">`;
+  s += `<rect width="${SZ}" height="${SZ}" fill="white"/>`;
+
+  // Shell circles only — no nucleus circle, no "?" label
+  for (let i = 0; i < p.config.length; i++) {
+    s += `<circle cx="${CX}" cy="${CY}" r="${SR[i]}" fill="none" stroke="#111" stroke-width="1.3"/>`;
+  }
+
+  // Center label
+  s += `<text x="${CX}" y="${CY}" text-anchor="middle" dominant-baseline="middle" font-size="34" font-weight="700" font-family="Georgia,serif" fill="#111">?</text>`;
+
+  // Electrons
+  for (let i = 0; i < p.config.length; i++) {
+    const gained = (hasCharge && p.gained) ? (p.gained[i] || 0) : 0;
+    for (const e of shellElectrons(p.config[i], SR[i], gained)) {
+      const ex = CX + e.x, ey = CY + e.y;
+      if (e.type === 'dot') {
+        s += `<circle cx="${f(ex)}" cy="${f(ey)}" r="${ER}" fill="#111"/>`;
+      } else {
+        s += `<line x1="${f(ex-CS)}" y1="${f(ey-CS)}" x2="${f(ex+CS)}" y2="${f(ey+CS)}" stroke="#111" stroke-width="1.9" stroke-linecap="round"/>`;
+        s += `<line x1="${f(ex+CS)}" y1="${f(ey-CS)}" x2="${f(ex-CS)}" y2="${f(ey+CS)}" stroke="#111" stroke-width="1.9" stroke-linecap="round"/>`;
+      }
+    }
+  }
+
+  // Ion brackets + large plain-text charge (e.g. "2+", "3-", "+", "-")
+  if (hasCharge) {
+    const or  = SR[p.config.length - 1];
+    const bx  = or + 11;
+    const bh  = or + 8;
+    const arm = 8;
+    const lx = CX - bx, rx = CX + bx;
+    const tp = CY - bh, bt = CY + bh;
+    s += `<polyline points="${lx+arm},${tp} ${lx},${tp} ${lx},${bt} ${lx+arm},${bt}" fill="none" stroke="#111" stroke-width="2.1" stroke-linejoin="miter"/>`;
+    s += `<polyline points="${rx-arm},${tp} ${rx},${tp} ${rx},${bt} ${rx-arm},${bt}" fill="none" stroke="#111" stroke-width="2.1" stroke-linejoin="miter"/>`;
+    // Large bold charge label positioned top-right outside bracket
+    s += `<text x="${rx+3}" y="${tp+2}" dominant-baseline="hanging" font-size="18" font-weight="bold" font-family="Georgia,serif" fill="#111">${p.charge}</text>`;
+  }
+
+  s += `</svg>`;
+  return s;
+}
+
+// ── Particle data ─────────────────────────────────────────────
+const atoms = [
+  {q:116, name:'H',  config:[1],       sub:'1'},
+  {q:117, name:'He', config:[2],       sub:'2'},
+  {q:118, name:'Li', config:[2,1],     sub:'2, 1'},
+  {q:119, name:'Be', config:[2,2],     sub:'2, 2'},
+  {q:120, name:'B',  config:[2,3],     sub:'2, 3'},
+  {q:121, name:'C',  config:[2,4],     sub:'2, 4'},
+  {q:122, name:'N',  config:[2,5],     sub:'2, 5'},
+  {q:123, name:'O',  config:[2,6],     sub:'2, 6'},
+  {q:124, name:'F',  config:[2,7],     sub:'2, 7'},
+  {q:125, name:'Ne', config:[2,8],     sub:'2, 8'},
+  {q:126, name:'Na', config:[2,8,1],   sub:'2, 8, 1'},
+  {q:127, name:'Mg', config:[2,8,2],   sub:'2, 8, 2'},
+  {q:128, name:'Al', config:[2,8,3],   sub:'2, 8, 3'},
+  {q:129, name:'Si', config:[2,8,4],   sub:'2, 8, 4'},
+  {q:130, name:'P',  config:[2,8,5],   sub:'2, 8, 5'},
+  {q:131, name:'S',  config:[2,8,6],   sub:'2, 8, 6'},
+  {q:132, name:'Cl', config:[2,8,7],   sub:'2, 8, 7'},
+  {q:133, name:'Ar', config:[2,8,8],   sub:'2, 8, 8'},
+  {q:134, name:'K',  config:[2,8,8,1], sub:'2, 8, 8, 1'},
+  {q:135, name:'Ca', config:[2,8,8,2], sub:'2, 8, 8, 2'},
+];
+
+// Cations — lost electrons; charge written as plain text e.g. "+" "2+" "3+"
+const cations = [
+  {q:136, name:'Na+',  config:[2,8],   charge:'+',   gained:[0,0],   sub:'2, 8'},
+  {q:137, name:'Mg2+', config:[2,8],   charge:'2+',  gained:[0,0],   sub:'2, 8'},
+  {q:138, name:'Al3+', config:[2,8],   charge:'3+',  gained:[0,0],   sub:'2, 8'},
+  {q:139, name:'K+',   config:[2,8,8], charge:'+',   gained:[0,0,0], sub:'2, 8, 8'},
+  {q:140, name:'Ca2+', config:[2,8,8], charge:'2+',  gained:[0,0,0], sub:'2, 8, 8'},
+];
+
+// Anions — gained[i] = number of cross electrons in shell i
+const anions = [
+  {q:141, name:'Cl-',  config:[2,8,8], charge:'-',   gained:[0,0,1], sub:'2, 8, 8 (7 dots + 1 cross)'},
+  {q:142, name:'S2-',  config:[2,8,8], charge:'2-',  gained:[0,0,2], sub:'2, 8, 8 (6 dots + 2 crosses)'},
+  {q:143, name:'F-',   config:[2,8],   charge:'-',   gained:[0,1],   sub:'2, 8 (7 dots + 1 cross)'},
+  {q:144, name:'O2-',  config:[2,8],   charge:'2-',  gained:[0,2],   sub:'2, 8 (6 dots + 2 crosses)'},
+  {q:145, name:'N3-',  config:[2,8],   charge:'3-',  gained:[0,3],   sub:'2, 8 (5 dots + 3 crosses)'},
+];
+
+// ── Render ────────────────────────────────────────────────────
+function renderGroup(list, gridId) {
+  const grid = document.getElementById(gridId);
+  for (const p of list) {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `<div class="q-num">Q${p.q}</div>${makeSVG(p)}<div class="label">${p.name}</div><div class="sub">${p.sub}</div>`;
+    grid.appendChild(div);
+  }
+}
+
+renderGroup(atoms,   'atomGrid');
+renderGroup(cations, 'cationGrid');
+renderGroup(anions,  'anionGrid');
+</script>
+</body>
+</html>

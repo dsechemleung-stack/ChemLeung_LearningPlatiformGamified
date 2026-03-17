@@ -74,4 +74,6 @@ backup 24: UI, featurePage
 ______
 backup 25: mobileophone compatibility
 ______
-backup 26: 
+backup 26: virtual lab, calculator
+______
+backup 27: i18n pages, mobilephone compatibility, export image/pdf fix, skill boost rule (coin daily reward, discount in chemstore)

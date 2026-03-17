@@ -533,14 +533,14 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
   return (
     <div className={embedded ? 'h-full' : 'bg-white rounded-2xl shadow-lg border-2 border-slate-100 p-6'}>
       {/* Header */}
-      <div className="flex items-start justify-between mb-6 gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-6 gap-4">
         <div className="flex items-center gap-4 min-w-0">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center border-2 border-blue-200 flex-shrink-0">
             <CalendarIcon className="text-blue-700" size={30} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-lg sm:text-3xl font-black text-slate-800 tracking-tight leading-tight max-w-[14rem] sm:max-w-none special-calendar-title special-calendar-title-animate">
+              <h3 className="text-lg sm:text-3xl font-black text-slate-800 tracking-tight leading-tight special-calendar-title special-calendar-title-animate break-words">
                 {t('calendar.smartStudyCalendar')}
               </h3>
               <button
@@ -556,8 +556,8 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="flex items-center gap-1 p-1 bg-slate-50 rounded-xl border-2 border-slate-200">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap sm:justify-end sm:flex-shrink-0">
+          <div className="flex items-center gap-1 p-1 bg-slate-50 rounded-xl border-2 border-slate-200 flex-shrink-0">
             <button onClick={prevMonth} className="p-2 hover:bg-white rounded-lg transition-all">
               <ChevronLeft size={20} className="text-slate-700" />
             </button>
@@ -568,7 +568,7 @@ export default function SmartMonthlyCalendar({ userId, questions = [], onAddEven
 
           <button
             onClick={onAddEvent}
-            className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-sm"
+            className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-sm flex-shrink-0"
           >
             <Plus size={16} />
             {t('calendar.addEvent')}

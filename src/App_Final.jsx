@@ -2,12 +2,14 @@ import React from 'react';
 import ForumPage from './pages/ForumPage';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import PrivateRoute from './components/PrivateRoute';
 import Header from './components/Header';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage_Fixed';
+import VisitorDashboardPage from './pages/VisitorDashboardPage';
 import TopicSelectionPage from './pages/TopicSelectionPage_Updated';
 import PracticeModeSelection from './pages/PracticeModeSelection';
 import QuizPage from './pages/QuizPage';
@@ -37,6 +39,7 @@ const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMC
 
 function AppContent() {
   const location = useLocation();
+  const { isVisitor } = useAuth();
   const { questions, loading, error } = useQuizData(SHEET_URL);
   const isNotebookRoute = location.pathname === '/notebook';
   const isChemCityRoute = location.pathname === '/chemcity';
@@ -47,6 +50,24 @@ function AppContent() {
   const useNoShell = noShellRoutes.has(location.pathname);
   const hideHeaderRoutes = new Set(['/', '/vision', '/features', '/login', '/register', '/millionaire']);
   const showHeader = !hideHeaderRoutes.has(location.pathname);
+
+  const visitorBlockedRoutes = new Set([
+    '/chemcity',
+    '/store',
+    '/gacha',
+    '/inventory',
+    '/leaderboard',
+    '/profile',
+    '/history',
+    '/notebook',
+    '/srs-review',
+    '/test-firebase',
+    '/debug',
+  ]);
+
+  if (isVisitor && visitorBlockedRoutes.has(location.pathname)) {
+    return <Navigate to="/dashboard" replace state={{ visitorBlockedRoute: location.pathname }} />;
+  }
 
   if (loading) {
     return (
@@ -87,7 +108,7 @@ function AppContent() {
             path="/dashboard"
             element={
               <PrivateRoute>
-                <DashboardPage questions={questions} />
+                {isVisitor ? <VisitorDashboardPage /> : <DashboardPage questions={questions} />}
               </PrivateRoute>
             }
           />

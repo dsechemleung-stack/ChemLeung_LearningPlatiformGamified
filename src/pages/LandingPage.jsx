@@ -12,9 +12,10 @@ const BRAND = {
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, enterVisitorMode } = useAuth();
   const { t } = useLanguage();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showVisitorConfirm, setShowVisitorConfirm] = useState(false);
 
   useEffect(() => {
     if (currentUser) navigate('/dashboard', { replace: true });
@@ -181,8 +182,8 @@ export default function LandingPage() {
                   style={{ background: 'transparent' }}
                 />
                 <div
-                  className="absolute right-0 mt-2 z-50"
-                  style={{ minWidth: 180 }}
+                  className="fixed z-50"
+                  style={{ right: 12, top: 76, width: 'min(240px, calc(100vw - 24px))' }}
                 >
                   <div
                     style={{
@@ -193,6 +194,8 @@ export default function LandingPage() {
                       WebkitBackdropFilter: 'blur(14px)',
                       boxShadow: '0 18px 48px rgba(0,0,0,0.55)',
                       padding: 10,
+                      maxHeight: 'min(60vh, 360px)',
+                      overflowY: 'auto',
                     }}
                   >
                     <button
@@ -218,6 +221,18 @@ export default function LandingPage() {
                     >
                       {t('nav.beliefs')}
                     </button>
+                    <div style={{ height: 8 }} />
+                    <button
+                      type="button"
+                      className="btn-ghost-nav"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        setShowVisitorConfirm(true);
+                      }}
+                      style={{ width: '100%', justifyContent: 'center' }}
+                    >
+                      Visitor Login
+                    </button>
                   </div>
                 </div>
               </>
@@ -229,6 +244,9 @@ export default function LandingPage() {
           </button>
           <button className="btn-ghost-nav hidden sm:inline-flex" onClick={() => navigate('/vision')} style={{ touchAction: 'manipulation' }}>
             {t('nav.beliefs')}
+          </button>
+          <button className="btn-ghost-nav hidden sm:inline-flex" onClick={() => setShowVisitorConfirm(true)} style={{ touchAction: 'manipulation' }}>
+            Visitor Login
           </button>
           <button className="btn-ghost-nav" onClick={() => navigate('/login')} style={{ touchAction: 'manipulation' }}>
             Login
@@ -283,6 +301,61 @@ export default function LandingPage() {
           By ChemLeung
         </p>
       </div>
+
+      {showVisitorConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onMouseDown={() => setShowVisitorConfirm(false)}
+        >
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(520px, 100%)',
+              borderRadius: 22,
+              border: '1px solid rgba(255,255,255,0.16)',
+              background: 'rgba(13,31,30,0.92)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              boxShadow: '0 30px 90px rgba(0,0,0,0.65)',
+              padding: 18,
+              fontFamily: "'Quicksand', sans-serif",
+              color: '#fff',
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>Continue as Visitor?</div>
+            <div style={{ color: 'rgba(255,255,255,0.78)', fontWeight: 700, fontSize: 13, lineHeight: 1.5 }}>
+              Visitor mode does not save or upload any data. Your progress will be lost when you close the browser.
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn-ghost-nav"
+                onClick={() => setShowVisitorConfirm(false)}
+                style={{ touchAction: 'manipulation' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary-nav"
+                onClick={() => {
+                  try {
+                    enterVisitorMode();
+                  } finally {
+                    setShowVisitorConfirm(false);
+                    navigate('/dashboard');
+                  }
+                }}
+                style={{ touchAction: 'manipulation' }}
+              >
+                Enter Visitor Mode
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,6 +14,7 @@ const AuthContext = createContext({
   currentUser: null,
   userProfile: null,
   profileError: null,
+  isVisitor: false,
   signup: async () => {
     throw new Error('AuthProvider not mounted');
   },
@@ -21,11 +22,24 @@ const AuthContext = createContext({
     throw new Error('AuthProvider not mounted');
   },
   logout: async () => {},
+  enterVisitorMode: () => {
+    throw new Error('AuthProvider not mounted');
+  },
+  exitVisitorMode: () => {},
   loadUserProfile: async () => {},
 });
 
 export function useAuth() {
-  return useContext(AuthContext) || { currentUser: null, userProfile: null, profileError: null };
+  return (
+    useContext(AuthContext) || {
+      currentUser: null,
+      userProfile: null,
+      profileError: null,
+      isVisitor: false,
+      enterVisitorMode: () => {},
+      exitVisitorMode: () => {},
+    }
+  );
 }
 
 export function AuthProvider({ children }) {
@@ -33,6 +47,13 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile] = useState(null);
   const [profileError, setProfileError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isVisitor, setIsVisitor] = useState(() => {
+    try {
+      return window.sessionStorage.getItem('visitor_mode') === '1';
+    } catch {
+      return false;
+    }
+  });
   
   // Real-time listener cleanup ref
   const profileUnsubscribeRef = useRef(null);
@@ -69,6 +90,12 @@ export function AuthProvider({ children }) {
 
   // Login user
   function login(email, password) {
+    try {
+      window.sessionStorage.removeItem('visitor_mode');
+    } catch {
+      // ignore
+    }
+    setIsVisitor(false);
     return signInWithEmailAndPassword(auth, email, password);
   }
 
@@ -79,7 +106,43 @@ export function AuthProvider({ children }) {
       profileUnsubscribeRef.current();
       profileUnsubscribeRef.current = null;
     }
+    try {
+      window.sessionStorage.removeItem('visitor_mode');
+    } catch {
+      // ignore
+    }
+    setIsVisitor(false);
     return signOut(auth);
+  }
+
+  function enterVisitorMode() {
+    try {
+      window.sessionStorage.setItem('visitor_mode', '1');
+    } catch {
+      // ignore
+    }
+
+    if (profileUnsubscribeRef.current) {
+      profileUnsubscribeRef.current();
+      profileUnsubscribeRef.current = null;
+    }
+
+    setIsVisitor(true);
+    setProfileError(null);
+    setCurrentUser({ uid: 'visitor', displayName: 'Visitor', email: '' });
+    setUserProfile({ uid: 'visitor', displayName: 'Visitor', email: '', tokens: 0 });
+  }
+
+  function exitVisitorMode() {
+    try {
+      window.sessionStorage.removeItem('visitor_mode');
+    } catch {
+      // ignore
+    }
+    setIsVisitor(false);
+    setCurrentUser(null);
+    setUserProfile(null);
+    setProfileError(null);
   }
 
   // Load user profile with REAL-TIME synchronization
@@ -203,6 +266,14 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    if (isVisitor) {
+      setProfileError(null);
+      setCurrentUser((prev) => prev ?? { uid: 'visitor', displayName: 'Visitor', email: '' });
+      setUserProfile((prev) => prev ?? { uid: 'visitor', displayName: 'Visitor', email: '', tokens: 0 });
+      setLoading(false);
+      return undefined;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       
@@ -229,15 +300,18 @@ export function AuthProvider({ children }) {
         profileUnsubscribeRef.current();
       }
     };
-  }, []);
+  }, [isVisitor]);
 
   const value = {
     currentUser,
     userProfile,
     profileError,
+    isVisitor,
     signup,
     login,
     logout,
+    enterVisitorMode,
+    exitVisitorMode,
     loadUserProfile  // Keep for backwards compatibility
   };
 

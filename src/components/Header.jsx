@@ -166,7 +166,7 @@ export default function Header() {
                     <div className="w-full flex justify-center">
                         <div className="inline-flex items-center gap-2 w-[min(100%,1100px)]">
                             <div className="floating-island island-amber flex-1 px-3 sm:px-3 py-0.5">
-                                <div className="floating-island-content flex justify-between items-center h-14 gap-4 min-w-0">
+                                <div className="floating-island-content flex justify-between items-center h-auto md:h-14 gap-2 sm:gap-4 min-w-0 py-1 md:py-0">
                                     {/* Logo and Brand */}
                                     <div className="flex-shrink min-w-0">
                                         <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleNavigation('/dashboard')}>
@@ -289,7 +289,7 @@ export default function Header() {
 
                         {/* Mobile + Desktop User Menu */}
                         {currentUser && (
-                            <div className="flex items-center gap-2 flex-shrink-0 min-w-0 justify-end">
+                            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 min-w-0 justify-end">
                                 <button
                                     onClick={() => setShowMobileNav(!showMobileNav)}
                                     className="md:hidden p-2 rounded-lg hover:bg-slate-100 transition-all active:scale-95"

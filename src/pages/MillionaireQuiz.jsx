@@ -31,7 +31,7 @@ function computeFailReward(levelReached) {
 
 export default function MillionaireQuiz({ questions: allQuestions = [] }) {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, isVisitor } = useAuth();
   const { t, tf } = useLanguage();
 
   const [loading, setLoading] = useState(true);
@@ -207,6 +207,7 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
   };
 
   const awardTokensToUser = async (amount) => {
+    if (isVisitor) return;
     if (!currentUser?.uid || !amount || amount <= 0) return;
     try {
       const { awardTokens } = await import('../services/tokenService');
@@ -226,7 +227,7 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
 
     setSavingReward(true);
     try {
-      if (currentUser?.uid) {
+      if (currentUser?.uid && !isVisitor) {
         const attemptedQuestions = questions.slice(0, Math.min(currentIndex + 1, questions.length));
         const correctAnswers = attemptedQuestions.reduce((acc, q, idx) => {
           const key = getQuestionKey(q, idx);
@@ -257,7 +258,9 @@ export default function MillionaireQuiz({ questions: allQuestions = [] }) {
         });
       }
 
-      await awardTokensToUser(reward);
+      if (!isVisitor) {
+        await awardTokensToUser(reward);
+      }
     } catch (e) {
       console.error(e);
       alert(e.message || t('millionaire.errors.tokenUpdateFailed'));

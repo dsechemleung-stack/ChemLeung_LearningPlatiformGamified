@@ -68,6 +68,14 @@ async function upsertMistakeIndex(userId, wrongAnswers, userAnswers, attemptId) 
  * 3. Logs completion to calendar with full metadata
  */
 export async function processQuizCompletion(userId, questions, userAnswers, attemptId = null) {
+  if (!userId || userId === 'visitor') {
+    return {
+      performanceRecorded: false,
+      srsCardsCreated: 0,
+      completionLogged: false,
+      errors: [],
+    };
+  }
   const options = arguments.length >= 5 && arguments[4] ? arguments[4] : {};
   const createSrsCards = options?.createSrsCards !== false;
   const results = {
@@ -155,6 +163,9 @@ export async function processQuizCompletion(userId, questions, userAnswers, atte
  * @param {Object} completionData - Quiz completion details
  */
 export async function logDetailedCompletion(userId, attemptId, completionData) {
+  if (!userId || userId === 'visitor') {
+    return null;
+  }
   const {
     totalQuestions,
     correctAnswers,

@@ -57,7 +57,7 @@ function selectAIDailyMission(mistakes, recentTopics = []) {
 
 export default function PracticeModeSelection({ questions }) {
   const navigate = useNavigate();
-  const { currentUser, userProfile, loadUserProfile } = useAuth();
+  const { currentUser, userProfile, loadUserProfile, isVisitor } = useAuth();
   const { t, tf } = useLanguage();
   const [selectedMode, setSelectedMode] = useState(null);
   const [questionCount, setQuestionCount] = useState(10);
@@ -156,6 +156,21 @@ export default function PracticeModeSelection({ questions }) {
 
   // Get available topics based on user's topic range
   const availableTopics = useMemo(() => {
+    if (isVisitor) {
+      let learned = 12;
+      try {
+        learned = Number(window.sessionStorage.getItem('visitor_learned_up_to') || 12);
+      } catch {
+        // ignore
+      }
+      const hi = Math.max(1, Math.min(12, Number.isFinite(learned) ? learned : 12));
+      return allTopics.filter(topic => {
+        const n = topic.match(/^\d+/)?.[0];
+        const v = Number(n);
+        return n && Number.isFinite(v) && v >= 1 && v <= hi;
+      });
+    }
+
     const from = userProfile?.topicRangeFrom || '01';
     const to = userProfile?.topicRangeTo || userProfile?.learnedUpTo || '';
     
@@ -221,6 +236,10 @@ export default function PracticeModeSelection({ questions }) {
   };
 
   const handleUpdateTopics = async () => {
+    if (isVisitor) {
+      alert('Visitor mode does not save data. Topic range cannot be updated.');
+      return;
+    }
     setUpdating(true);
     try {
       const userRef = doc(db, 'users', currentUser.uid);
@@ -240,6 +259,11 @@ export default function PracticeModeSelection({ questions }) {
   };
 
   const handleModeSelect = (mode, count, timerEnabled = false, isTimed = false) => {
+    if (isVisitor && (mode === 'mistakes' || mode === 'ai-daily')) {
+      alert('Visitor mode cannot use Mistake Review / AI Daily Mission because data is not saved.');
+      return;
+    }
+
     if (mode === 'mistakes') {
       navigate('/notebook?customReview=1');
       return;
@@ -256,8 +280,8 @@ export default function PracticeModeSelection({ questions }) {
     }
 
     if (availableTopics.length === 0) {
-      alert(t('practice.pleaseSetTopics'));
-      navigate('/profile');
+      alert(isVisitor ? 'Please select learned topics in Visitor Dashboard first.' : t('practice.pleaseSetTopics'));
+      navigate(isVisitor ? '/dashboard' : '/profile');
       return;
     }
 
@@ -294,9 +318,17 @@ export default function PracticeModeSelection({ questions }) {
         handleAIDailyMission();
         break;
       case 'mistake-review':
+        if (isVisitor) {
+          alert('Visitor mode cannot use Mistake Review because data is not saved.');
+          break;
+        }
         navigate('/notebook?customReview=1');
         break;
       case 'srs-review':
+        if (isVisitor) {
+          alert('Visitor mode cannot use SRS Review because data is not saved.');
+          break;
+        }
         (async () => {
           try {
             const uid = currentUser?.uid;

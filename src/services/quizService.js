@@ -20,6 +20,9 @@ function getWeeklyKeyForDate(dateObj) {
 export const quizService = {
   // Save a quiz attempt WITH questions data for Mistake Notebook
   async saveAttempt(userId, attemptData) {
+    if (!userId || userId === 'visitor') {
+      return `visitor_attempt_${Date.now()}`;
+    }
     try {
       const attemptRef = await addDoc(collection(db, 'attempts'), {
         userId: userId,
