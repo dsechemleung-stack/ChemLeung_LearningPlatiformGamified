@@ -1,0 +1,1439 @@
+
+
+===== FILE: src/App_Final.jsx =====
+import React from 'react';
+import ForumPage from './pages/ForumPage';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { useAuth } from './contexts/AuthContext';
+import { LanguageProvider } from './contexts/LanguageContext';
+import PrivateRoute from './components/PrivateRoute';
+import Header from './components/Header';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import DashboardPage from './pages/DashboardPage_Fixed';
+import VisitorDashboardPage from './pages/VisitorDashboardPage';
+import TopicSelectionPage from './pages/TopicSelectionPage_Updated';
+import PracticeModeSelection from './pages/PracticeModeSelection';
+import QuizPage from './pages/QuizPage';
+import ResultsPage from './pages/ResultsPage_Updated_Fixed';
+import MillionaireQuiz from './pages/MillionaireQuiz';
+import LeaderboardPage from './pages/LeaderboardPage';
+import ProfilePage from './pages/ProfilePage';
+import HistoryPage from './pages/HistoryPage_Fixed';
+import MistakeNotebookPage from './pages/MistakeNotebookPage';
+import FirebaseTestPage from './pages/FirebaseTestPage';
+import DebugDashboard from './pages/DebugDashboard';
+import SRSReviewPage from './pages/SRSReviewPage';
+import { useQuizData } from './hooks/useQuizData';
+import ChemistryLoading from './components/ChemistryLoading';
+import UnifiedChemStore from './components/UnifiedChemStore';
+import { ChemCityRoot } from './components/chemcity/ChemCityRoot';
+import LandingPage from './pages/LandingPage';
+import VisionPage from './pages/VisionPage';
+import FeaturePage from './pages/FeaturePage';
+import GachaPage from './pages/GachaPage';
+import InventoryPage from './pages/InventoryPage';
+import CalculatorPage from './pages/CalculatorPage';
+import VirtualLabHub from './pages/VirtualLabHub';
+import { QuizRewardModal } from './components/chemcity/QuizRewardModal';
+
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTK36yaUN-NMCkQNT-DAHgc6FMZPjUc0Yv3nYEK4TA9W2qE9V1TqVD10Tq98-wXQoAvKOZlwGWRSDkU/pub?gid=1182550140&single=true&output=csv';
+
+function AppContent() {
+  const location = useLocation();
+  const { isVisitor } = useAuth();
+  const { questions, loading, error } = useQuizData(SHEET_URL);
+  const isNotebookRoute = location.pathname === '/notebook';
+  const isChemCityRoute = location.pathname === '/chemcity';
+  const isStoreRoute = location.pathname === '/store';
+  const isGachaRoute = location.pathname === '/gacha';
+  const isInventoryRoute = location.pathname === '/inventory';
+  const noShellRoutes = new Set(['/', '/vision', '/features', '/dashboard', '/login', '/register', '/millionaire', '/quiz']);
+  const useNoShell = noShellRoutes.has(location.pathname);
+  const hideHeaderRoutes = new Set(['/', '/vision', '/features', '/login', '/register', '/millionaire']);
+  const showHeader = !hideHeaderRoutes.has(location.pathname);
+
+  const visitorBlockedRoutes = new Set([
+    '/chemcity',
+    '/store',
+    '/gacha',
+    '/inventory',
+    '/leaderboard',
+    '/profile',
+    '/history',
+    '/notebook',
+    '/srs-review',
+    '/test-firebase',
+    '/debug',
+  ]);
+
+  if (isVisitor && visitorBlockedRoutes.has(location.pathname)) {
+    return <Navigate to="/dashboard" replace state={{ visitorBlockedRoute: location.pathname }} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <ChemistryLoading persistKey="startup" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl border-2 border-red-200">
+          <p className="text-red-500 font-bold mb-2">Error loading questions</p>
+          <p className="text-academic-slate">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {showHeader && <Header />}
+      <div
+        className={`${showHeader && !isChemCityRoute && !isGachaRoute ? 'pt-[76px]' : ''} ${isChemCityRoute || isGachaRoute ? 'bg-slate-950' : ''} ${(useNoShell || isNotebookRoute || isChemCityRoute || isGachaRoute || isStoreRoute || isInventoryRoute) ? '' : 'container mx-auto px-4 py-6'}`.trim()}
+      >
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/vision" element={<VisionPage />} />
+          <Route path="/features" element={<FeaturePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          {/* Protected Routes */}
+          {/* ✅ FIXED: Now passes questions prop to DashboardPage */}
+          <Route
+            path="/dashboard"
+            element={
+              <PrivateRoute>
+                {isVisitor ? <VisitorDashboardPage /> : <DashboardPage questions={questions} />}
+              </PrivateRoute>
+            }
+          />
+          
+          <Route
+            path="/home"
+            element={
+              <PrivateRoute>
+                <Navigate to="/dashboard" replace />
+              </PrivateRoute>
+            }
+          />
+
+          {/* Practice Mode Selection */}
+          <Route
+            path="/practice"
+            element={
+              <PrivateRoute>
+                <PracticeModeSelection questions={questions} />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/srs-review"
+            element={
+              <PrivateRoute>
+                <SRSReviewPage questions={questions} />
+              </PrivateRoute>
+            }
+          />
+          
+          {/* Legacy Topic Selection */}
+          <Route
+            path="/topics"
+            element={
+              <PrivateRoute>
+                <TopicSelectionPage questions={questions} />
+              </PrivateRoute>
+            }
+          />
+          
+          <Route
+            path="/quiz"
+            element={
+              <PrivateRoute>
+                <QuizPage />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/millionaire"
+            element={
+              <PrivateRoute>
+                <MillionaireQuiz questions={questions} />
+              </PrivateRoute>
+            }
+          />
+          
+          <Route
+            path="/results"
+            element={
+              <PrivateRoute>
+                <ResultsPage />
+              </PrivateRoute>
+            }
+          />
+          
+          <Route
+            path="/leaderboard"
+            element={
+              <PrivateRoute>
+                <LeaderboardPage />
+              </PrivateRoute>
+            }
+          />
+          
+          <Route
+            path="/profile"
+            element={
+              <PrivateRoute>
+                <ProfilePage />
+              </PrivateRoute>
+            }
+          />
+          
+          <Route
+            path="/history"
+            element={
+              <PrivateRoute>
+                <HistoryPage />
+              </PrivateRoute>
+            }
+          />
+          
+          {/* Mistake Notebook - NEW */}
+          <Route
+            path="/notebook"
+            element={
+              <PrivateRoute>
+                <MistakeNotebookPage questions={questions} />
+              </PrivateRoute>
+            }
+          />
+          
+          <Route
+            path="/forum"
+            element={
+
+
+===== FILE: src/pages/ResultsPage_Updated_Fixed.jsx =====
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import ResultsSummary from '../components/ResultsSummary';
+import { quizStorage } from '../utils/quizStorage';
+import { quizService } from '../services/quizService';
+import { quizCompletionService } from '../services/quizCompletionService';
+import { calendarService } from '../services/calendarService';
+import ChemistryLoading from '../components/ChemistryLoading';
+import { formatHKDateKey } from '../utils/hkTime';
+import { srsService } from '../services/srsService';
+import { HelpCircle } from 'lucide-react';
+import { useChemCityStore } from '../store/chemcityStore';
+
+/**
+ * ResultsPage - OPTIMIZED VERSION with SRS Review Support
+ * 
+ * FIXES:
+ * 1. No translation keys - plain English text
+ * 2. Faster save - parallel operations
+ * 3. Always logs to calendar with date
+ * 4. Shortened loading time
+ * 5. Spaced repetition reviews submitted in batch
+ */
+export default function ResultsPage() {
+  const navigate = useNavigate();
+  const { currentUser, isVisitor } = useAuth();
+  const { t } = useLanguage();
+
+  const awardQuizReward = useChemCityStore((s) => s.awardQuizReward);
+  
+  const [pendingRewardRequest, setPendingRewardRequest] = useState(null);
+  const [rewardAfterPrompt, setRewardAfterPrompt] = useState(false);
+  
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const hasSavedRef = useRef(false);
+  const [savedAttemptId, setSavedAttemptId] = useState(null);
+  const [showAddToSrsPrompt, setShowAddToSrsPrompt] = useState(false);
+  const [showSrsInfo, setShowSrsInfo] = useState(false);
+  const [addingToSrs, setAddingToSrs] = useState(false);
+  const [addToSrsDone, setAddToSrsDone] = useState(false);
+  const hasShownSrsPromptRef = useRef(false);
+
+  const questions = quizStorage.getSelectedQuestions();
+  const userAnswers = quizStorage.getUserAnswers();
+  const questionTimes = quizStorage.getQuestionTimes();
+  const sessionStartTime = quizStorage.getSessionStart();
+  
+  // Generate attempt key AFTER userAnswers is defined
+  const attemptKey = userAnswers && Object.keys(userAnswers).length > 0 
+    ? `quiz_saved_${sessionStartTime || 'no_session'}_${Object.keys(userAnswers).sort().join('_')}` 
+    : null;
+
+  const mistakesToSrsMode = localStorage.getItem('practice_mistakes_to_srs_mode') || 'ask';
+
+  const resolveDeferredReward = () => {
+    const rewardFlagKey = attemptKey ? `${attemptKey}_chemcityRewarded` : null;
+    const alreadyRewarded = rewardFlagKey ? sessionStorage.getItem(rewardFlagKey) === 'true' : false;
+    if (!rewardAfterPrompt || !pendingRewardRequest || alreadyRewarded) {
+      setPendingRewardRequest(null);
+      setRewardAfterPrompt(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        await awardQuizReward(pendingRewardRequest);
+        if (rewardFlagKey) sessionStorage.setItem(rewardFlagKey, 'true');
+      } catch (e) {
+        console.error('⚠️ ChemCity quizReward error (after SRS prompt):', e);
+      } finally {
+        setPendingRewardRequest(null);
+        setRewardAfterPrompt(false);
+      }
+    })();
+  };
+
+  useEffect(() => {
+    if (!questions || questions.length === 0 || Object.keys(userAnswers).length === 0) {
+      navigate('/practice');
+    }
+  }, [navigate, questions, userAnswers]);
+
+  // Block navigation until save completes
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (saving || !saved) {
+        e.preventDefault();
+        e.returnValue = t('results.resultsSavingLeaveConfirm');
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [saving, saved]);
+
+  // OPTIMIZED: Save function with parallel operations
+  useEffect(() => {
+    async function saveAttemptToFirebase() {
+      if (hasSavedRef.current) return;
+      if (!currentUser || !questions || questions.length === 0) return;
+      if (Object.keys(userAnswers).length === 0) return;
+      
+      // CRITICAL: Check sessionStorage to prevent double-submit on refresh
+      if (attemptKey && sessionStorage.getItem(attemptKey)) {
+        console.log('⚠️ Attempt already saved (sessionStorage), skipping duplicate save');
+        setSaved(true);
+
+        // Compute reward request (may be deferred until after SRS prompt)
+        const totalQuestions = questions.length;
+        const correctAnswers = questions.reduce((acc, q) => acc + (userAnswers[q.ID] === q.CorrectOption ? 1 : 0), 0);
+        const percentage = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
+        const topics = [...new Set(questions.map(q => q.Topic))].filter(Boolean);
+        const wrongAnswers = questions.filter(q => userAnswers[q.ID] !== q.CorrectOption);
+        const mode = localStorage.getItem('quiz_mode') || 'practice';
+
+        const perQuestionDiamonds = Math.floor(Number(correctAnswers || 0) / 2);
+        const completionDiamonds =
+          Number(totalQuestions || 0) >= 10
+            ? percentage === 100
+              ? 20
+              : percentage >= 80
+                ? 15
+                : percentage >= 50
+                  ? 10
+                  : 0
+            : 0;
+        const baseDiamonds = Math.max(0, perQuestionDiamonds + completionDiamonds);
+
+        const rewardRequest = {
+          baseCoins: correctAnswers * 10,
+          baseDiamonds,
+          topicId: topics?.[0],
+          correctAnswers,
+          totalQuestions,
+        };
+
+        const rewardFlagKey = `${attemptKey}_chemcityRewarded`;
+        const alreadyRewarded = sessionStorage.getItem(rewardFlagKey) === 'true';
+
+        const shouldShowSrsPrompt =
+          mode !== 'spaced-repetition' && wrongAnswers.length > 0 && mistakesToSrsMode === 'ask';
+
+        if (!alreadyRewarded) {
+          if (shouldShowSrsPrompt) {
+            setPendingRewardRequest(rewardRequest);
+            setRewardAfterPrompt(true);
+          } else {
+            try {
+              await awardQuizReward(rewardRequest);
+              sessionStorage.setItem(rewardFlagKey, 'true');
+            } catch (e) {
+              console.error('⚠️ ChemCity quizReward error (sessionStorage path):', e);
+            }
+          }
+        }
+
+        const existingAttemptId = attemptKey
+          ? sessionStorage.getItem(`${attemptKey}_attemptId`)
+          : null;
+
+        if (existingAttemptId) setSavedAttemptId(existingAttemptId);
+
+        if (!hasShownSrsPromptRef.current) {
+          const alreadyResponded = attemptKey && sessionStorage.getItem(`${attemptKey}_srsPromptResponded`);
+          const alreadyAutoAdded = attemptKey && sessionStorage.getItem(`${attemptKey}_srsAutoAdded`);
+          if (!alreadyResponded) {
+            hasShownSrsPromptRef.current = true;
+            const wrongAnswers = questions.filter(q => userAnswers[q.ID] !== q.CorrectOption);
+            const mode = localStorage.getItem('quiz_mode') || 'practice';
+
+            if (mode !== 'spaced-repetition' && wrongAnswers.length > 0) {
+              if (mistakesToSrsMode === 'never') {
+                sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+              } else if (mistakesToSrsMode === 'always') {
+                if (!alreadyAutoAdded && currentUser?.uid && existingAttemptId) {
+                  (async () => {
+                    try {
+                      await srsService.createCardsFromMistakes(currentUser.uid, wrongAnswers, existingAttemptId, existingAttemptId);
+                      sessionStorage.setItem(`${attemptKey}_srsAutoAdded`, 'true');
+                      sessionStorage.setItem(`${attemptKey}_srsPromptResponded`, 'true');
+                      setAddToSrsDone(true);
+                      setTimeout(() => setAddToSrsDone(false), 2500);
+                    } catch (e) {
+                      console.error('Failed to auto-add mistakes to SRS:', e);
+                    }
+                  })();
+                }
+              } else {
+                setShowAddToSrsPrompt(true);
+              }
+            }
+          }
+        }
+        return;
+      }
+
+      hasSavedRef.current = true;
+      setSaving(true);
+      setSaveError(null);
+
+      try {
+        console.log('💾 Starting optimized save...');
+        
+        // Calculate results
+        const totalQuestions = questions.length;
+        const correctAnswers = questions.reduce((acc, q) => {
+          return acc + (userAnswers[q.ID] === q.CorrectOption ? 1 : 0);
+        }, 0);
+        const percentage = Math.round((correctAnswers / totalQuestions) * 100);
+        const topics = [...new Set(questions.map(q => q.Topic))].filter(Boolean);
+        const subtopics = [...new Set(questions.map(q => q.Subtopic).filter(Boolean))];
+        const timeSpent = questionTimes
+          ? Object.values(questionTimes).reduce((sum, time) => sum + time, 0)
+          : null;
+
+
+
+===== FILE: src/components/ResultsSummary.jsx =====
+import React, { useState } from 'react';
+import { CheckCircle2, XCircle, BarChart3, RotateCcw, Info, Clock, Share2, MessageSquare } from 'lucide-react';
+import ShareableReport from './ShareableReport';
+import QuestionForum from './QuestionForum';
+import { useLanguage } from '../contexts/LanguageContext';
+
+export default function ResultsSummary({ questions, userAnswers, questionTimes, onRestart }) {
+  const [showShareReport, setShowShareReport] = useState(false);
+  const [forumQuestion, setForumQuestion] = useState(null);
+  const [showChineseExplanation, setShowChineseExplanation] = useState(() => ({}));
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const { t, tf } = useLanguage();
+
+  const decodeHtmlEntities = (input) => {
+    if (!input) return '';
+    const s = String(input);
+    if (!s.includes('&')) return s;
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.innerHTML = s;
+      return textarea.value;
+    } catch {
+      return s;
+    }
+  };
+
+  const coerceRichOptionHtml = (input) => {
+    const decoded = decodeHtmlEntities(input);
+    const raw = String(decoded || '');
+    if (!raw) return '';
+    if (raw.includes('<img') || raw.includes('<button')) return raw;
+
+    const hasImageAttrs = raw.includes('src="') && raw.includes('data-quiz-image');
+    if (!hasImageAttrs) return raw;
+
+    // The broken format is attribute-only with lots of newlines.
+    // Compact both actual newlines and literal "\\n" sequences so tag parsing works.
+    const s = raw
+      .replace(/\\r\\n|\\n|\\r/g, ' ')
+      .replace(/\r\n|\r|\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const imgEnd = s.indexOf('/>');
+    if (imgEnd === -1) return raw;
+
+    const imgAttrs = s.slice(0, imgEnd).trim();
+    const remainder = s.slice(imgEnd + 2);
+
+    let repaired = `<img ${imgAttrs} />`;
+
+    const btnStart = remainder.indexOf('type="button"');
+    if (btnStart !== -1) {
+      const btnChunk = remainder.slice(btnStart);
+      const btnEnd = btnChunk.indexOf('>');
+      if (btnEnd !== -1) {
+        const btnAttrs = btnChunk.slice(0, btnEnd).trim();
+        repaired += `<button ${btnAttrs}></button>`;
+      }
+    }
+
+    return repaired;
+  };
+
+  const prepareOptionHtml = (input) => {
+    const decoded = decodeHtmlEntities(input);
+    const raw = String(decoded || '');
+    if (!raw) return '';
+    const normalized = raw.replace(/\\"/g, '"');
+    const isAttributeOnlyImage =
+      !normalized.includes('<img')
+      && /src\s*=\s*("|'|&quot;|&#39;)/i.test(normalized)
+      && (
+        normalized.includes('data-quiz-image')
+        || normalized.toLowerCase().includes('googleusercontent.com')
+        || normalized.toLowerCase().includes('question diagram')
+      );
+    if (isAttributeOnlyImage) {
+      return coerceRichOptionHtml(normalized);
+    }
+    return normalizeLiteralNewlinesToBr(decoded);
+  };
+
+  const isAttributeOnlyImageOption = (input) => {
+    const decoded = decodeHtmlEntities(input);
+    const raw = String(decoded || '').replace(/\\"/g, '"');
+    return Boolean(raw)
+      && !raw.includes('<img')
+      && /src\s*=\s*("|'|&quot;|&#39;)/i.test(raw)
+      && (
+        raw.includes('data-quiz-image')
+        || raw.toLowerCase().includes('googleusercontent.com')
+        || raw.toLowerCase().includes('question diagram')
+      );
+  };
+
+  const extractFirstImageSrc = (input) => {
+    const decoded = decodeHtmlEntities(input);
+    const raw = String(decoded || '').replace(/\\"/g, '"');
+
+    const m = raw.match(/src\s*=\s*(?:"|'|&quot;|&#39;)([^"'&]+)(?:"|'|&quot;|&#39;)/i);
+    if (m?.[1]) return m[1];
+
+    const marker = raw.match(/\((?:image|img)\s*:\s*(https?:\/\/[^)\s]+)\)/i);
+    if (marker?.[1]) return marker[1];
+
+    const marker2 = raw.match(/\{(?:image|img)\s*:\s*(https?:\/\/[^}\s]+)\}/i);
+    if (marker2?.[1]) return marker2[1];
+
+    return '';
+  };
+
+  const normalizeLiteralNewlinesToBr = (html) => {
+    if (!html) return '';
+    const s = String(html);
+    return s
+      .replace(/\\r\\n/g, '<br>')
+      .replace(/\\n/g, '<br>')
+      .replace(/\\r/g, '<br>')
+      .replace(/\r\n/g, '<br>')
+      .replace(/\n/g, '<br>')
+      .replace(/\r/g, '<br>');
+  };
+
+  const handleRichContentClick = (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    const enlargeBtn = target.closest('[data-enlarge-image="true"]');
+    if (enlargeBtn) {
+      const src = enlargeBtn.getAttribute('data-image-src');
+      if (src) {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxSrc(src);
+      }
+      return;
+    }
+
+    const img = target.closest('img[data-quiz-image="true"], img');
+    if (img) {
+      const src = img.getAttribute('src');
+      if (src) {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxSrc(src);
+      }
+    }
+  };
+
+  // 1. Calculate Score
+  const total = questions.length;
+  const correctCount = questions.reduce((acc, q) => {
+    return acc + (userAnswers[q.ID] === q.CorrectOption ? 1 : 0);
+  }, 0);
+  const percentage = Math.round((correctCount / total) * 100);
+
+  // Format time
+  const formatTime = (ms) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hrs = Math.floor(minutes / 60);
+    if (hrs > 0) {
+      return `${hrs}h ${minutes % 60}m ${seconds % 60}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    }
+    return `${seconds}s`;
+  };
+
+  // Calculate total time and average
+  const totalTime = questionTimes 
+    ? Object.values(questionTimes).reduce((sum, time) => sum + time, 0)
+    : null;
+  
+  const averageTimePerQuestion = questionTimes && total > 0
+    ? totalTime / total
+    : null;
+
+  // 2. Strength/Weakness Analysis by Topic
+  const analysis = questions.reduce((acc, q) => {
+    if (!acc[q.Topic]) {
+      acc[q.Topic] = { total: 0, correct: 0 };
+    }
+    acc[q.Topic].total += 1;
+    if (userAnswers[q.ID] === q.CorrectOption) {
+      acc[q.Topic].correct += 1;
+    }
+    return acc;
+  }, {});
+
+  const topicResults = Object.entries(analysis).map(([topic, data]) => ({
+    topic,
+    percent: Math.round((data.correct / data.total) * 100),
+    ...data
+  }));
+
+  const strengths = topicResults.filter(t => t.percent >= 70);
+  const weaknesses = topicResults.filter(t => t.percent < 70);
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500">
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setLightboxSrc(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="relative max-w-5xl w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setLightboxSrc(null)}
+              className="absolute -top-10 right-0 text-white/90 hover:text-white text-sm font-bold"
+            >
+              {t('common.close')}
+            </button>
+
+
+===== FILE: src/components/QuestionForum.jsx =====
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
+import { forumService, canEditComment, editTimeRemaining, EDIT_WINDOW_MS } from '../services/forumService';
+import { MessageSquare, Send, Edit2, Trash2, ThumbsUp, X, AlertCircle, Clock, Lock } from 'lucide-react';
+import ChemCityUserProfileIcon from './ChemCityUserProfileIcon';
+import ChemistryLoading from './ChemistryLoading';
+
+function EditTimer({ createdAt, onExpire }) {
+  const { t, tf } = useLanguage();
+  const [remaining, setRemaining] = useState(() => editTimeRemaining(createdAt));
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const r = editTimeRemaining(createdAt);
+      setRemaining(r);
+      if (!r) { clearInterval(interval); onExpire && onExpire(); }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [createdAt, onExpire]);
+
+  if (!remaining) return (
+    <span className="flex items-center gap-1 text-xs text-red-500 font-semibold">
+      <Lock size={11} /> {t('forum.editLocked')}
+    </span>
+  );
+  return (
+    <span className="flex items-center gap-1 text-xs text-amber-500 font-semibold">
+      <Clock size={11} /> {tf('forum.editIn', { remaining })}
+    </span>
+  );
+}
+
+export default function QuestionForum({ question, onClose }) {
+  const { currentUser } = useAuth();
+  const { isEnglish, t, tf } = useLanguage();
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState('');
+  const [openRepliesFor, setOpenRepliesFor] = useState(null);
+  const [repliesByComment, setRepliesByComment] = useState({});
+  const [replyDraftByComment, setReplyDraftByComment] = useState({});
+  const [replySubmittingFor, setReplySubmittingFor] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [, forceUpdate] = useState(0); // for timer re-render
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+
+  const handleRichContentClick = (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    const enlargeBtn = target.closest('[data-enlarge-image="true"]');
+    if (enlargeBtn) {
+      const src = enlargeBtn.getAttribute('data-image-src');
+      if (src) {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxSrc(src);
+      }
+      return;
+    }
+
+    const img = target.closest('img');
+    if (img) {
+      const src = img.getAttribute('src');
+      if (src) {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxSrc(src);
+      }
+    }
+  };
+
+  const loadComments = useCallback(async () => {
+    setLoading(true);
+    try {
+      const fetched = await forumService.getQuestionComments(question.ID);
+      setComments(fetched);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [question.ID]);
+
+  useEffect(() => { loadComments(); }, [loadComments]);
+
+  // Refresh edit-timers every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => forceUpdate(n => n + 1), 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function handleSubmitComment() {
+    if (!newComment.trim() || !currentUser) return;
+    setSubmitting(true);
+    try {
+      await forumService.addComment(question.ID, currentUser.uid, currentUser.displayName || t('common.anonymous'), newComment.trim());
+      setNewComment('');
+      await loadComments();
+    } catch (error) {
+      alert(tf('forum.failedAddCommentWithReason', { reason: error.message }));
+    }
+    setSubmitting(false);
+  }
+
+  async function handleEditComment(commentId) {
+    if (!editText.trim()) return;
+    try {
+      await forumService.updateComment(commentId, editText.trim());
+      setEditingId(null);
+      setEditText('');
+      await loadComments();
+    } catch (error) {
+      if (error.message === 'EDIT_EXPIRED') {
+        alert(t('forum.editExpiredLong'));
+        setEditingId(null);
+      } else {
+        alert(t('forum.failedUpdateComment'));
+      }
+    }
+  }
+
+  async function handleDeleteComment(commentId) {
+    if (!window.confirm(t('forum.confirmDeleteComment'))) return;
+    try {
+      await forumService.deleteComment(commentId);
+      await loadComments();
+    } catch { alert(t('forum.failedDeleteComment')); }
+  }
+
+  async function handleToggleLike(commentId) {
+    if (!currentUser) { alert(t('forum.pleaseLoginToLikeComments')); return; }
+    const uid = currentUser.uid;
+    const senderName = currentUser.displayName || t('common.anonymous');
+
+    let prevComment = null;
+    setComments((prev) => {
+      const next = prev.map((c) => {
+        if (c.id !== commentId) return c;
+        prevComment = c;
+        const prevLikedBy = Array.isArray(c.likedBy) ? c.likedBy : [];
+        const hasLiked = prevLikedBy.includes(uid);
+        const nextLikedBy = hasLiked ? prevLikedBy.filter(id => id !== uid) : [...prevLikedBy, uid];
+        const nextLikes = Math.max(0, Number(c.likes || 0) + (hasLiked ? -1 : 1));
+        return { ...c, likedBy: nextLikedBy, likes: nextLikes };
+      });
+      return next;
+    });
+
+    try {
+      await forumService.toggleLike(commentId, uid, senderName);
+    } catch {
+      if (prevComment) {
+        setComments((prev) => prev.map((c) => (c.id === commentId ? prevComment : c)));
+      }
+    }
+  }
+
+  async function handleToggleReplies(commentId) {
+    if (openRepliesFor === commentId) {
+      setOpenRepliesFor(null);
+      return;
+    }
+
+    setOpenRepliesFor(commentId);
+    if (!repliesByComment[commentId]) {
+      try {
+        const replies = await forumService.getCommentReplies(commentId);
+        setRepliesByComment(prev => ({ ...prev, [commentId]: replies }));
+      } catch { /* ignore */ }
+    }
+  }
+
+  async function handleSubmitReply(commentId) {
+    if (!currentUser) return;
+    const text = (replyDraftByComment[commentId] || '').trim();
+    if (!text) return;
+    setReplySubmittingFor(commentId);
+    try {
+      await forumService.addCommentReply(commentId, currentUser.uid, currentUser.displayName || t('common.anonymous'), text);
+      setReplyDraftByComment(prev => ({ ...prev, [commentId]: '' }));
+      const replies = await forumService.getCommentReplies(commentId);
+      setRepliesByComment(prev => ({ ...prev, [commentId]: replies }));
+    } catch (error) {
+      alert(tf('forum.failedReplyWithReason', { reason: error.message }));
+    }
+    setReplySubmittingFor(null);
+  }
+
+  async function handleToggleReplyLike(replyId) {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const senderName = currentUser.displayName || t('common.anonymous');
+    const parentId = openRepliesFor;
+    if (!parentId) {
+      try { await forumService.toggleCommentReplyLike(replyId, uid, senderName); } catch { /* ignore */ }
+      return;
+    }
+
+    let prevReply = null;
+    setRepliesByComment((prev) => {
+      const list = Array.isArray(prev[parentId]) ? prev[parentId] : [];
+      const nextList = list.map((r) => {
+        if (r.id !== replyId) return r;
+        prevReply = r;
+        const prevLikedBy = Array.isArray(r.likedBy) ? r.likedBy : [];
+        const hasLiked = prevLikedBy.includes(uid);
+        const nextLikedBy = hasLiked ? prevLikedBy.filter(id => id !== uid) : [...prevLikedBy, uid];
+        const nextLikes = Math.max(0, Number(r.likes || 0) + (hasLiked ? -1 : 1));
+        return { ...r, likedBy: nextLikedBy, likes: nextLikes };
+      });
+      return { ...prev, [parentId]: nextList };
+    });
+
+    try {
+      await forumService.toggleCommentReplyLike(replyId, uid, senderName);
+    } catch {
+      if (prevReply) {
+        setRepliesByComment((prev) => {
+          const list = Array.isArray(prev[parentId]) ? prev[parentId] : [];
+
+
+===== FILE: src/hooks/useQuizData.js =====
+import { useState, useEffect } from 'react';
+import Papa from 'papaparse';
+
+export function useQuizData(url) {
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    Papa.parse(url, {
+      download: true,
+      header: true,
+      skipEmptyLines: 'greedy',
+      newline: '',
+      complete: (results) => {
+        try {
+          const formattedData = results.data
+            .filter(row => Object.values(row).join('').trim().length > 0)
+            .map((row, index) => {
+              const getVal = (name) => {
+                const key = Object.keys(row).find(k => k.trim().toLowerCase() === name.toLowerCase());
+                return row[key] ? row[key] : "";
+              };
+
+              // Convert any type of line break to <br>
+              const nl2br = (text) => {
+                if (!text) return "";
+                const normalized = String(text)
+                  .replace(/\\\\r\\\\n/g, '\n')
+                  .replace(/\\\\n/g, '\n')
+                  .replace(/\\\\r/g, '\n')
+                  .replace(/\\r\\n/g, '\n')
+                  .replace(/\\n/g, '\n')
+                  .replace(/\\r/g, '\n')
+                  .replace(/\r\n/g, '\n')
+                  .replace(/\n/g, '\n')
+                  .replace(/\r/g, '\n');
+                return normalized.split(/\r\n|\r|\n/).join('<br>');
+              };
+
+              const stripWrappingQuotes = (text) => {
+                if (text === null || text === undefined) return "";
+                const s = String(text);
+                if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+                  return s.slice(1, -1);
+                }
+                return s;
+              };
+
+              // Convert {image:URL} or (image:URL) into <img> tags for rendering via dangerouslySetInnerHTML
+              const embedImages = (text, variant = 'large') => {
+                if (!text) return "";
+                const s = String(text);
+                const imgRegexGlobal = /[\{\(]\s*image\s*:\s*([^\}\)]+?)\s*[\}\)]/gi;
+                return s.replace(imgRegexGlobal, (_m, url) => {
+                  const safeUrl = String(url || '').trim();
+                  if (!safeUrl) return '';
+                  const escaped = safeUrl.replace(/"/g, '&quot;');
+
+                  const sizeClass =
+                    variant === 'option'
+                      ? 'max-h-[160px]'
+                      : 'max-h-[320px]';
+
+                  const minHeightStyle =
+                    variant === 'option'
+                      ? 'min-height:120px;'
+                      : 'min-height:200px;';
+
+                  const wrapperStyle = `${minHeightStyle}align-items:flex-start;`;
+                  const imgStyle = `${minHeightStyle}display:block;`;
+
+                  return `
+                    <span class="inline-flex items-center gap-2 align-middle" style="${wrapperStyle}">
+                      <img
+                        src="${escaped}"
+                        alt="Question diagram"
+                        loading="lazy"
+                        decoding="async"
+                        referrerpolicy="no-referrer"
+                        data-quiz-image="true"
+                        style="${imgStyle}"
+                        class="max-w-[calc(100%-3rem)] h-auto ${sizeClass} object-contain rounded-lg border border-slate-200 my-3"
+                      />
+                      <button
+                        type="button"
+                        aria-label="Enlarge image"
+                        title="Enlarge"
+                        data-enlarge-image="true"
+                        data-image-src="${escaped}"
+                        class="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M15 3h6v6" />
+                          <path d="M9 21H3v-6" />
+                          <path d="M21 3l-7 7" />
+                          <path d="M3 21l7-7" />
+                        </svg>
+                      </button>
+                    </span>
+                  `.trim();
+                });
+              };
+
+              // Remove option prefix (A. B. C. D.) from the beginning
+              const removePrefix = (text) => {
+                if (!text) return "";
+                // Remove patterns like "A. ", "B. ", "C. ", "D. " from the start
+                return text.replace(/^[A-D]\.\s*/i, '');
+              };
+
+              const stripLatexTextCommands = (expr) => {
+                if (!expr) return '';
+                return String(expr)
+                  .replace(/\\mathrm\{([^}]*)\}/g, '$1')
+                  .replace(/\\text\{([^}]*)\}/g, '$1')
+                  .replace(/\\,/g, ' ')
+                  .replace(/\\;/g, ' ');
+              };
+
+              const parseLatexScript = (s, i) => {
+                if (i >= s.length) return { value: '', next: i };
+                if (s[i] === '{') {
+                  let depth = 0;
+                  let j = i;
+                  for (; j < s.length; j++) {
+                    const ch = s[j];
+                    if (ch === '{') depth++;
+                    if (ch === '}') depth--;
+                    if (depth === 0) break;
+                  }
+                  const inner = s.slice(i + 1, j);
+                  return { value: inner, next: Math.min(j + 1, s.length) };
+                }
+                return { value: s[i], next: i + 1 };
+              };
+
+              const renderIsotopeLatex = (rawExpr) => {
+                const expr = stripLatexTextCommands(rawExpr).trim();
+                const s = expr;
+
+                let i = 0;
+                let leftSup = '';
+                let leftSub = '';
+
+                if (s[i] === '^') {
+                  const parsed = parseLatexScript(s, i + 1);
+                  leftSup = parsed.value;
+                  i = parsed.next;
+                }
+                if (s[i] === '_') {
+                  const parsed = parseLatexScript(s, i + 1);
+                  leftSub = parsed.value;
+                  i = parsed.next;
+                }
+
+                let base = '';
+                while (i < s.length) {
+                  const ch = s[i];
+                  if (ch === '^' || ch === '_') break;
+                  base += ch;
+                  i++;
+                }
+                base = base.trim();
+
+                let rightSup = '';
+                let rightSub = '';
+                while (i < s.length) {
+                  const op = s[i];
+                  if (op !== '^' && op !== '_') {
+                    i++;
+                    continue;
+                  }
+                  const parsed = parseLatexScript(s, i + 1);
+                  if (op === '^' && !rightSup) rightSup = parsed.value;
+                  if (op === '_' && !rightSub) rightSub = parsed.value;
+                  i = parsed.next;
+                }
+
+                if (!base) return null;
+
+                const hasLeft = Boolean(leftSup || leftSub);
+                const baseEsc = base.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const supEsc = (leftSup || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const subEsc = (leftSub || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const rSupEsc = (rightSup || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const rSubEsc = (rightSub || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+                if (hasLeft) {
+                  const rightScripts = `${rSubEsc ? `<sub style="font-size:0.7em; line-height:0; vertical-align:-0.2em;">${rSubEsc}</sub>` : ''}${rSupEsc ? `<sup style="font-size:0.7em; line-height:0; vertical-align:0.6em;">${rSupEsc}</sup>` : ''}`;
+                  return `
+                    <span style="display:inline-grid; grid-template-columns:auto auto; grid-template-rows:auto auto; column-gap:2px; vertical-align:middle;">
+                      <span style="grid-column:1; grid-row:1; font-size:0.7em; line-height:1; justify-self:end;">${supEsc}</span>
+                      <span style="grid-column:1; grid-row:2; font-size:0.7em; line-height:1; justify-self:end;">${subEsc}</span>
+                      <span style="grid-column:2; grid-row:1 / span 2; align-self:center;">${baseEsc}${rightScripts}</span>
+                    </span>
+                  `.trim();
+                }
+
+                const rightScripts = `${rSubEsc ? `<sub style="font-size:0.7em; line-height:0; vertical-align:-0.2em;">${rSubEsc}</sub>` : ''}${rSupEsc ? `<sup style="font-size:0.7em; line-height:0; vertical-align:0.6em;">${rSupEsc}</sup>` : ''}`;
+                return `<span>${baseEsc}${rightScripts}</span>`;
+              };
+
+              const renderInlineLatex = (html) => {
+                if (!html) return '';
+                const s = String(html);
+                const renderExpr = (expr) => {
+                  const rendered = renderIsotopeLatex(expr);
+                  return rendered || `(${stripLatexTextCommands(expr)})`;
+                };
+                return s
+                  .replace(/\\\(([\s\S]+?)\\\)/g, (_m, expr) => renderExpr(expr))
+                  .replace(/\\\[([\s\S]+?)\\\]/g, (_m, expr) => renderExpr(expr));
+              };
+
+              const rawQuestion = stripWrappingQuotes(getVal('Question') || getVal('QuestionText'));
+
+              // CRITICAL FIX: Ensure truly unique IDs
+              // Use the spreadsheet ID if available AND unique, otherwise use index
+              const rawId = getVal('ID');
+
+
+===== FILE: src/utils/quizStorage.js =====
+// localStorage utility for managing quiz state across pages
+
+const STORAGE_KEYS = {
+  SELECTED_QUESTIONS: 'quiz_selected_questions',
+  USER_ANSWERS: 'quiz_user_answers',
+  QUESTION_TIMES: 'quiz_question_times',
+  FLAGGED: 'quiz_flagged',
+  CURRENT_INDEX: 'quiz_current_index',
+  TIMER_ENABLED: 'quiz_timer_enabled',
+  SESSION_START: 'quiz_session_start'
+};
+
+export const quizStorage = {
+  // Save selected questions for the quiz
+  saveSelectedQuestions: (questions) => {
+    localStorage.setItem(STORAGE_KEYS.SELECTED_QUESTIONS, JSON.stringify(questions));
+  },
+
+  getSelectedQuestions: () => {
+    const data = localStorage.getItem(STORAGE_KEYS.SELECTED_QUESTIONS);
+    return data ? JSON.parse(data) : null;
+  },
+
+  // Save user answers
+  saveUserAnswers: (answers) => {
+    localStorage.setItem(STORAGE_KEYS.USER_ANSWERS, JSON.stringify(answers));
+  },
+
+  getUserAnswers: () => {
+    const data = localStorage.getItem(STORAGE_KEYS.USER_ANSWERS);
+    return data ? JSON.parse(data) : {};
+  },
+
+  // Save question times
+  saveQuestionTimes: (times) => {
+    localStorage.setItem(STORAGE_KEYS.QUESTION_TIMES, JSON.stringify(times));
+  },
+
+  getQuestionTimes: () => {
+    const data = localStorage.getItem(STORAGE_KEYS.QUESTION_TIMES);
+    return data ? JSON.parse(data) : {};
+  },
+
+  // Save flagged questions
+  saveFlagged: (flaggedSet) => {
+    localStorage.setItem(STORAGE_KEYS.FLAGGED, JSON.stringify(Array.from(flaggedSet)));
+  },
+
+  getFlagged: () => {
+    const data = localStorage.getItem(STORAGE_KEYS.FLAGGED);
+    return data ? new Set(JSON.parse(data)) : new Set();
+  },
+
+  // Save current question index
+  saveCurrentIndex: (index) => {
+    localStorage.setItem(STORAGE_KEYS.CURRENT_INDEX, index.toString());
+  },
+
+  getCurrentIndex: () => {
+    const data = localStorage.getItem(STORAGE_KEYS.CURRENT_INDEX);
+    return data ? parseInt(data) : 0;
+  },
+
+  // Save timer settings
+  saveTimerEnabled: (enabled) => {
+    localStorage.setItem(STORAGE_KEYS.TIMER_ENABLED, JSON.stringify(enabled));
+  },
+
+  getTimerEnabled: () => {
+    const data = localStorage.getItem(STORAGE_KEYS.TIMER_ENABLED);
+    return data ? JSON.parse(data) : null;
+  },
+
+  saveSessionStart: (timestamp) => {
+    localStorage.setItem(STORAGE_KEYS.SESSION_START, timestamp.toString());
+  },
+
+  getSessionStart: () => {
+    const data = localStorage.getItem(STORAGE_KEYS.SESSION_START);
+    return data ? parseInt(data) : null;
+  },
+
+  // Clear all quiz data (use when starting new quiz)
+  clearQuizData: () => {
+    Object.values(STORAGE_KEYS).forEach(key => {
+      localStorage.removeItem(key);
+    });
+  },
+
+  // Clear only progress data (keep selected questions)
+  clearProgressData: () => {
+    localStorage.removeItem(STORAGE_KEYS.USER_ANSWERS);
+    localStorage.removeItem(STORAGE_KEYS.QUESTION_TIMES);
+    localStorage.removeItem(STORAGE_KEYS.FLAGGED);
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_INDEX);
+    localStorage.removeItem(STORAGE_KEYS.TIMER_ENABLED);
+    localStorage.removeItem(STORAGE_KEYS.SESSION_START);
+  }
+};
+
+===== FILE: src/pages/QuizPage.jsx =====
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
+import QuestionCard from '../components/QuestionCard';
+import { ChevronLeft, ChevronRight, Send, Timer, FlaskConical, Flag, Clock, X, Home, Menu } from 'lucide-react';
+import { quizStorage } from '../utils/quizStorage';
+import { useChemCityStore } from '../store/chemcityStore';
+
+export default function QuizPage() {
+  const navigate = useNavigate();
+  const { t } = useLanguage();
+  const awardQuizReward = useChemCityStore((s) => s.awardQuizReward);
+  const swipeStartRef = useRef(null);
+  
+  const [questions] = useState(() => quizStorage.getSelectedQuestions());
+  const practiceMode = localStorage.getItem('quiz_mode') || 'timed'; // timed, marathon, custom, mistakes
+
+  const isPracticeQuiz = ['timed', 'marathon', 'custom', 'mistakes'].includes(practiceMode);
+  
+  useEffect(() => {
+    if (!questions || questions.length === 0) {
+      navigate('/practice');
+    }
+  }, [questions, navigate]);
+
+  const [currentIndex, setCurrentIndex] = useState(() => quizStorage.getCurrentIndex());
+  const [answers, setAnswers] = useState(() => quizStorage.getUserAnswers());
+  const [flagged, setFlagged] = useState(() => quizStorage.getFlagged());
+  const [showPeriodicTable, setShowPeriodicTable] = useState(false);
+  const [showQuestionPanel, setShowQuestionPanel] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [timerEnabled, setTimerEnabled] = useState(() => {
+    const saved = localStorage.getItem('quiz_timer_enabled');
+    return saved === 'true';
+  });
+  const [isTimedMode, setIsTimedMode] = useState(() => {
+    const saved = localStorage.getItem('quiz_is_timed_mode');
+    return saved === 'true';
+  });
+  const [hideTimerUi, setHideTimerUi] = useState(() => {
+    const saved = localStorage.getItem('quiz_hide_timer_ui');
+    return saved === 'true';
+  });
+  const [questionTimes, setQuestionTimes] = useState(() => quizStorage.getQuestionTimes());
+  const [currentQuestionStartTime, setCurrentQuestionStartTime] = useState(null);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [sessionStartTime, setSessionStartTime] = useState(() => quizStorage.getSessionStart());
+
+  const [showTopic, setShowTopic] = useState(() => {
+    const saved = localStorage.getItem('practice_show_topic');
+    return saved === null ? true : saved === 'true';
+  });
+  const [showSubtopic, setShowSubtopic] = useState(() => {
+    const saved = localStorage.getItem('practice_show_subtopic');
+    return saved === null ? true : saved === 'true';
+  });
+  const [showDseCode, setShowDseCode] = useState(() => {
+    const saved = localStorage.getItem('practice_show_dsecode');
+    return saved === null ? true : saved === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('practice_show_topic', String(showTopic));
+  }, [showTopic]);
+
+  useEffect(() => {
+    localStorage.setItem('practice_show_subtopic', String(showSubtopic));
+  }, [showSubtopic]);
+
+  useEffect(() => {
+    localStorage.setItem('practice_show_dsecode', String(showDseCode));
+  }, [showDseCode]);
+
+  // Calculate time limit for timed mode (questions × 75 seconds in milliseconds)
+  const timeLimit = isTimedMode ? questions.length * 75 * 1000 : 0;
+
+  // Prevent accidental navigation away
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const activeElement = document.activeElement;
+      if (
+        activeElement &&
+        (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')
+      ) return;
+      if (showPeriodicTable || showMobileMenu) return;
+      if (!questions || questions.length === 0) return;
+
+      const currentQuestion = questions[currentIndex];
+      const key = e.key.toUpperCase();
+
+      if (['A', 'B', 'C', 'D'].includes(key)) {
+        e.preventDefault();
+        const currentAnswer = answers[currentQuestion.ID];
+        if (currentAnswer === key) {
+          setAnswers(prev => ({ ...prev, [currentQuestion.ID]: null }));
+        } else {
+          setAnswers(prev => ({ ...prev, [currentQuestion.ID]: key }));
+        }
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (currentIndex < questions.length - 1) {
+          nextQuestion();
+        } else if (allAnswered) {
+          handleComplete();
+        }
+        return;
+      }
+
+      if (e.key === 'ArrowRight' && currentIndex < questions.length - 1) {
+        e.preventDefault();
+        nextQuestion();
+        return;
+      }
+      if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        e.preventDefault();
+        prevQuestion();
+        return;
+      }
+
+      if (key === 'F') {
+        e.preventDefault();
+        toggleFlag();
+        return;
+      }
+
+      if (key === 'O') {
+        e.preventDefault();
+        setShowQuestionPanel(prev => !prev);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, answers, showPeriodicTable, showQuestionPanel, showMobileMenu, questions]);
+
+  // Persist state to localStorage
+  useEffect(() => { quizStorage.saveCurrentIndex(currentIndex); }, [currentIndex]);
+  useEffect(() => { quizStorage.saveUserAnswers(answers); }, [answers]);
+  useEffect(() => { quizStorage.saveFlagged(flagged); }, [flagged]);
+  useEffect(() => { quizStorage.saveQuestionTimes(questionTimes); }, [questionTimes]);
+  useEffect(() => { if (sessionStartTime !== null) quizStorage.saveSessionStart(sessionStartTime); }, [sessionStartTime]);
+
+  if (!questions || questions.length === 0) return null;
+
+  const currentQuestion = questions[currentIndex];
+  const totalQuestions = questions.length;
+  const progress = ((currentIndex + 1) / totalQuestions) * 100;
+  const allAnswered = questions.every(q => answers[q.ID]);
+
+  // Initialize timer on mount
+  useEffect(() => {
+    if ((timerEnabled || isTimedMode) && !sessionStartTime) {
+      const now = Date.now();
+      setCurrentQuestionStartTime(now);
+      setSessionStartTime(now);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!timerEnabled && !isTimedMode) return;
+    const interval = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [timerEnabled, isTimedMode]);
+
+  useEffect(() => {
+    if ((timerEnabled || isTimedMode) && currentQuestion) setCurrentQuestionStartTime(Date.now());
+  }, [currentIndex, timerEnabled, isTimedMode]);
+
+  const recordQuestionTime = () => {
+    if (timerEnabled && currentQuestionStartTime) {
+      const timeSpent = Date.now() - currentQuestionStartTime;
+      setQuestionTimes(prev => ({
+        ...prev,
+        [currentQuestion.ID]: (prev[currentQuestion.ID] || 0) + timeSpent
+      }));
+    }
+  };
+
+  const handleOptionSelect = useCallback((option) => {
+    if (!currentQuestion?.ID) return;
+    setAnswers(prev => ({ ...prev, [currentQuestion.ID]: option }));
+  }, [currentQuestion?.ID]);
+
+  const toggleFlag = () => {
+    const questionId = currentQuestion.ID;
+    setFlagged(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(questionId)) newSet.delete(questionId);
+      else newSet.add(questionId);
+      return newSet;
+    });
+  };
+
+  const nextQuestion = () => {
+    recordQuestionTime();
+    if (currentIndex < totalQuestions - 1) setCurrentIndex(currentIndex + 1);
+  };
+
+  const prevQuestion = () => {
+    recordQuestionTime();
+    if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+  };
+
+  const jumpToQuestion = (index) => {
+    recordQuestionTime();

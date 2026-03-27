@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chemistry — Guiding Questions &amp; Hints</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #F4F1EA;
+    --paper:     #FDFCF8;
+    --ink:       #1C1917;
+    --ink2:      #44403C;
+    --ink3:      #78716C;
+    --rule:      #D6D0C4;
+    --accent:    #1C4ED8;
+
+    --q1-h:  #1E3A5F;  --q1-m:  #2563A8;  --q1-l:  #EBF2FC;  --q1-b:  #BFDBFE;
+    --q2-h:  #14532D;  --q2-m:  #16A34A;  --q2-l:  #ECFDF5;  --q2-b:  #BBF7D0;
+    --q3-h:  #3730A3;  --q3-m:  #6366F1;  --q3-l:  #EEF2FF;  --q3-b:  #C7D2FE;
+    --q4-h:  #7C2D12;  --q4-m:  #EA580C;  --q4-l:  #FFF7ED;  --q4-b:  #FED7AA;
+
+    --serif: 'DM Serif Display', Georgia, serif;
+    --sans:  'Instrument Sans', system-ui, sans-serif;
+    --mono:  'DM Mono', 'Courier New', monospace;
+
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── PAGE TEXTURE ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='none'/%3E%3Ccircle cx='1' cy='1' r='0.5' fill='%23000' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--ink);
+    color: #fff;
+    padding: 0 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 52px;
+    border-bottom: 2px solid #000;
+  }
+
+  header .brand {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.75;
+  }
+
+  header .expand-all {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #fff;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 5px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  header .expand-all:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.7); }
+
+  header .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .hero-actions {
+    margin-top: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .pdf-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #0b1220;
+    background: linear-gradient(135deg, #60A5FA, #A78BFA);
+    border: 1px solid rgba(15,23,42,0.14);
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: transform 0.15s, filter 0.15s, box-shadow 0.15s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 10px 20px rgba(99,102,241,0.18);
+  }
+
+  .pdf-btn:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.02);
+    box-shadow: 0 14px 28px rgba(99,102,241,0.24);
+  }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    z-index: 1;
+    padding: 4rem 2.5rem 3rem;
+    max-width: 900px;
+    margin: 0 auto;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .hero-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .hero-tag::before {
+    content: '';
+    display: inline-block;
+    width: 24px;
+    height: 1px;
+    background: var(--ink3);
+  }
+
+  .hero h1 {
+    font-family: var(--serif);
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    line-height: 1.1;
+    color: var(--ink);
+    margin-bottom: 1rem;
+  }
+  .hero h1 em {
+    font-style: italic;
+    color: var(--ink2);
+  }
+
+  .hero p {
+    font-size: 15px;
+    color: var(--ink2);
+    max-width: 560px;
+    line-height: 1.7;
+  }
+
+  .hero-meta {
+    margin-top: 2rem;
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+  .meta-pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 5px 12px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink2);
+  }
+
+  /* ── MAIN LAYOUT ── */
+  main {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2.5rem 2.5rem 6rem;
+  }
+
+  /* ── QUESTION GROUP ── */
+  .q-group {
+    margin-bottom: 3.5rem;
+    opacity: 0;
+    transform: translateY(20px);
+    animation: fadeUp 0.5s var(--ease-out-expo) forwards;
+  }
+  .q-group:nth-child(1) { animation-delay: 0.05s; }
+  .q-group:nth-child(2) { animation-delay: 0.12s; }
+  .q-group:nth-child(3) { animation-delay: 0.19s; }
+  .q-group:nth-child(4) { animation-delay: 0.26s; }
+
+  @keyframes fadeUp {
+    to { opacity: 1; transform: none; }
+  }
+
+  .group-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid;
+  }
+  .group-heading .qnum {
+    font-family: var(--serif);
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+  .group-heading .qtitle {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    flex: 1;
+  }
+  .group-heading .stars {
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+  }
+
+  /* ── COLOR THEMES ── */
+  .q1 .group-heading { border-color: var(--q1-m); color: var(--q1-h); }
+  .q2 .group-heading { border-color: var(--q2-m); color: var(--q2-h); }
+  .q3 .group-heading { border-color: var(--q3-m); color: var(--q3-h); }
+  .q4 .group-heading { border-color: var(--q4-m); color: var(--q4-h); }
+
+  /* ── ACCORDION ITEM ── */
+  .accordion {
+    margin-bottom: 6px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    overflow: hidden;
+  }
+
+  .accordion-trigger {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    text-align: left;
+    transition: background 0.15s;
+    position: relative;
+  }
+  .accordion-trigger:hover { background: rgba(0,0,0,0.025); }
+
+  .trigger-label {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .trigger-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    flex-shrink: 0;
+  }
+  .trigger-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .trigger-badge {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+  .trigger-icon {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.3s var(--ease-out-expo);
+  }
+  .trigger-icon svg { display: block; }
+
+  .accordion.open .trigger-icon { transform: rotate(180deg); }
+
+  /* ── COLOR ACCENT PER QUESTION ── */
+  .q1 .trigger-num   { background: var(--q1-b); color: var(--q1-h); }
+  .q1 .trigger-badge { background: var(--q1-l); color: var(--q1-m); }
+  .q1 .accordion-trigger:hover { background: var(--q1-l); }
+
+  .q2 .trigger-num   { background: var(--q2-b); color: var(--q2-h); }
+  .q2 .trigger-badge { background: var(--q2-l); color: var(--q2-m); }
+  .q2 .accordion-trigger:hover { background: var(--q2-l); }
+
+  .q3 .trigger-num   { background: var(--q3-b); color: var(--q3-h); }
+  .q3 .trigger-badge { background: var(--q3-l); color: var(--q3-m); }
+  .q3 .accordion-trigger:hover { background: var(--q3-l); }
+
+  .q4 .trigger-num   { background: var(--q4-b); color: var(--q4-h); }
+  .q4 .trigger-badge { background: var(--q4-l); color: var(--q4-m); }
+  .q4 .accordion-trigger:hover { background: var(--q4-l); }
+
+  /* ── ACCORDION PANEL ── */
+  .accordion-panel {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.4s var(--ease-out-expo);
+  }
+  .accordion.open .accordion-panel {
+    grid-template-rows: 1fr;
+  }
+  .panel-inner {
+    overflow: hidden;
+  }
+  .panel-content {
+    padding: 0 18px 20px 18px;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* ── HINTS ── */
+  .hints-section {
+    padding-top: 18px;
+  }
+  .hints-label {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hints-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  .hint-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .hint-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border-left: 2px solid var(--rule);
+    opacity: 0;
+    transform: translateX(-6px);
+    transition: opacity 0.3s, transform 0.3s var(--ease-out-expo);
+  }
+  .accordion.open .hint-item {
+    opacity: 1;
+    transform: none;
+  }
+  .accordion.open .hint-item:nth-child(1) { transition-delay: 0.05s; }
+  .accordion.open .hint-item:nth-child(2) { transition-delay: 0.10s; }
+  .accordion.open .hint-item:nth-child(3) { transition-delay: 0.15s; }
+  .accordion.open .hint-item:nth-child(4) { transition-delay: 0.20s; }
+  .accordion.open .hint-item:nth-child(5) { transition-delay: 0.25s; }
+  .accordion.open .hint-item:nth-child(6) { transition-delay: 0.30s; }
+  .accordion.open .hint-item:nth-child(7) { transition-delay: 0.35s; }
+
+  .hint-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    min-width: 20px;
+    line-height: 1.7;
+    color: var(--ink3);
+  }
+  .hint-text {
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--ink2);
+  }
+  .hint-text strong {
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .hint-tag {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    margin-right: 6px;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+
+  /* Hint border colors per question */
+  .q1 .hint-item:hover { border-left-color: var(--q1-m); background: var(--q1-l); }
+  .q2 .hint-item:hover { border-left-color: var(--q2-m); background: var(--q2-l); }
+  .q3 .hint-item:hover { border-left-color: var(--q3-m); background: var(--q3-l); }
+  .q4 .hint-item:hover { border-left-color: var(--q4-m); background: var(--q4-l); }
+
+  .q1 .hint-tag { background: var(--q1-l); color: var(--q1-h); }
+  .q2 .hint-tag { background: var(--q2-l); color: var(--q2-h); }
+  .q3 .hint-tag { background: var(--q3-l); color: var(--q3-h); }
+  .q4 .hint-tag { background: var(--q4-l); color: var(--q4-h); }
+
+  /* ── SCAFFOLD ── */
+  .scaffold-section { margin-top: 18px; }
+  .scaffold-box {
+    border: 1px solid var(--rule);
+    padding: 14px 16px;
+    background: #F9F8F4;
+  }
+  .scaffold-title {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink3);
+    margin-bottom: 10px;
+  }
+  .scaffold-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .scaffold-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 13.5px;
+    color: var(--ink2);
+    line-height: 1.6;
+    opacity: 0;
+    transform: translateX(-6px);
+    transition: opacity 0.3s, transform 0.3s var(--ease-out-expo);
+  }
+  .accordion.open .scaffold-item { opacity: 1; transform: none; }
+  .accordion.open .scaffold-item:nth-child(1) { transition-delay: 0.28s; }
+  .accordion.open .scaffold-item:nth-child(2) { transition-delay: 0.32s; }
+  .accordion.open .scaffold-item:nth-child(3) { transition-delay: 0.36s; }
+  .accordion.open .scaffold-item:nth-child(4) { transition-delay: 0.40s; }
+  .accordion.open .scaffold-item:nth-child(5) { transition-delay: 0.44s; }
+  .accordion.open .scaffold-item:nth-child(6) { transition-delay: 0.48s; }
+
+  .scaffold-step {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 500;
+    padding: 2px 5px;
+    background: var(--ink);
+    color: #fff;
+    min-width: 28px;
+    text-align: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    position: relative;
+    z-index: 1;
+    border-top: 1px solid var(--rule);
+    padding: 1.5rem 2.5rem;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink3);
+  }
+
+  /* ── UTILITIES ── */
+  .separator {
+    height: 1px;
+    background: var(--rule);
+    margin: 2.5rem 0;
+  }
+
+  @media (max-width: 600px) {
+    header, main, .hero { padding-left: 1.25rem; padding-right: 1.25rem; }
+    .trigger-badge { display: none; }
+    .hero h1 { font-size: 1.8rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">Chemistry · Guiding Questions</span>
+  <div class="header-actions">
+    <button class="expand-all" onclick="toggleAll()">Expand All</button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="hero-tag">Higher-order thinking</div>
+  <h1>Hints for Higher-Order Thinking (HOT) Questions</h1>
+  <p>Click any section to reveal guiding questions and a step-by-step scaffold. Work through the hints in order — try each one before reading the next.</p>
+  <div class="hero-actions">
+    <a class="pdf-btn" href="/HOT_Questions(Optional)_Ch.14-15.pdf" target="_blank" rel="noopener noreferrer">Download Questions PDF</a>
+  </div>
+  <div class="hero-meta">
+    <span class="meta-pill">Salt Preparation</span>
+    <span class="meta-pill">Reacting Masses</span>
+    <span class="meta-pill">Titrations</span>
+    <span class="meta-pill">Atomic Mass Standards</span>
+  </div>
+</div>
+
+<main>
+
+<!-- ════════════════════════════════════════════════════════════════
+     QUESTION 1
+════════════════════════════════════════════════════════════════ -->
+<div class="q-group q1">
+  <div class="group-heading">
+    <span class="qnum">Q1</span>
+    <span class="qtitle">Forensic Analysis of a Hit-and-Run Accident</span>
+    <span class="stars">★★★</span>
+  </div>
+
+  <!-- 1a -->
+  <div class="accordion" id="acc-1a">
+    <button class="accordion-trigger" onclick="toggle('acc-1a')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">1a</span>
+        <span class="trigger-title">Empirical formula from percentage composition</span>
+      </div>
+      <span class="trigger-badge">Reacting Masses</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">The percentages given only cover Pb and Cr. What must the remaining percentage represent?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">If you assume exactly <strong>100 g</strong> of the compound, what does each percentage directly tell you about the mass of each element?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">How do you convert a mass of an element into <strong>moles</strong>? What values do you need from the periodic table? (Pb = 207, Cr = 52, O = 16)</span></li>
+              <li class="hint-item"><span class="hint-num">04</span><span class="hint-text">Once you have moles of Pb, Cr, and O, what <strong>operation</strong> gives you the simplest whole-number ratio?</span></li>
+            </ul>
+          </div>
+          <div class="scaffold-section">
+            <div class="scaffold-box">
+              <div class="scaffold-title">Step Scaffold</div>
+              <ul class="scaffold-list">
+                <li class="scaffold-item"><span class="scaffold-step">01</span><span>Find %O by subtraction: 100% − (64.0% + 16.2%).</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">02</span><span>Assume 100 g sample — the mass of each element equals its percentage numerically.</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">03</span><span>Divide each mass by the element's molar mass to find moles (Pb, Cr, O).</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">04</span><span>Divide all mole values by the <em>smallest</em> mole value.</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">05</span><span>Round to the nearest integer → write the empirical formula.</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1b -->
+  <div class="accordion" id="acc-1b">
+    <button class="accordion-trigger" onclick="toggle('acc-1b')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">1b</span>
+        <span class="trigger-title">Why not react PbCrO₄ directly with AgNO₃?</span>
+      </div>
+      <span class="trigger-badge">Salt Preparation</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">PbCrO₄ is described as <strong>insoluble</strong> in water. What happens when two insoluble substances are mixed — can ions freely exchange in solution?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">What would form on the <strong>outer surface</strong> of the PbCrO₄ solid if it were placed directly into AgNO₃ solution?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">If a solid coating forms around the PbCrO₄ particles, what effect does this <strong>layer</strong> have on the reaction reaching completion?</span></li>
+            </ul>
+          </div>
+          <div class="scaffold-section">
+            <div class="scaffold-box">
+              <div class="scaffold-title">Key Concept</div>
+              <ul class="scaffold-list">
+                <li class="scaffold-item"><span class="scaffold-step">↯</span><span>A reaction can only proceed if ions are in solution and free to collide. An insoluble product layer on the surface of a solid reactant physically blocks further reaction — this is the <em>passivation</em> or <em>coating</em> effect.</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1c -->
+  <div class="accordion" id="acc-1c">
+    <button class="accordion-trigger" onclick="toggle('acc-1c')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">1c</span>
+        <span class="trigger-title">Calculate the theoretical yield of Ag₂CrO₄</span>
+      </div>
+      <span class="trigger-badge">Reacting Masses</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">What is the <strong>molar mass</strong> of PbCrO₄? Add up the atomic masses carefully — remember there are 4 oxygens (Pb = 207, Cr = 52, O = 16).</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">How many <strong>moles</strong> of PbCrO₄ are present in the 2.50 g sample?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">Trace the chromium atom through both steps: PbCrO₄ → Na₂CrO₄ → Ag₂CrO₄. How many CrO₄²⁻ units does each step produce <strong>per formula unit</strong>?</span></li>
+              <li class="hint-item"><span class="hint-num">04</span><span class="hint-text">What is the <strong>mole ratio</strong> of PbCrO₄ to Ag₂CrO₄? What is the molar mass of Ag₂CrO₄? (Ag = 108)</span></li>
+            </ul>
+          </div>
+          <div class="scaffold-section">
+            <div class="scaffold-box">
+              <div class="scaffold-title">Step Scaffold</div>
+              <ul class="scaffold-list">
+                <li class="scaffold-item"><span class="scaffold-step">01</span><span>M(PbCrO₄) = 207 + 52 + 4(16) = 323 g mol⁻¹</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">02</span><span>Moles PbCrO₄ = 2.50 ÷ 323</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">03</span><span>1 : 1 mole ratio — each PbCrO₄ contains one CrO₄²⁻, and each CrO₄²⁻ yields one Ag₂CrO₄.</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">04</span><span>M(Ag₂CrO₄) = 2(108) + 52 + 4(16) = 332 g mol⁻¹</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">05</span><span>Theoretical mass = moles × 332</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1d(i) -->
+  <div class="accordion" id="acc-1di">
+    <button class="accordion-trigger" onclick="toggle('acc-1di')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">1d(i)</span>
+        <span class="trigger-title">Calculate the percentage yield</span>
+      </div>
+      <span class="trigger-badge">Reacting Masses</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">What is the <strong>formula</strong> for percentage yield? Which value goes in the numerator?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">The actual yield (2.82 g) is <strong>larger</strong> than your theoretical value. What does a percentage yield above 100% tell you about the experiment?</span></li>
+            </ul>
+          </div>
+          <div class="scaffold-section">
+            <div class="scaffold-box">
+              <div class="scaffold-title">Formula Reminder</div>
+              <ul class="scaffold-list">
+                <li class="scaffold-item"><span class="scaffold-step">↯</span><span>% yield = (actual mass ÷ theoretical mass) × 100%. A result &gt;100% is only experimentally possible if the product contains impurities or excess mass was recorded.</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1d(ii) -->
+  <div class="accordion" id="acc-1dii">
+    <button class="accordion-trigger" onclick="toggle('acc-1dii')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">1d(ii)</span>
+        <span class="trigger-title">Why yield ≠ 100%, and why contamination could exceed 100%</span>
+      </div>
+      <span class="trigger-badge">Practical Reasoning</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions — Below 100%</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">The question assumes the reaction runs to completion — but does it? What if some PbCrO₄ was <strong>not fully converted</strong> by the Na₂CO₃ step?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">During filtration and transfer, is it physically possible to collect <strong>every last particle</strong> of precipitate without any loss?</span></li>
+            </ul>
+          </div>
+          <div class="hints-section" style="margin-top:16px">
+            <div class="hints-label">Guiding Questions — Above 100%</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">If the solid sample contained <strong>another chromium compound</strong> (not just PbCrO₄), would that extra chromium also react to produce Ag₂CrO₄?</span></li>
+              <li class="hint-item"><span class="hint-num">04</span><span class="hint-text">If the Ag₂CrO₄ precipitate was collected while still <strong>damp</strong>, what extra mass would appear on the balance?</span></li>
+              <li class="hint-item"><span class="hint-num">05</span><span class="hint-text">Could other ions in solution <strong>co-precipitate</strong> alongside Ag₂CrO₄ and add to the recorded mass?</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /.q-group.q1 -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     QUESTION 2
+════════════════════════════════════════════════════════════════ -->
+<div class="q-group q2">
+  <div class="group-heading">
+    <span class="qnum">Q2</span>
+    <span class="qtitle">% by Mass of Pb(NO₃)₂ in an Impure Mixture</span>
+    <span class="stars">★★★★</span>
+  </div>
+
+  <div class="accordion" id="acc-2">
+    <button class="accordion-trigger" onclick="toggle('acc-2')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">Q2</span>
+        <span class="trigger-title">Experimental design and calculation steps</span>
+      </div>
+      <span class="trigger-badge">Salt Prep + Reacting Masses</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions — Experimental Design</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">Both salts dissolve in water, so <strong>dissolving won't separate them</strong>. What other property of Pb²⁺ ions can you exploit?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">What common lab reagent produces a <strong>white insoluble precipitate</strong> with Pb²⁺ but not with Na⁺?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">After precipitation: how do you <strong>separate</strong> the solid from the liquid, and how do you remove trapped soluble salts from the solid?</span></li>
+              <li class="hint-item"><span class="hint-num">04</span><span class="hint-text">What must you do to the solid <strong>before weighing</strong> to avoid recording the mass of water as part of your precipitate?</span></li>
+            </ul>
+          </div>
+          <div class="hints-section" style="margin-top:16px">
+            <div class="hints-label">Guiding Questions — Calculation</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">05</span><span class="hint-text">You measure mass Y g of PbSO₄ precipitate. How do you convert that mass into <strong>moles</strong>? (M(PbSO₄) = 303.3 g mol⁻¹)</span></li>
+              <li class="hint-item"><span class="hint-num">06</span><span class="hint-text">What is the <strong>mole ratio</strong> of Pb(NO₃)₂ to PbSO₄ from the balanced equation? Use this to find moles of Pb(NO₃)₂.</span></li>
+              <li class="hint-item"><span class="hint-num">07</span><span class="hint-text">Once you have moles of Pb(NO₃)₂, how do you find its <strong>mass</strong>, then express it as a percentage of the original mixture?</span></li>
+            </ul>
+          </div>
+          <div class="scaffold-section">
+            <div class="scaffold-box">
+              <div class="scaffold-title">Step Scaffold</div>
+              <ul class="scaffold-list">
+                <li class="scaffold-item"><span class="scaffold-step">01</span><span>Weigh the total mixture: mass = X g.</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">02</span><span>Dissolve in water; add excess K₂SO₄ solution to precipitate PbSO₄.</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">03</span><span>Filter, wash with distilled water, dry in oven, then weigh: mass precipitate = Y g.</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">04</span><span>Moles PbSO₄ = Y ÷ 303.3;  Moles Pb(NO₃)₂ = same (1 : 1 ratio).</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">05</span><span>Mass Pb(NO₃)₂ = moles × 331.2 g mol⁻¹.</span></li>
+                <li class="scaffold-item"><span class="scaffold-step">06</span><span>% Pb(NO₃)₂ = (mass Pb(NO₃)₂ ÷ X) × 100%.</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /.q-group.q2 -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     QUESTION 3
+════════════════════════════════════════════════════════════════ -->
+<div class="q-group q3">
+  <div class="group-heading">
+    <span class="qnum">Q3</span>
+    <span class="qtitle">Historical Atomic Mass Standards &amp; the ¹²C Scale</span>
+    <span class="stars">★★★★</span>
+  </div>
+
+  <!-- 3a -->
+  <div class="accordion" id="acc-3a">
+    <button class="accordion-trigger" onclick="toggle('acc-3a')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">3a</span>
+        <span class="trigger-title">Is pure ¹⁶O greater than, less than, or equal to 16 on the chemist's scale?</span>
+      </div>
+      <span class="trigger-badge">Atomic Mass</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">On the chemist's scale, natural oxygen (a <strong>mixture</strong>) is defined as exactly 16. Natural oxygen contains ¹⁶O, ¹⁷O, and ¹⁸O. Which are the heavier isotopes?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">If the <strong>weighted average</strong> of the mixture is 16, and some members (¹⁷O and ¹⁸O) are heavier than 16, must the lightest member (¹⁶O) be above or below the average?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text"><strong>Analogy:</strong> if the average height of a group is 170 cm and some people are taller than 170 cm, what must be true about the shortest person in the group?</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3b -->
+  <div class="accordion" id="acc-3b">
+    <button class="accordion-trigger" onclick="toggle('acc-3b')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">3b</span>
+        <span class="trigger-title">Is natural oxygen greater than, less than, or equal to 16 on the physicist's scale?</span>
+      </div>
+      <span class="trigger-badge">Atomic Mass</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">On the physicist's scale, <strong>pure ¹⁶O</strong> is defined as exactly 16. Natural oxygen also contains ¹⁷O and ¹⁸O, which are heavier than ¹⁶O.</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">The relative atomic mass of natural oxygen is a <strong>weighted average</strong>. If some components of the mixture are heavier than ¹⁶O, is the average greater than, equal to, or less than 16?</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3c -->
+  <div class="accordion" id="acc-3c">
+    <button class="accordion-trigger" onclick="toggle('acc-3c')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">3c</span>
+        <span class="trigger-title">Why were two different scales problematic?</span>
+      </div>
+      <span class="trigger-badge">History of Science</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">If chemists and physicists published the Avogadro constant with <strong>slightly different numerical values</strong>, what happens when one community uses the other's data in a precise calculation?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">Science is meant to be <strong>universal and reproducible</strong>. What does having two different standards for the same quantity do to international collaboration and published literature?</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3d -->
+  <div class="accordion" id="acc-3d">
+    <button class="accordion-trigger" onclick="toggle('acc-3d')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">3d</span>
+        <span class="trigger-title">Why was carbon-12 chosen as the new standard?</span>
+      </div>
+      <span class="trigger-badge">History of Science</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">When the new standard was adopted, ¹⁶O became 15.9949 instead of 16. Is this a <strong>large change</strong>? Would scientists need to completely redo their existing data tables?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">Carbon-12 makes up about <strong>99% of all carbon</strong>. How does this affect the ease of obtaining a pure sample for calibration?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">Is carbon a <strong>solid, liquid, or gas</strong> at room temperature? Why does physical state matter when you want a stable, easy-to-handle reference material?</span></li>
+              <li class="hint-item"><span class="hint-num">04</span><span class="hint-text">Carbon forms compounds with <strong>almost every other element</strong>. Why is this useful for determining relative atomic masses of other elements?</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3e-g -->
+  <div class="accordion" id="acc-3efg">
+    <button class="accordion-trigger" onclick="toggle('acc-3efg')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">3e–g</span>
+        <span class="trigger-title">Molar mass of ¹²C, Avogadro expression, and the unit mol⁻¹</span>
+      </div>
+      <span class="trigger-badge">The Mole Concept</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">3e</span><span class="hint-text">The definition says: 1 mole = the amount of substance containing as many entities as atoms in <strong>exactly 12 g of ¹²C</strong>. So what is the molar mass of ¹²C, directly from the definition?</span></li>
+              <li class="hint-item"><span class="hint-num">3f</span><span class="hint-text">The Avogadro constant is the number of atoms in 12 g of ¹²C. If you know the mass of one ¹²C atom, how would you calculate that number? Think: <strong>total mass ÷ mass per atom</strong>.</span></li>
+              <li class="hint-item"><span class="hint-num">3g</span><span class="hint-text">The Avogadro constant converts moles to number of particles. If you multiply (mol) × (mol⁻¹), what unit do you get? Why is that consistent with a <strong>dimensionless</strong> "number of particles"?</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3h -->
+  <div class="accordion" id="acc-3h">
+    <button class="accordion-trigger" onclick="toggle('acc-3h')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">3h</span>
+        <span class="trigger-title">Mass of one mole of ³²S — without using the periodic table</span>
+      </div>
+      <span class="trigger-badge">Reacting Masses</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">You are told one ³²S atom is <strong>2.67 times heavier</strong> than one ¹²C atom. Does this same ratio apply to a collection of Avogadro's number of each type of atom? Why?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">You know the molar mass of ¹²C from part (e). <strong>Multiply</strong> it by 2.67. What do you get?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">Does your answer match what you would expect for sulphur-32? This is a useful <strong>self-check</strong>!</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /.q-group.q3 -->
+
+
+<!-- ════════════════════════════════════════════════════════════════
+     QUESTION 4
+════════════════════════════════════════════════════════════════ -->
+<div class="q-group q4">
+  <div class="group-heading">
+    <span class="qnum">Q4</span>
+    <span class="qtitle">Titration Curve</span>
+    <span class="stars">★★★★★</span>
+  </div>
+
+  <!-- 4a -->
+  <div class="accordion" id="acc-4a">
+    <button class="accordion-trigger" onclick="toggle('acc-4a')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">4a</span>
+        <span class="trigger-title">Identify the titrant, analyte, and colour indicator</span>
+      </div>
+      <span class="trigger-badge">Salt Preparation</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">The product is NaNO₃. What <strong>two reactants</strong> combine to give NaNO₃ and water? Identify the acid and the base.</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">In a titration, the <strong>titrant</strong> is in the burette and the <strong>analyte</strong> is in the conical flask. Which common acid-base indicator is colourless in acid and pink in alkali?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">The colour changes from <strong>colourless → pink</strong>. Does this mean the solution starts acidic or alkaline? So which substance is in the flask, and which is in the burette?</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4b(i) -->
+  <div class="accordion" id="acc-4bi">
+    <button class="accordion-trigger" onclick="toggle('acc-4bi')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">4b(i)</span>
+        <span class="trigger-title">Difference between end point and equivalence point</span>
+      </div>
+      <span class="trigger-badge">Salt Preparation</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Guiding Questions</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text">The <strong>equivalence point</strong> is about moles — what condition is met when it is reached? Can you directly <em>see</em> this happening?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text">The <strong>end point</strong> is what you actually observe. What causes it to occur? Is it a direct measurement of moles?</span></li>
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text">Look at the pH curve. At what part of the curve does the <strong>colour change</strong> (end point) happen? At what part does <strong>pH = 7</strong> (the equivalence point for strong acid + strong base)?</span></li>
+              <li class="hint-item"><span class="hint-num">04</span><span class="hint-text">The curve is <strong>near-vertical</strong> in the equivalence region. What does this tell you about how close the end point is to the equivalence point in practice?</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4b(ii) -->
+  <div class="accordion" id="acc-4bii">
+    <button class="accordion-trigger" onclick="toggle('acc-4bii')" aria-expanded="false">
+      <div class="trigger-label">
+        <span class="trigger-num">4b(ii)</span>
+        <span class="trigger-title">Explain the shape of the pH curve</span>
+      </div>
+      <span class="trigger-badge">pH &amp; Logarithms</span>
+      <span class="trigger-icon">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+    <div class="accordion-panel" role="region">
+      <div class="panel-inner">
+        <div class="panel-content">
+          <div class="hints-section">
+            <div class="hints-label">Initial Flat Region — Low pH</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">01</span><span class="hint-text"><span class="hint-tag">Low pH</span>pH = −log[H⁺]. At pH 1, what is [H⁺]? At pH 2? How much H⁺ must you <strong>remove</strong> to raise pH by 1 unit starting at pH 1 vs starting at pH 3?</span></li>
+              <li class="hint-item"><span class="hint-num">02</span><span class="hint-text"><span class="hint-tag">Low pH</span>When [H⁺] is very high, is it easy or hard to change pH significantly by adding a <strong>small amount</strong> of NaOH? Why?</span></li>
+            </ul>
+          </div>
+          <div class="hints-section" style="margin-top:16px">
+            <div class="hints-label">Near the Equivalence Point</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">03</span><span class="hint-text"><span class="hint-tag">Equiv.</span>Just before the equivalence point, almost all H⁺ has been neutralised — [H⁺] is tiny. Adding <strong>one more drop</strong> of NaOH neutralises what fraction of the remaining H⁺?</span></li>
+              <li class="hint-item"><span class="hint-num">04</span><span class="hint-text"><span class="hint-tag">Equiv.</span>On a <strong>log scale</strong>, does a very small absolute change in [H⁺] (when [H⁺] is already tiny) correspond to a large or small change in pH?</span></li>
+            </ul>
+          </div>
+          <div class="hints-section" style="margin-top:16px">
+            <div class="hints-label">Final Flat Region — High pH</div>
+            <ul class="hint-list">
+              <li class="hint-item"><span class="hint-num">05</span><span class="hint-text"><span class="hint-tag">High pH</span>After the equivalence point, excess OH⁻ is present. To raise pH from 11 to 12, how much must <strong>[OH⁻] change</strong>?</span></li>
+              <li class="hint-item"><span class="hint-num">06</span><span class="hint-text"><span class="hint-tag">High pH</span>By analogy with the initial region — when [OH⁻] is already high, does adding more NaOH change pH dramatically or <strong>barely at all</strong>?</span></li>
+            </ul>
+          </div>
+          <div class="scaffold-section">
+            <div class="scaffold-box">
+              <div class="scaffold-title">Core Idea — Link All Three Regions</div>
+              <ul class="scaffold-list">
+                <li class="scaffold-item"><span class="scaffold-step">↯</span><span>The pH scale is <strong>logarithmic</strong>. Each unit = a 10-fold change in [H⁺] or [OH⁻]. The same small volume of NaOH causes a massive pH jump near the equivalence point (where [H⁺] is near zero), but barely moves pH when ion concentrations are very high (start or end of the curve).</span></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /.q-group.q4 -->
+
+</main>
+
+<footer>
+  Higher-Order Thinking Questions &nbsp;·&nbsp; Salt Preparation &amp; Reacting Masses &nbsp;·&nbsp; Click headers to reveal hints
+</footer>
+
+<script>
+  function toggle(id) {
+    const acc = document.getElementById(id);
+    const isOpen = acc.classList.toggle('open');
+    acc.querySelector('.accordion-trigger').setAttribute('aria-expanded', isOpen);
+  }
+
+  let allOpen = false;
+  function toggleAll() {
+    allOpen = !allOpen;
+    document.querySelectorAll('.accordion').forEach(acc => {
+      if (allOpen) {
+        acc.classList.add('open');
+        acc.querySelector('.accordion-trigger').setAttribute('aria-expanded', 'true');
+      } else {
+        acc.classList.remove('open');
+        acc.querySelector('.accordion-trigger').setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.querySelector('.expand-all').textContent = allOpen ? 'Collapse All' : 'Expand All';
+  }
+</script>
+</body>
+</html>

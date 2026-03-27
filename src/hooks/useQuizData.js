@@ -70,35 +70,7 @@ export function useQuizData(url) {
                   const wrapperStyle = `${minHeightStyle}align-items:flex-start;`;
                   const imgStyle = `${minHeightStyle}display:block;`;
 
-                  return `
-                    <span class="inline-flex items-center gap-2 align-middle" style="${wrapperStyle}">
-                      <img
-                        src="${escaped}"
-                        alt="Question diagram"
-                        loading="lazy"
-                        decoding="async"
-                        referrerpolicy="no-referrer"
-                        data-quiz-image="true"
-                        style="${imgStyle}"
-                        class="max-w-[calc(100%-3rem)] h-auto ${sizeClass} object-contain rounded-lg border border-slate-200 my-3"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Enlarge image"
-                        title="Enlarge"
-                        data-enlarge-image="true"
-                        data-image-src="${escaped}"
-                        class="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M15 3h6v6" />
-                          <path d="M9 21H3v-6" />
-                          <path d="M21 3l-7 7" />
-                          <path d="M3 21l7-7" />
-                        </svg>
-                      </button>
-                    </span>
-                  `.trim();
+                  return `<span class="inline-flex items-center gap-2 align-middle" style="${wrapperStyle}"><img src="${escaped}" alt="Question diagram" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-quiz-image="true" style="${imgStyle}" class="max-w-[calc(100%-3rem)] h-auto ${sizeClass} object-contain rounded-lg border border-slate-200 my-3" /><button type="button" aria-label="Enlarge image" title="Enlarge" data-enlarge-image="true" data-image-src="${escaped}" class="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg></button></span>`;
                 });
               };
 

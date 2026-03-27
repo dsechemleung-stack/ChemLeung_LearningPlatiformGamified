@@ -27,3 +27,4 @@ public/tmp/
 *.sln
 *.sw?
 .vercel
+.env*.local

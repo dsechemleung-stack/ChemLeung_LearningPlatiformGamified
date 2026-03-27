@@ -237,7 +237,7 @@ export default function PracticeModeSelection({ questions }) {
 
   const handleUpdateTopics = async () => {
     if (isVisitor) {
-      alert('Visitor mode does not save data. Topic range cannot be updated.');
+      alert(t('practiceMode.visitorCannotUpdateTopicRange'));
       return;
     }
     setUpdating(true);
@@ -260,7 +260,7 @@ export default function PracticeModeSelection({ questions }) {
 
   const handleModeSelect = (mode, count, timerEnabled = false, isTimed = false) => {
     if (isVisitor && (mode === 'mistakes' || mode === 'ai-daily')) {
-      alert('Visitor mode cannot use Mistake Review / AI Daily Mission because data is not saved.');
+      alert(t('practiceMode.visitorCannotUseMistakesOrAiDaily'));
       return;
     }
 
@@ -280,7 +280,7 @@ export default function PracticeModeSelection({ questions }) {
     }
 
     if (availableTopics.length === 0) {
-      alert(isVisitor ? 'Please select learned topics in Visitor Dashboard first.' : t('practice.pleaseSetTopics'));
+      alert(isVisitor ? t('practiceMode.visitorPleaseSelectLearnedTopicsFirst') : t('practice.pleaseSetTopics'));
       navigate(isVisitor ? '/dashboard' : '/profile');
       return;
     }
@@ -319,14 +319,14 @@ export default function PracticeModeSelection({ questions }) {
         break;
       case 'mistake-review':
         if (isVisitor) {
-          alert('Visitor mode cannot use Mistake Review because data is not saved.');
+          alert(t('practiceMode.visitorCannotUseMistakeReview'));
           break;
         }
         navigate('/notebook?customReview=1');
         break;
       case 'srs-review':
         if (isVisitor) {
-          alert('Visitor mode cannot use SRS Review because data is not saved.');
+          alert(t('practiceMode.visitorCannotUseSrsReview'));
           break;
         }
         (async () => {
@@ -667,9 +667,9 @@ if (showUpdateTopics) {
             <div className="bg-slate-50 rounded-xl p-4 border-2 border-slate-200">
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <h3 className="font-bold text-slate-800">Order by ID</h3>
+                  <h3 className="font-bold text-slate-800">{t('practiceMode.orderById')}</h3>
                   <p className="text-xs text-slate-500">
-                    If ON: picks the lowest IDs first (no random). If OFF: random.
+                    {t('practiceMode.orderByIdHelp')}
                   </p>
                 </div>
                 <button

@@ -148,7 +148,7 @@ export default function FilterScreen({ questions, onStart }) {
           {/* 3. Question Count */}
           <div>
             <label className="block text-sm font-black text-slate-500 mb-4 uppercase tracking-widest">
-              3. Session Length
+              {t('practiceMode.sessionLength')}
             </label>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
               {['5', '10', '15', '20', '36', 'All'].map(num => (
@@ -159,7 +159,7 @@ export default function FilterScreen({ questions, onStart }) {
                     count === num ? 'border-lab-blue bg-blue-50 text-lab-blue' : 'border-slate-100 text-slate-400'
                   }`}
                 >
-                  {num}
+                  {num === 'All' ? t('common.all') : num}
                 </button>
               ))}
             </div>
@@ -171,7 +171,7 @@ export default function FilterScreen({ questions, onStart }) {
             className="w-full py-5 bg-lab-blue text-white rounded-2xl font-black text-lg shadow-lg hover:bg-blue-800 disabled:bg-slate-200 transition-all flex items-center justify-center gap-2 active:scale-95"
           >
             <Play fill="currentColor" size={18} />
-            GENERATE EXAM
+            {t('practiceMode.generateExam')}
           </button>
         </div>
       </div>

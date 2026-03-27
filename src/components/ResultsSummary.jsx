@@ -8,7 +8,119 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
   const [showShareReport, setShowShareReport] = useState(false);
   const [forumQuestion, setForumQuestion] = useState(null);
   const [showChineseExplanation, setShowChineseExplanation] = useState(() => ({}));
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   const { t, tf } = useLanguage();
+
+  const decodeHtmlEntities = (input) => {
+    if (!input) return '';
+    const s = String(input);
+    if (!s.includes('&')) return s;
+
+    if (/<[a-zA-Z]/.test(s)) {
+      return s
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+    }
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.innerHTML = s;
+      return textarea.value;
+    } catch {
+      return s;
+    }
+  };
+
+  const coerceRichOptionHtml = (input) => {
+    const decoded = decodeHtmlEntities(input);
+    const raw = String(decoded || '');
+    if (!raw) return '';
+    if (raw.includes('<img') || raw.includes('<button')) return raw;
+
+    const hasImageAttrs = raw.includes('src="') && raw.includes('data-quiz-image');
+    if (!hasImageAttrs) return raw;
+
+    // The broken format is attribute-only with lots of newlines.
+    // Compact both actual newlines and literal "\\n" sequences so tag parsing works.
+    const s = raw
+      .replace(/\\r\\n|\\n|\\r/g, ' ')
+      .replace(/\r\n|\r|\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const imgEnd = s.indexOf('/>');
+    if (imgEnd === -1) return raw;
+
+    const imgAttrs = s.slice(0, imgEnd).trim();
+    const remainder = s.slice(imgEnd + 2);
+
+    let repaired = `<img ${imgAttrs} />`;
+
+    const btnStart = remainder.indexOf('type="button"');
+    if (btnStart !== -1) {
+      const btnChunk = remainder.slice(btnStart);
+      const btnEnd = btnChunk.indexOf('>');
+      if (btnEnd !== -1) {
+        const btnAttrs = btnChunk.slice(0, btnEnd).trim();
+        repaired += `<button ${btnAttrs}></button>`;
+      }
+    }
+
+    return repaired;
+  };
+
+  const prepareOptionHtml = (input) => {
+    const decoded = decodeHtmlEntities(input);
+    const raw = String(decoded || '');
+    if (!raw) return '';
+    const normalized = raw.replace(/\\"/g, '"');
+    if (normalized.includes('<img') || normalized.includes('<span')) {
+      return normalized;
+    }
+    const isAttributeOnlyImage =
+      !normalized.includes('<img')
+      && /src\s*=\s*("|'|&quot;|&#39;)/i.test(normalized)
+      && (
+        normalized.includes('data-quiz-image')
+        || normalized.toLowerCase().includes('googleusercontent.com')
+        || normalized.toLowerCase().includes('question diagram')
+      );
+    if (isAttributeOnlyImage) {
+      return coerceRichOptionHtml(normalized);
+    }
+    return normalizeLiteralNewlinesToBr(decoded);
+  };
+
+  const isAttributeOnlyImageOption = (input) => {
+    const decoded = decodeHtmlEntities(input);
+    const raw = String(decoded || '').replace(/\\"/g, '"');
+    return Boolean(raw)
+      && !raw.includes('<img')
+      && /src\s*=\s*("|'|&quot;|&#39;)/i.test(raw)
+      && (
+        raw.includes('data-quiz-image')
+        || raw.toLowerCase().includes('googleusercontent.com')
+        || raw.toLowerCase().includes('question diagram')
+      );
+  };
+
+  const extractFirstImageSrc = (input) => {
+    const decoded = decodeHtmlEntities(input);
+    const raw = String(decoded || '').replace(/\\"/g, '"');
+
+    const m = raw.match(/src\s*=\s*(?:"|'|&quot;|&#39;)([^"'&]+)(?:"|'|&quot;|&#39;)/i);
+    if (m?.[1]) return m[1];
+
+    const marker = raw.match(/\((?:image|img)\s*:\s*(https?:\/\/[^)\s]+)\)/i);
+    if (marker?.[1]) return marker[1];
+
+    const marker2 = raw.match(/\{(?:image|img)\s*:\s*(https?:\/\/[^}\s]+)\}/i);
+    if (marker2?.[1]) return marker2[1];
+
+    return '';
+  };
 
   const normalizeLiteralNewlinesToBr = (html) => {
     if (!html) return '';
@@ -20,6 +132,32 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
       .replace(/\r\n/g, '<br>')
       .replace(/\n/g, '<br>')
       .replace(/\r/g, '<br>');
+  };
+
+  const handleRichContentClick = (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    const enlargeBtn = target.closest('[data-enlarge-image="true"]');
+    if (enlargeBtn) {
+      const src = enlargeBtn.getAttribute('data-image-src');
+      if (src) {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxSrc(src);
+      }
+      return;
+    }
+
+    const img = target.closest('img[data-quiz-image="true"], img');
+    if (img) {
+      const src = img.getAttribute('src');
+      if (src) {
+        e.preventDefault();
+        e.stopPropagation();
+        setLightboxSrc(src);
+      }
+    }
   };
 
   // 1. Calculate Score
@@ -74,6 +212,34 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setLightboxSrc(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="relative max-w-5xl w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setLightboxSrc(null)}
+              className="absolute -top-10 right-0 text-white/90 hover:text-white text-sm font-bold"
+            >
+              {t('common.close')}
+            </button>
+            <div className="bg-white rounded-2xl p-3 shadow-2xl">
+              <img
+                src={lightboxSrc}
+                alt="Enlarged diagram"
+                className="w-full h-auto max-h-[80vh] object-contain rounded-xl"
+              />
+            </div>
+          </div>
+        </div>
+      )}
       {/* Hero Score Section */}
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
         <div className="bg-lab-blue p-8 text-center text-white">
@@ -194,17 +360,26 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
                 </div>
               </div>
               
-              <div className="prose prose-slate max-w-none mb-4 text-lg" dangerouslySetInnerHTML={{ __html: q.Question }} />
+              <div
+                className="prose prose-slate max-w-none mb-4 text-lg [&_img]:max-h-[220px] [&_img]:max-w-full [&_img]:w-auto [&_img]:object-contain [&_img]:my-2"
+                onClick={handleRichContentClick}
+                dangerouslySetInnerHTML={{ __html: q.Question }}
+              />
               
               <div className="space-y-2 mb-4">
                 {[
-                  { key: 'A', html: normalizeLiteralNewlinesToBr(q.OptionA) },
-                  { key: 'B', html: normalizeLiteralNewlinesToBr(q.OptionB) },
-                  { key: 'C', html: normalizeLiteralNewlinesToBr(q.OptionC) },
-                  { key: 'D', html: normalizeLiteralNewlinesToBr(q.OptionD) },
+                  { key: 'A', raw: q.OptionA, html: prepareOptionHtml(q.OptionA) },
+                  { key: 'B', raw: q.OptionB, html: prepareOptionHtml(q.OptionB) },
+                  { key: 'C', raw: q.OptionC, html: prepareOptionHtml(q.OptionC) },
+                  { key: 'D', raw: q.OptionD, html: prepareOptionHtml(q.OptionD) },
                 ].filter(o => o.html).map((opt) => {
                   const isUser = userAnswers[q.ID] === opt.key;
                   const isCorrectOpt = q.CorrectOption === opt.key;
+
+                  const rawDecoded = decodeHtmlEntities(opt.raw);
+                  const htmlDecoded = decodeHtmlEntities(opt.html);
+                  const imageSrc = extractFirstImageSrc(rawDecoded) || extractFirstImageSrc(htmlDecoded);
+                  const renderAsImage = Boolean(imageSrc) && !String(rawDecoded || '').includes('<img') && !String(htmlDecoded || '').includes('<img');
 
                   const base = 'border-slate-200 bg-white text-slate-800';
                   const correctCls = 'border-green-300 bg-green-50 text-green-900';
@@ -219,13 +394,58 @@ export default function ResultsSummary({ questions, userAnswers, questionTimes, 
                   return (
                     <div
                       key={opt.key}
+                      data-option-render={renderAsImage ? 'image' : 'html'}
                       className={`p-3 rounded-lg border ${finalClass}`}
                     >
                       <div className="flex items-start gap-3">
                         <div className="flex-none w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm font-black">
                           {opt.key}
                         </div>
-                        <div className="prose prose-slate max-w-none text-sm" dangerouslySetInnerHTML={{ __html: opt.html }} />
+                        {renderAsImage ? (
+                          <span className="inline-flex items-start gap-2 align-middle">
+                            <img
+                              src={imageSrc}
+                              alt="Question diagram"
+                              loading="lazy"
+                              decoding="async"
+                              referrerPolicy="no-referrer"
+                              data-quiz-image="true"
+                              style={{ minHeight: 120, display: 'block' }}
+                              className="max-w-[calc(100%-3rem)] h-auto max-h-[160px] object-contain rounded-lg border border-slate-200 my-3"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (imageSrc) setLightboxSrc(imageSrc);
+                              }}
+                            />
+                            <button
+                              type="button"
+                              aria-label="Enlarge image"
+                              title="Enlarge"
+                              data-enlarge-image="true"
+                              data-image-src={imageSrc}
+                              className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (imageSrc) setLightboxSrc(imageSrc);
+                              }}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M15 3h6v6" />
+                                <path d="M9 21H3v-6" />
+                                <path d="M21 3l-7 7" />
+                                <path d="M3 21l7-7" />
+                              </svg>
+                            </button>
+                          </span>
+                        ) : (
+                          <div
+                            className="prose prose-slate max-w-none text-sm [&_img]:max-h-[160px] [&_img]:max-w-full [&_img]:w-auto [&_img]:object-contain [&_img]:my-2"
+                            onClick={handleRichContentClick}
+                            dangerouslySetInnerHTML={{ __html: opt.html }}
+                          />
+                        )}
                       </div>
                       {(isUser || isCorrectOpt) && (
                         <div className="mt-2 text-xs font-black">

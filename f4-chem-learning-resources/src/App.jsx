@@ -323,6 +323,14 @@ export default function App() {
                 </div>
                 <span className="landing-widget-chip">Open</span>
               </a>
+
+              <a className="landing-widget" href="HOT_guiding_saltprep_reactingmass.html" aria-label="Open HOT questions: salt preparation and reacting masses">
+                <div style={{ textAlign: 'left' }}>
+                  <p className="landing-widget-title">HOT questions: salt preparation and reacting masses</p>
+                  <p className="landing-widget-subtitle">Guiding questions + scaffolded hints</p>
+                </div>
+                <span className="landing-widget-chip">Open</span>
+              </a>
             </div>
           )}
         </div>

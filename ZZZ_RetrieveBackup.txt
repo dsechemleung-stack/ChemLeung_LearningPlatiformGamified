@@ -77,3 +77,7 @@ ______
 backup 26: virtual lab, calculator
 ______
 backup 27: i18n pages, mobilephone compatibility, export image/pdf fix, skill boost rule (coin daily reward, discount in chemstore)
+_______
+backup 28: visitor login
+_______
+backup 29: calculator unit check fixes + remove notes + default include RAM

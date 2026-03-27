@@ -11,6 +11,7 @@ export default defineConfig({
         neutralizationExothermic: 'neutralization-exothermic.html',
         titration: 'titration.html',
         saltQuiz: 'salt-page.html',
+        hotGuidingSaltPrepReactingMass: 'HOT_guiding_saltprep_reactingmass.html',
       },
     },
   },
